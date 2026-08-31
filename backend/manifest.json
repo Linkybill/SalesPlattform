@@ -1,0 +1,131 @@
+{
+  "appKey": "sales-plattform",
+  "name": "SalesPlattform",
+  "description": "Startgerüst der SalesPlattform mit React-Frontend, HelloWorld-Endpunkt und Tenant-Datenbank.",
+  "version": "0.1.0",
+  "audience": "sales-plattform",
+  "imageRepository": "identity-platform/sales-plattform-backend",
+  "imageTag": "0.1.0",
+  "components": [
+    {
+      "key": "frontend",
+      "type": "Frontend",
+      "imageRepository": "identity-platform/sales-plattform-frontend",
+      "imageTag": "0.1.0",
+      "containerPort": 80,
+      "minReplicas": 1,
+      "maxReplicas": 1,
+      "deploymentMode": "Shared"
+    },
+    {
+      "key": "backend",
+      "type": "Backend",
+      "imageRepository": "identity-platform/sales-plattform-backend",
+      "imageTag": "0.1.0",
+      "containerPort": 8080,
+      "minReplicas": 1,
+      "maxReplicas": 1,
+      "deploymentMode": "Shared"
+    }
+  ],
+  "entryPoints": [
+    {
+      "key": "web",
+      "name": "SalesPlattform Web-App",
+      "type": "web",
+      "url": "http://localhost:3101/apps/sales-plattform/"
+    }
+  ],
+  "database": {
+    "required": true,
+    "defaultStrategy": "shared"
+  },
+  "settings": [
+    {
+      "key": "crm.integration",
+      "name": "CRM-Integration",
+      "description": "Wähle, welches CRM dieser Mandant für die SalesPlattform verwenden möchte. Weitere Anbieter können später ergänzt werden.",
+      "category": "CRM-Integration",
+      "type": "enum",
+      "defaultValue": "none",
+      "scopes": ["tenantApp"],
+      "options": [
+        { "value": "none", "label": "Keine CRM-Integration" },
+        { "value": "zoho", "label": "Zoho CRM" }
+      ]
+    },
+    {
+      "key": "zoho.datacenter",
+      "name": "Zoho Datacenter",
+      "description": "Zoho-Rechenzentrum, in dem die Organisation dieses Mandanten liegt.",
+      "category": "Zoho CRM",
+      "type": "enum",
+      "defaultValue": "eu",
+      "scopes": ["tenantApp"],
+      "options": [
+        { "value": "eu", "label": "Europa (zoho.eu)" },
+        { "value": "com", "label": "USA (zoho.com)" },
+        { "value": "in", "label": "Indien (zoho.in)" },
+        { "value": "au", "label": "Australien (zoho.com.au)" },
+        { "value": "jp", "label": "Japan (zoho.jp)" },
+        { "value": "cn", "label": "China (zoho.com.cn)" }
+      ],
+      "dependsOn": {
+        "scope": "tenantApp",
+        "settingKey": "crm.integration",
+        "value": "zoho"
+      }
+    },
+    {
+      "key": "zoho.clientId",
+      "name": "Zoho Client-ID",
+      "description": "OAuth-Client-ID der Zoho-Organisation dieses Mandanten.",
+      "category": "Zoho CRM",
+      "type": "string",
+      "scopes": ["tenantApp"],
+      "validation": { "minLength": 1, "maxLength": 300 },
+      "dependsOn": {
+        "scope": "tenantApp",
+        "settingKey": "crm.integration",
+        "value": "zoho"
+      }
+    },
+    {
+      "key": "zoho.clientSecret",
+      "name": "Zoho Client-Secret",
+      "description": "Geheimes OAuth-Client-Secret. Der Wert wird verschlüsselt gespeichert und nie wieder ausgegeben.",
+      "category": "Zoho CRM",
+      "type": "string",
+      "secret": true,
+      "scopes": ["tenantApp"],
+      "validation": { "minLength": 1, "maxLength": 1000 },
+      "dependsOn": {
+        "scope": "tenantApp",
+        "settingKey": "crm.integration",
+        "value": "zoho"
+      }
+    }
+  ],
+  "client": {
+    "standardFlowEnabled": true,
+    "redirectUris": [
+      "http://localhost:3101/apps/sales-plattform/auth/callback",
+      "http://localhost:3101/apps/sales-plattform/auth/silent-callback"
+    ],
+    "postLogoutRedirectUris": [
+      "http://localhost:3101/apps/sales-plattform/auth/logout-callback"
+    ],
+    "webOrigins": [
+      "http://localhost:3101"
+    ]
+  },
+  "roles": [
+    {
+      "key": "sales-user",
+      "name": "SalesPlattform Benutzer",
+      "description": "Darf die SalesPlattform verwenden.",
+      "deprecated": false,
+      "replacedBy": []
+    }
+  ]
+}

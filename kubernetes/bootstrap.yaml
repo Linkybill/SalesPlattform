@@ -1,0 +1,178 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sales-plattform-backend
+  namespace: identity-platform
+  labels: &backendLabels
+    app.kubernetes.io/managed-by: identity-platform-deployment-controller
+    identity-platform.io/app-key: sales-plattform
+    identity-platform.io/component-key: backend
+    identity-platform.io/mode: shared
+spec:
+  replicas: 0
+  selector:
+    matchLabels: *backendLabels
+  template:
+    metadata:
+      labels: *backendLabels
+    spec:
+      containers:
+        - name: app
+          image: identity-platform/sales-plattform-backend:0.1.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Production
+            - name: ASPNETCORE_URLS
+              value: http://+:8080
+            - name: Authentication__Issuer
+              value: http://localhost:8080/realms/identity-platform
+            - name: Authentication__Audience
+              value: sales-plattform
+            - name: Authentication__ClientId
+              value: sales-plattform
+            - name: Authentication__RequireHttpsMetadata
+              value: "false"
+            - name: IdentityPlatform__ApplicationKey
+              value: sales-plattform
+            - name: IdentityPlatform__PlatformApiUrl
+              value: http://identity-platform-api:8080
+            - name: IdentityPlatform__RegistrationSecret
+              valueFrom:
+                secretKeyRef:
+                  name: identity-platform-secrets
+                  key: APPLICATION_REGISTRATION_SECRET
+            - name: IdentityPlatform__ApplicationSettings__ProtectionKey
+              valueFrom:
+                secretKeyRef:
+                  name: sales-plattform-secrets
+                  key: APPLICATION_SETTINGS_PROTECTION_KEY
+            - name: IdentityPlatform__Database__ApplicationKey
+              value: sales-plattform
+            - name: IdentityPlatform__Database__ComponentKey
+              value: backend
+            - name: IdentityPlatform__Database__PlatformApiUrl
+              value: http://identity-platform-api:8080
+            - name: IdentityPlatform__Database__RegistrationSecret
+              valueFrom:
+                secretKeyRef:
+                  name: identity-platform-secrets
+                  key: APPLICATION_REGISTRATION_SECRET
+            - name: RabbitMq__Port
+              value: "5672"
+            - name: RabbitMq__Username
+              valueFrom:
+                secretKeyRef:
+                  name: identity-platform-secrets
+                  key: RABBITMQ_USER
+            - name: RabbitMq__Password
+              valueFrom:
+                secretKeyRef:
+                  name: identity-platform-secrets
+                  key: RABBITMQ_PASSWORD
+            - name: Trust__Enabled
+              value: "true"
+            - name: Trust__JwksUrl
+              value: http://identity-platform-api:8080/internal/trust/jwks
+            - name: Trust__JwksSecret
+              valueFrom:
+                secretKeyRef:
+                  name: identity-platform-secrets
+                  key: APPLICATION_REGISTRATION_SECRET
+            - name: Trust__ApplicationKey
+              value: sales-plattform
+            - name: Trust__ComponentKey
+              value: backend
+            - name: Zoho__AccountsUrl
+              value: https://accounts.zoho.eu
+            - name: Zoho__ApiUrl
+              value: https://www.zohoapis.eu
+            - name: Zoho__RedirectUri
+              value: http://localhost:3101/apps/sales-plattform/api/integrations/zoho/oauth/callback
+            - name: Zoho__FrontendCallbackUrl
+              value: http://localhost:3101/apps/sales-plattform/
+            - name: Zoho__Scopes
+              value: ZohoCRM.modules.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sales-plattform-backend
+  namespace: identity-platform
+  labels:
+    app.kubernetes.io/managed-by: identity-platform-deployment-controller
+    identity-platform.io/app-key: sales-plattform
+    identity-platform.io/component-key: backend
+    identity-platform.io/mode: shared
+spec:
+  selector:
+    app.kubernetes.io/managed-by: identity-platform-deployment-controller
+    identity-platform.io/app-key: sales-plattform
+    identity-platform.io/component-key: backend
+    identity-platform.io/mode: shared
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sales-plattform-frontend
+  namespace: identity-platform
+  labels: &frontendLabels
+    app.kubernetes.io/managed-by: identity-platform-deployment-controller
+    identity-platform.io/app-key: sales-plattform
+    identity-platform.io/component-key: frontend
+    identity-platform.io/mode: shared
+spec:
+  replicas: 0
+  selector:
+    matchLabels: *frontendLabels
+  template:
+    metadata:
+      labels: *frontendLabels
+    spec:
+      containers:
+        - name: app
+          image: identity-platform/sales-plattform-frontend:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sales-plattform-frontend
+  namespace: identity-platform
+  labels:
+    app.kubernetes.io/managed-by: identity-platform-deployment-controller
+    identity-platform.io/app-key: sales-plattform
+    identity-platform.io/component-key: frontend
+    identity-platform.io/mode: shared
+spec:
+  selector:
+    app.kubernetes.io/managed-by: identity-platform-deployment-controller
+    identity-platform.io/app-key: sales-plattform
+    identity-platform.io/component-key: frontend
+    identity-platform.io/mode: shared
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

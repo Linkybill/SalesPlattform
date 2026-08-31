@@ -1,0 +1,13 @@
+.git/
+.idea/
+.vscode/
+**/bin/
+**/obj/
+**/node_modules/
+node_modules/
+frontend/node_modules/
+**/dist/
+dist/
+frontend/dist/
+**/*.tsbuildinfo
+*.log

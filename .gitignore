@@ -1,0 +1,19 @@
+.env
+.env.*
+!.env.example
+
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/*.tsbuildinfo
+
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local Kubernetes secret manifests
+kubernetes/*secret*.yaml
+kubernetes/*secrets*.yaml
