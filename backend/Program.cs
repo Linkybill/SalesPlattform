@@ -12,7 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddIdentityPlatform();
 
 builder.Services.AddPlatformTenantDatabase<SalesPlattformDbContext>();
-builder.Services.AddApplicationSettings<SalesPlattformDbContext>(options =>
+builder.Services.AddApplicationSettings<SalesPlattformDbContext>(builder.Configuration, options =>
 {
     options.ApplicationKey = builder.Configuration["IdentityPlatform:ApplicationKey"] ?? "sales-plattform";
 });

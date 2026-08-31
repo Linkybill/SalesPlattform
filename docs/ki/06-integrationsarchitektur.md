@@ -196,19 +196,21 @@ Die Konfiguration folgt dem Application-Settings-Muster der Identity Platform:
 - `zoho.datacenter`, `zoho.clientId` und `zoho.clientSecret` liegen ebenfalls
   auf `tenantApp`, werden im Tenant-Portal unter `AppSettings` nur bei Auswahl
   von `zoho` eingeblendet und provider-spezifisch gepflegt.
-- `zoho.clientSecret` ist als `secret` definiert, wird in der Platform
-  verschlüsselt gespeichert und nur vom Backend über den internen Secret-Endpunkt
-  gelesen.
+- `zoho.clientSecret` ist als `secret` definiert und wird verschlüsselt in der
+  tenant-isolierten Sales-Datenbank gespeichert. Das Tenant Portal liest und
+  schreibt diese Einstellung über seine Platform-API; diese proxied intern zum
+  gemeinsamen Settings-Endpunkt des Sales-Backends. Der Secret-Wert wird nie
+  in einer API-Antwort zurückgegeben.
 - Der OAuth-Codeaustausch und die Erneuerung von Zoho-Access-Tokens erfolgen in
   der SalesPlattform. Der OAuth-Refresh-Token wird nach erfolgreicher
-  Autorisierung über die allgemeine, provider-neutrale Credential-API der
-  Identity Platform verschlüsselt und tenantbezogen abgelegt. Die
-  SalesPlattform speichert keinen Refresh-Token in ihrer Tenant-Datenbank und
-  besitzt keinen eigenen `TokenProtectionKey`.
+  Autorisierung über den gemeinsamen Secret-Store verschlüsselt und
+  tenantbezogen in derselben Sales-Datenbank abgelegt. Die SalesPlattform
+  besitzt dafür einen eigenen `TokenProtectionKey`, der ausschließlich als
+  Kubernetes Secret injiziert wird.
 - Der zentrale Credential-Dienst kennt nur Provider- und Verbindungs-Schlüssel;
   er kennt keine Zoho-URLs, Zoho-Settings und führt keine provider-spezifischen
   Tokenaufrufe aus. Das Zoho-Client-Secret wird von der SalesPlattform für den
-  OAuth-Aufruf transient über den internen Secret-Endpunkt gelesen.
+  OAuth-Aufruf transient aus dem app-eigenen Secret-Store gelesen.
 
 Das Frontend erhält niemals Access- oder Refresh-Tokens. Pipedrive und weitere
 Adapter verwenden später dieselbe Trennung aus mandantenbezogener Konfiguration,
