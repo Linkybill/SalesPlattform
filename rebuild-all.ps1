@@ -150,7 +150,12 @@ function Ensure-ApplicationSettingsProtectionSecret {
     }
 
     $bytes = New-Object byte[] 48
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $randomNumberGenerator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $randomNumberGenerator.GetBytes($bytes)
+    } finally {
+        $randomNumberGenerator.Dispose()
+    }
     $protectionKey = [Convert]::ToBase64String($bytes)
     Invoke-Checked $kubectlCommand create secret generic $secretName `
         -n $TargetNamespace `
