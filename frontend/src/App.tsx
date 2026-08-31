@@ -19,6 +19,26 @@ type ZohoStatus = {
   apiDomain: string | null
 }
 
+type ApiErrorPayload = {
+  message?: string
+  detail?: string
+  title?: string
+}
+
+async function readJson<T>(response: Response): Promise<T | null> {
+  const body = await response.text()
+  if (!body.trim()) return null
+  try {
+    return JSON.parse(body) as T
+  } catch {
+    return null
+  }
+}
+
+function getApiErrorMessage(payload: ApiErrorPayload | null, fallback: string): string {
+  return payload?.message ?? payload?.detail ?? payload?.title ?? fallback
+}
+
 function App() {
   const { activeTenantId, authorizedFetch, error: platformError, user } = useApplicationContext()
   const [response, setResponse] = useState<HelloWorldResponse | null>(null)
@@ -54,10 +74,12 @@ function App() {
 
     try {
       const apiResponse = await authorizedFetch('/api/integrations/zoho/status')
+      const payload = await readJson<ZohoStatus & ApiErrorPayload>(apiResponse)
       if (!apiResponse.ok) {
-        throw new Error('Zoho-Status antwortete mit HTTP ' + apiResponse.status + '.')
+        throw new Error(getApiErrorMessage(payload, 'Zoho-Status antwortete mit HTTP ' + apiResponse.status + '.'))
       }
-      setZohoStatus(await apiResponse.json() as ZohoStatus)
+      if (!payload) throw new Error('Zoho-Status lieferte keine gültige Antwort.')
+      setZohoStatus(payload)
     } catch (reason) {
       setZohoError(reason instanceof Error ? reason.message : 'Der Zoho-Status ist nicht erreichbar.')
     }
@@ -69,9 +91,9 @@ function App() {
     setZohoMessage(null)
     try {
       const apiResponse = await authorizedFetch('/api/integrations/zoho/oauth/start')
-      const payload = await apiResponse.json() as { authorizationUrl?: string; message?: string }
-      if (!apiResponse.ok || !payload.authorizationUrl) {
-        throw new Error(payload.message ?? ('Zoho-Start antwortete mit HTTP ' + apiResponse.status + '.'))
+      const payload = await readJson<{ authorizationUrl?: string } & ApiErrorPayload>(apiResponse)
+      if (!apiResponse.ok || !payload?.authorizationUrl) {
+        throw new Error(getApiErrorMessage(payload, 'Zoho-Start antwortete mit HTTP ' + apiResponse.status + '.'))
       }
       window.location.assign(payload.authorizationUrl)
     } catch (reason) {
@@ -86,11 +108,11 @@ function App() {
     setZohoMessage(null)
     try {
       const apiResponse = await authorizedFetch('/api/integrations/zoho/test-connection')
-      const payload = await apiResponse.json() as { availableModules?: string[]; message?: string }
+      const payload = await readJson<{ availableModules?: string[] } & ApiErrorPayload>(apiResponse)
       if (!apiResponse.ok) {
-        throw new Error(payload.message ?? ('Zoho-Test antwortete mit HTTP ' + apiResponse.status + '.'))
+        throw new Error(getApiErrorMessage(payload, 'Zoho-Test antwortete mit HTTP ' + apiResponse.status + '.'))
       }
-      setZohoMessage('Verbindung aktiv. ' + (payload.availableModules?.length ?? 0) + ' Zoho-Module gefunden.')
+      setZohoMessage('Verbindung aktiv. ' + (payload?.availableModules?.length ?? 0) + ' Zoho-Module gefunden.')
       await loadZohoStatus()
     } catch (reason) {
       setZohoError(reason instanceof Error ? reason.message : 'Der Zoho-Verbindungstest ist fehlgeschlagen.')
@@ -164,11 +186,11 @@ function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ code, state }),
         })
-        const payload = await apiResponse.json() as { message?: string; apiDomain?: string }
+        const payload = await readJson<{ message?: string; apiDomain?: string } & ApiErrorPayload>(apiResponse)
         if (!apiResponse.ok) {
-          throw new Error(payload.message ?? ('Zoho-OAuth antwortete mit HTTP ' + apiResponse.status + '.'))
+          throw new Error(getApiErrorMessage(payload, 'Zoho-OAuth antwortete mit HTTP ' + apiResponse.status + '.'))
         }
-        setZohoMessage('Zoho ist verbunden (' + (payload.apiDomain ?? 'API-Domain erkannt') + ').')
+        setZohoMessage('Zoho ist verbunden (' + (payload?.apiDomain ?? 'API-Domain erkannt') + ').')
         await loadZohoStatus()
       } catch (reason) {
         setZohoError(

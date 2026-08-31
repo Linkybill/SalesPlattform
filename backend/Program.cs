@@ -20,6 +20,7 @@ builder.Services.AddScoped<HelloWorldService>();
 builder.Services.AddOptions<ZohoOptions>()
     .Bind(builder.Configuration.GetSection("Zoho"));
 builder.Services.AddScoped<ZohoConfigurationService>();
+builder.Services.AddScoped<ZohoLegacySecretMigrationService>();
 builder.Services.AddScoped<ZohoConnectionStore>();
 builder.Services.AddScoped<ZohoTokenService>();
 builder.Services.AddScoped<ZohoOAuthService>();

@@ -22,10 +22,11 @@ public sealed record ZohoTenantConfiguration(
 /// the app-local application-settings store.
 /// </summary>
 public sealed class ZohoConfigurationService(
-    ApplicationSettingsResolver resolver,
-    IOptions<ApplicationSettingsOptions> settingsOptions,
-    IOptions<ZohoOptions> zohoOptions,
-    IHttpContextAccessor httpContextAccessor)
+        ApplicationSettingsResolver resolver,
+        IOptions<ApplicationSettingsOptions> settingsOptions,
+        IOptions<ZohoOptions> zohoOptions,
+        ZohoLegacySecretMigrationService legacySecretMigration,
+        IHttpContextAccessor httpContextAccessor)
 {
     private readonly ZohoOptions options = zohoOptions.Value;
 
@@ -60,7 +61,11 @@ public sealed class ZohoConfigurationService(
             throw new InvalidOperationException("Zoho CRM ist für diesen Mandanten nicht als CRM-Integration ausgewählt.");
 
         var clientId = ReadRequiredString(effective, "zoho.clientId");
-        var clientSecret = ReadRequiredString(effective, "zoho.clientSecret");
+        var clientSecret = await legacySecretMigration.GetOrMigrateClientSecretAsync(
+            settings,
+            userId,
+            cancellationToken)
+            ?? throw new InvalidOperationException("Die Einstellung 'zoho.clientSecret' ist für diesen Mandanten nicht konfiguriert.");
         var dataCenter = ReadString(effective, "zoho.datacenter") ?? "eu";
         var (accountsUrl, apiUrl) = ResolveDataCenter(dataCenter);
         options.ValidateForOAuth();
