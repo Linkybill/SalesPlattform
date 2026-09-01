@@ -90,7 +90,7 @@ spec:
             - name: Zoho__RedirectUri
               value: http://localhost:3101/apps/sales-plattform/api/integrations/zoho/oauth/callback
             - name: Zoho__FrontendCallbackUrl
-              value: http://localhost:3101/apps/sales-plattform/
+              value: http://localhost:3101/apps/sales-plattform/import
             - name: Zoho__Scopes
               value: ZohoCRM.modules.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ
           ports:

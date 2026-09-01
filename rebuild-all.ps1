@@ -109,7 +109,7 @@ $zohoRedirectUri = if ([string]::IsNullOrWhiteSpace($env:ZOHO_REDIRECT_URI)) {
     'http://localhost:3101/apps/sales-plattform/api/integrations/zoho/oauth/callback'
 } else { $env:ZOHO_REDIRECT_URI }
 $zohoFrontendCallbackUrl = if ([string]::IsNullOrWhiteSpace($env:ZOHO_FRONTEND_CALLBACK_URL)) {
-    'http://localhost:3101/apps/sales-plattform/'
+    'http://localhost:3101/apps/sales-plattform/import'
 } else { $env:ZOHO_FRONTEND_CALLBACK_URL }
 $zohoScopes = if ([string]::IsNullOrWhiteSpace($env:ZOHO_SCOPES)) {
     'ZohoCRM.modules.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ'
