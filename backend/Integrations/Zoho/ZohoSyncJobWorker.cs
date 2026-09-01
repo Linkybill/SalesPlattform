@@ -14,10 +14,7 @@ public sealed class ZohoSyncJobWorker(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var workItem in store.ReadAllAsync(stoppingToken))
-        {
-            await ProcessAsync(workItem, stoppingToken);
-        }
+        await store.ConsumeAsync(ProcessAsync, stoppingToken);
     }
 
     private async Task ProcessAsync(

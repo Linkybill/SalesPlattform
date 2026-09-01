@@ -21,7 +21,8 @@ vom kanonischen Domainmodell getrennt.
 - Manueller Refresh zusätzlich vorsehen.
 - Der manuelle Refresh startet einen Hintergrundjob. Das Frontend wartet nicht
   auf den gesamten CRM-Lauf, sondern beobachtet den persistierten Laufstatus
-  per SignalR und kann ihn über die `RunId` erneut laden.
+  per SignalR und kann ihn über die `RunId` erneut laden. Die Work Items liegen
+  dauerhaft in RabbitMQ, damit ein Rebuild keine queued/running-Aufträge verliert.
 - Beim ersten Sync die vollständige Stage-Historie aus dem CRM abziehen und
   dauerhaft speichern.
 - Speicherung in UTC, Anzeige in lokaler Zeit.

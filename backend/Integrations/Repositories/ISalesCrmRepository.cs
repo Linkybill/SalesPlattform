@@ -18,6 +18,13 @@ public interface ISalesCrmRepository
         bool asNoTracking,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<IntegrationSyncRun>> GetActiveSyncRunsAsync(
+        string providerKey,
+        string connectionKey,
+        bool includeItems,
+        bool asNoTracking,
+        CancellationToken cancellationToken);
+
     Task<IntegrationSyncRunItem> GetOrCreateSyncRunItemAsync(
         IntegrationSyncRun run,
         string module,

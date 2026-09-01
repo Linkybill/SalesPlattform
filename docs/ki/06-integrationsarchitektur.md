@@ -177,13 +177,17 @@ aus Zoho- oder Pipedrive-JSON befüllt.
 Ein manueller oder später periodischer Sync läuft nicht innerhalb der HTTP-
 Anfrage. Die Application-Schicht legt zunächst einen `IntegrationSyncRun` mit
 dem Status `queued` an und stellt eine providerneutrale Work-Item-Referenz in
-die App-Queue. Ein `BackgroundService` verarbeitet den Lauf mit dem jeweils
-registrierten `ICrmAdapter`, `ICrmRecordMapper` und `ISalesCrmRepository`.
+die durable RabbitMQ-Queue `identity-platform.crm-sync.sales-plattform.backend`.
+Ein `BackgroundService` verarbeitet den Lauf mit dem jeweils registrierten
+`ICrmAdapter`, `ICrmRecordMapper` und `ISalesCrmRepository`.
 
 Der Fortschritt wird in `integration_sync_runs`, `integration_sync_run_items`
 und `integration_sync_errors` gespeichert. Ein tenantgesicherter SignalR-Hub
 sendet Snapshots an die zugehörige Frontend-Ansicht. Die Ansicht kann bei einem
-Seitenwechsel über die `RunId` den aktuellen Snapshot erneut laden. Zoho bleibt
+Seitenwechsel über die `RunId` den aktuellen Snapshot erneut laden. Die Route
+`GET /api/integrations/zoho/sync/active` findet den aktiven Auftrag des aktuellen
+Tenant und nimmt einen nach einem Pod-Rebuild unterbrochenen Lauf wieder in die
+durable Queue auf. Zoho bleibt
 dabei auf `ZohoCrmAdapter`, `ZohoCrmRecordMapper` und OAuth/Token-Dienste
 begrenzt; die kanonische Persistenz kennt keine Zoho-Feldnamen.
 

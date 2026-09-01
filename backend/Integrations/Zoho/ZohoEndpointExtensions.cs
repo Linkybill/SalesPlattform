@@ -123,6 +123,27 @@ public static class ZohoEndpointExtensions
             }
         });
 
+        protectedGroup.MapGet("/sync/active", async (
+            ClaimsPrincipal user,
+            TenantAdminAccessService tenantAdminAccess,
+            ZohoSyncService sync,
+            CancellationToken cancellationToken) =>
+        {
+            if (!await tenantAdminAccess.IsCurrentTenantAdminAsync(user, cancellationToken))
+                return Results.Forbid();
+            if (!Guid.TryParse(user.FindFirstValue("tenant_id"), out var tenantId))
+                return Results.BadRequest(new { message = "Der Access Token enthält keine gültige tenant_id." });
+            var requestedBy = user.FindFirstValue("sub");
+            if (string.IsNullOrWhiteSpace(requestedBy))
+                return Results.BadRequest(new { message = "Der angemeldete Benutzer besitzt keine gültige Subject-ID." });
+
+            var snapshot = await sync.GetActiveSnapshotAndRecoverAsync(
+                tenantId,
+                requestedBy,
+                cancellationToken);
+            return snapshot is null ? Results.NoContent() : Results.Ok(snapshot);
+        });
+
         protectedGroup.MapGet("/sync/{runId:guid}", async (
             Guid runId,
             ZohoSyncService sync,

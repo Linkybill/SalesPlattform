@@ -37,8 +37,11 @@ h2 { margin-bottom: 0; font-size: 22px; }
 .integration-card { margin-bottom: 22px; }
 .button-row { display: flex; flex-wrap: wrap; gap: 10px; }
 .integration-meta { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 18px; color: #9aaac0; font-size: 13px; }
-.integration-progress { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 18px; padding: 13px 15px; border: 1px solid #2a5570; border-radius: 9px; color: #b7c9dc; background: #0d2034; font-size: 13px; }
+.integration-progress { display: grid; gap: 10px; margin-top: 18px; padding: 13px 15px; border: 1px solid #2a5570; border-radius: 9px; color: #b7c9dc; background: #0d2034; font-size: 13px; }
 .integration-progress code { color: #b3f0f7; font-size: 12px; }
+.integration-progress-heading, .integration-progress-summary, .integration-progress-module { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+.integration-progress-modules { display: grid; gap: 6px; padding-top: 3px; border-top: 1px solid #23445b; }
+.integration-progress-module { padding-top: 6px; }
 
 @media (max-width: 680px) {
   .sales-page { width: min(100% - 28px, 560px); padding-top: 30px; }

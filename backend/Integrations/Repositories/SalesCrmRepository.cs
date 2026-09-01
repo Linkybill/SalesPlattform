@@ -37,6 +37,24 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         return await query.SingleOrDefaultAsync(item => item.Id == runId, cancellationToken);
     }
 
+    public async Task<IReadOnlyCollection<IntegrationSyncRun>> GetActiveSyncRunsAsync(
+        string providerKey,
+        string connectionKey,
+        bool includeItems,
+        bool asNoTracking,
+        CancellationToken cancellationToken)
+    {
+        IQueryable<IntegrationSyncRun> query = db.IntegrationSyncRuns;
+        if (asNoTracking) query = query.AsNoTracking();
+        if (includeItems) query = query.Include(item => item.Items);
+        return await query
+            .Where(item => item.ProviderKey == providerKey
+                && item.ConnectionKey == connectionKey
+                && (item.Status == "queued" || item.Status == "running"))
+            .OrderBy(item => item.QueuedAt)
+            .ToArrayAsync(cancellationToken);
+    }
+
     public Task<IntegrationSyncRunItem> GetOrCreateSyncRunItemAsync(
         IntegrationSyncRun run,
         string module,

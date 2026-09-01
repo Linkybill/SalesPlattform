@@ -104,6 +104,22 @@ export function ImportPage() {
     }
   }, [activeTenantId, authorizedFetch, canManageImport, user])
 
+  const loadActiveZohoJob = useCallback(async (): Promise<boolean> => {
+    if (!user || !activeTenantId || !canManageImport) return false
+
+    try {
+      const apiResponse = await authorizedFetch('/api/integrations/zoho/sync/active')
+      if (apiResponse.status === 204) return false
+      const payload = await readJson<ZohoSyncJob & ApiErrorPayload>(apiResponse)
+      if (!apiResponse.ok || !payload) return false
+      sessionStorage.setItem(syncJobStorageKey(activeTenantId), payload.runId)
+      applyZohoJob(payload)
+      return true
+    } catch {
+      return false
+    }
+  }, [activeTenantId, applyZohoJob, authorizedFetch, canManageImport, user])
+
   const connectZoho = useCallback(async () => {
     setZohoLoading(true)
     setZohoError(null)
@@ -156,6 +172,10 @@ export function ImportPage() {
         message?: string
       } & ApiErrorPayload>(apiResponse)
       if (!apiResponse.ok) {
+        if (apiResponse.status === 409 && await loadActiveZohoJob()) {
+          setZohoMessage('Es läuft bereits ein Import. Der vorhandene Auftrag wird jetzt überwacht.')
+          return
+        }
         throw new Error(getApiErrorMessage(payload, 'Zoho-Sync antwortete mit HTTP ' + apiResponse.status + '.'))
       }
       if (!payload?.runId || !activeTenantId) throw new Error('Der Zoho-Import lieferte keine gültige RunId.')
@@ -180,12 +200,15 @@ export function ImportPage() {
     } finally {
       setZohoLoading(false)
     }
-  }, [activeTenantId, authorizedFetch])
+  }, [activeTenantId, authorizedFetch, loadActiveZohoJob])
 
   const loadZohoJob = useCallback(async () => {
     if (!user || !activeTenantId || !canManageImport) return
     const runId = sessionStorage.getItem(syncJobStorageKey(activeTenantId))
-    if (!runId) return
+    if (!runId) {
+      await loadActiveZohoJob()
+      return
+    }
 
     try {
       const apiResponse = await authorizedFetch(`/api/integrations/zoho/sync/${runId}`)
@@ -200,7 +223,9 @@ export function ImportPage() {
       // The SignalR connection will report live connectivity errors; a failed
       // status refresh must not hide the rest of the import page.
     }
-  }, [activeTenantId, applyZohoJob, authorizedFetch, canManageImport, user])
+
+    await loadActiveZohoJob()
+  }, [activeTenantId, applyZohoJob, authorizedFetch, canManageImport, loadActiveZohoJob, user])
 
   useEffect(() => {
     if (!user || !activeTenantId || !canManageImport) return
@@ -342,17 +367,37 @@ export function ImportPage() {
           </div>
         )}
 
-        {zohoJob && (zohoJob.status === 'queued' || zohoJob.status === 'running') && (
+        {zohoJob && (
           <div className="integration-progress">
-            <span>
-              Status: <code>{zohoJob.status === 'queued' ? 'WARTESCHLANGE' : 'LÄUFT'}</code>
-            </span>
-            <span>
-              Modul: <code>{zohoJob.currentModule ?? 'wird vorbereitet'}</code>
-            </span>
-            <span>
-              Fortschritt: <code>{zohoJob.recordsWritten} geschrieben / {zohoJob.recordsRead} gelesen</code>
-            </span>
+            <div className="integration-progress-heading">
+              <strong>Importauftrag</strong>
+              <code>{zohoJob.status === 'queued'
+                ? 'WARTESCHLANGE'
+                : zohoJob.status === 'running'
+                  ? 'LÄUFT'
+                  : zohoJob.status.toUpperCase()}</code>
+            </div>
+            <div className="integration-progress-summary">
+              <span>Aktuelles Modul: <code>{zohoJob.currentModule ?? 'wird vorbereitet'}</code></span>
+              <span>Fortschritt: <code>{zohoJob.recordsWritten} geschrieben / {zohoJob.recordsRead} gelesen / {zohoJob.recordsFailed} Fehler</code></span>
+            </div>
+            <div className="integration-progress-modules" aria-live="polite">
+              {zohoJob.modules.map(module => {
+                const item = zohoJob.items.find(candidate => candidate.module === module)
+                return (
+                  <div className="integration-progress-module" key={module}>
+                    <span>{module}</span>
+                    <code>{item?.status === 'succeeded'
+                      ? `${item.recordsWritten} geschrieben`
+                      : item?.status === 'running'
+                        ? `${item.recordsWritten} / ${item.recordsRead}`
+                        : item?.status === 'failed'
+                          ? 'FEHLER'
+                          : 'WARTEND'}</code>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
 

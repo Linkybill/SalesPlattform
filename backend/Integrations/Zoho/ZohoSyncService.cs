@@ -55,13 +55,20 @@ public sealed class ZohoSyncService(
         repository.AddSyncRun(run);
         await repository.SaveChangesAsync(cancellationToken);
 
-        if (!jobStore.TryEnqueue(new ZohoSyncJobWorkItem(run.Id, tenantId, requestedBy)))
+        try
+        {
+            await jobStore.EnqueueAsync(
+                new ZohoSyncJobWorkItem(run.Id, tenantId, requestedBy),
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
             run.Status = "failed";
             run.FinishedAt = DateTimeOffset.UtcNow;
-            run.Error = "Der Importauftrag konnte nicht in die Hintergrundwarteschlange eingestellt werden.";
+            run.Error = "Der Importauftrag konnte nicht in die Hintergrundwarteschlange eingestellt werden: "
+                + exception.Message[..Math.Min(exception.Message.Length, 3500)];
             await repository.SaveChangesAsync(cancellationToken);
-            throw new InvalidOperationException(run.Error);
+            throw new InvalidOperationException(run.Error, exception);
         }
 
         return new ZohoSyncJobStartResult(run.Id, run.Status);
@@ -81,6 +88,68 @@ public sealed class ZohoSyncService(
         return run is null ? null : ZohoSyncJobSnapshotMapper.Map(run);
     }
 
+    public async Task<ZohoSyncJobSnapshot?> GetActiveSnapshotAndRecoverAsync(
+        Guid tenantId,
+        string requestedBy,
+        CancellationToken cancellationToken = default)
+    {
+        await using var session = await dbFactory.OpenAsync(cancellationToken);
+        var repository = repositoryFactory.Create(session.Context);
+        var activeRuns = (await repository.GetActiveSyncRunsAsync(
+            adapter.ProviderKey,
+            "default",
+            includeItems: true,
+            asNoTracking: false,
+            cancellationToken)).ToArray();
+        if (activeRuns.Length == 0)
+            return null;
+
+        // A worker that is already handling a job keeps it scheduled in the
+        // process. Any additional active rows are stale duplicates from a
+        // previous start/rebuild and must not block the durable queue.
+        var run = activeRuns.FirstOrDefault(item => jobStore.IsScheduled(item.Id))
+            ?? activeRuns[0];
+        foreach (var duplicate in activeRuns.Where(item => item.Id != run.Id))
+        {
+            duplicate.Status = "failed";
+            duplicate.FinishedAt = DateTimeOffset.UtcNow;
+            duplicate.CurrentModule = null;
+            duplicate.Error = "Der Lauf wurde beendet, weil bereits ein anderer Zoho-Import aktiv war.";
+            foreach (var item in duplicate.Items.Where(item => item.Status is "queued" or "running"))
+            {
+                item.Status = "failed";
+                item.FinishedAt = duplicate.FinishedAt;
+                item.Error = duplicate.Error;
+            }
+        }
+
+        if (!jobStore.IsScheduled(run.Id))
+        {
+            if (run.Status == "running")
+                ResetInterruptedRun(run);
+
+            await repository.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await jobStore.EnqueueAsync(
+                    new ZohoSyncJobWorkItem(run.Id, tenantId, requestedBy),
+                    cancellationToken);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                run.Status = "failed";
+                run.FinishedAt = DateTimeOffset.UtcNow;
+                run.Error = "Der vorhandene Importauftrag konnte nicht wieder in die Warteschlange eingestellt werden: "
+                    + exception.Message[..Math.Min(exception.Message.Length, 3500)];
+                await repository.SaveChangesAsync(cancellationToken);
+                throw new InvalidOperationException(run.Error, exception);
+            }
+        }
+
+        await repository.SaveChangesAsync(cancellationToken);
+        return ZohoSyncJobSnapshotMapper.Map(run);
+    }
+
     internal async Task RunAsync(
         ZohoSyncJobWorkItem workItem,
         Func<ZohoSyncJobSnapshot, Task> publish,
@@ -98,11 +167,14 @@ public sealed class ZohoSyncService(
             logger.LogWarning("Zoho import job {RunId} was not found in the tenant database.", workItem.RunId);
             return;
         }
-        if (run.Status != "queued")
+        if (run.Status is not ("queued" or "running"))
         {
             logger.LogInformation("Zoho import job {RunId} is already in state {Status}; skipping it.", workItem.RunId, run.Status);
             return;
         }
+
+        if (run.Status == "running")
+            ResetInterruptedRun(run);
 
         run.Status = "running";
         run.StartedAt = DateTimeOffset.UtcNow;
@@ -226,6 +298,31 @@ public sealed class ZohoSyncService(
         if (modules.Length == 0)
             throw new InvalidOperationException("Es wurde kein Zoho-Modul für den Import angegeben.");
         return modules;
+    }
+
+    private static void ResetInterruptedRun(IntegrationSyncRun run)
+    {
+        run.Status = "queued";
+        run.StartedAt = null;
+        run.FinishedAt = null;
+        run.CurrentModule = null;
+        run.RecordsRead = 0;
+        run.RecordsWritten = 0;
+        run.RecordsFailed = 0;
+        run.RetryCount++;
+        run.LeaseUntil = null;
+        run.WorkerId = null;
+        run.Error = null;
+        foreach (var item in run.Items)
+        {
+            item.Status = "queued";
+            item.StartedAt = null;
+            item.FinishedAt = null;
+            item.RecordsRead = 0;
+            item.RecordsWritten = 0;
+            item.RecordsFailed = 0;
+            item.Error = null;
+        }
     }
 
     private async Task<IReadOnlyCollection<string>> ResolveFieldsAsync(
