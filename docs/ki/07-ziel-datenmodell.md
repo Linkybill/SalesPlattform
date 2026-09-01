@@ -129,6 +129,8 @@ integration_sync_run_items
 integration_sync_cursors
 integration_sync_errors
 integration_field_mappings
+integration_pipeline_mappings
+integration_stage_mappings
 integration_writeback_operations
 integration_webhook_events       # später, falls ein Anbieter Webhooks erhält
 ```
@@ -805,6 +807,28 @@ ConfigurationJson, Version, IsActive
 Zoho-Feldnamen bleiben damit im Adapter-/Mapping-Bereich. `TransformationKey`
 verweist auf getestete Normalisierer, nicht auf beliebig ausführbaren Code aus
 der Datenbank.
+
+Pipelines und Stufen erhalten zusätzlich eigene Zuordnungstabellen. Das ist
+wichtig, weil ein CRM unterschiedliche externe IDs, Namen, Reihenfolgen und
+Wahrscheinlichkeiten liefern kann:
+
+```text
+integration_pipeline_mappings
+Id, ProviderKey, ConnectionKey, ExternalPipelineId,
+InternalPipelineId, SourceNameSnapshot, IsActive, LastSeenAt
+
+integration_stage_mappings
+Id, ProviderKey, ConnectionKey, ExternalPipelineId, ExternalStageId,
+InternalPipelineId, InternalStageId, SourceNameSnapshot, SourceProbability,
+IsActive, LastSeenAt
+```
+
+Die Zuordnung ist damit pro Tenant und CRM-Verbindung eindeutig. Ein
+`SalesPipelineStage` ist eine interne, tenant-spezifische Fachstufe und kennt
+keine Zoho-, Pipedrive- oder HubSpot-ID. Der Import löst externe Pipeline- und
+Stufen-IDs über diese Tabellen auf; unbekannte Werte bleiben als Rohdaten
+erhalten und erzeugen einen Datenqualitätsbefund, statt stillschweigend nach
+dem Namen zu matchen.
 
 ## Indizes und Integritätsregeln
 
