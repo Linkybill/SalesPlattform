@@ -23,7 +23,9 @@ denselben Adaptervertrag implementieren.
 Der manuelle Import startet einen tenantbezogenen Hintergrundjob. Das Work Item
 liegt dauerhaft in RabbitMQ; der Backend-Worker schreibt den Laufstatus in die
 Tenant-Datenbank und sendet Fortschritt, Abschluss und Fehler über SignalR an
-die Importseite.
+die Importseite. Die Route `/jobs` zeigt die aktiven und letzten Läufe aktuell
+app-lokal an; die generische Jobansicht soll später in die Identity Platform
+verschoben werden.
 
 ## Voraussetzungen
 

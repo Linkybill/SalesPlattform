@@ -42,6 +42,26 @@ h2 { margin-bottom: 0; font-size: 22px; }
 .integration-progress-heading, .integration-progress-summary, .integration-progress-module { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
 .integration-progress-modules { display: grid; gap: 6px; padding-top: 3px; border-top: 1px solid #23445b; }
 .integration-progress-module { padding-top: 6px; }
+.jobs-card { margin-bottom: 22px; }
+.jobs-layout { display: grid; grid-template-columns: minmax(250px, 0.8fr) minmax(0, 1.6fr); gap: 18px; margin-top: 20px; }
+.jobs-list, .job-detail { display: grid; gap: 8px; align-content: start; }
+.job-list-entry { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border: 1px solid #294766; border-radius: 9px; color: #d9e6f5; background: #0d2034; text-align: left; cursor: pointer; }
+.job-list-entry:hover, .job-list-entry.selected { border-color: #63d9e9; background: #12304a; }
+.job-list-entry span { display: grid; gap: 4px; }
+.job-list-entry small { color: #8fa9c5; }
+.job-list-entry code { color: #b3f0f7; font-size: 11px; white-space: nowrap; }
+.job-detail { padding: 16px; border: 1px solid #294766; border-radius: 9px; background: #0d2034; }
+.job-detail-heading, .job-detail-summary, .job-module { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+.job-detail-heading { align-items: start; }
+.job-detail-heading h3 { margin: 4px 0 0; }
+.job-detail-heading > code { max-width: 260px; overflow-wrap: anywhere; color: #8fa9c5; font-size: 11px; }
+.job-detail-summary { padding: 12px 0; border-bottom: 1px solid #23445b; color: #a8bdd5; }
+.job-detail-summary code, .job-module code { color: #b3f0f7; font-size: 12px; }
+.job-module-list { display: grid; gap: 8px; padding-top: 12px; }
+.job-module { padding: 8px 0; border-bottom: 1px solid #18374e; }
+.jobs-navigation { margin: 18px 0 0; }
+.jobs-navigation a { color: #63d9e9; }
+@media (max-width: 780px) { .jobs-layout { grid-template-columns: 1fr; } }
 
 @media (max-width: 680px) {
   .sales-page { width: min(100% - 28px, 560px); padding-top: 30px; }

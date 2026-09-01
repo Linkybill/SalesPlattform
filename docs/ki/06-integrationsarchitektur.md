@@ -191,6 +191,12 @@ durable Queue auf. Zoho bleibt
 dabei auf `ZohoCrmAdapter`, `ZohoCrmRecordMapper` und OAuth/Token-Dienste
 begrenzt; die kanonische Persistenz kennt keine Zoho-Feldnamen.
 
+Die erste Jobübersicht liegt unter der app-lokalen Route `/jobs` und zeigt
+Zoho-Läufe aus `integration_sync_runs` einschließlich Modulfortschritt. Die
+Ansicht ist absichtlich so geschnitten, dass ihr generisches Jobmodell später
+in die Identity Platform ausgelagert werden kann; die SalesPlattform registriert
+dann nur noch Jobtyp, Statusquelle und Detailansicht.
+
 Der erste Lauf ist ein vollständiger Import. Danach laufen inkrementelle
 Synchronisationen anhand des Änderungsstands des jeweiligen Anbieters. Jeder
 Lauf muss wiederholbar sein: derselbe Datensatz darf bei einem Retry keine

@@ -150,6 +150,21 @@ public sealed class ZohoSyncService(
         return ZohoSyncJobSnapshotMapper.Map(run);
     }
 
+    public async Task<IReadOnlyCollection<ZohoSyncJobSnapshot>> GetRecentSnapshotsAsync(
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        await using var session = await dbFactory.OpenReadOnlyAsync(cancellationToken);
+        var repository = repositoryFactory.Create(session.Context);
+        var runs = await repository.GetRecentSyncRunsAsync(
+            adapter.ProviderKey,
+            "default",
+            Math.Clamp(limit, 1, 100),
+            includeItems: true,
+            cancellationToken);
+        return runs.Select(ZohoSyncJobSnapshotMapper.Map).ToArray();
+    }
+
     internal async Task RunAsync(
         ZohoSyncJobWorkItem workItem,
         Func<ZohoSyncJobSnapshot, Task> publish,

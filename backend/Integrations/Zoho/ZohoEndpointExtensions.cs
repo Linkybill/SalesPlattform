@@ -144,6 +144,21 @@ public static class ZohoEndpointExtensions
             return snapshot is null ? Results.NoContent() : Results.Ok(snapshot);
         });
 
+        protectedGroup.MapGet("/sync/runs", async (
+            int? limit,
+            ClaimsPrincipal user,
+            TenantAdminAccessService tenantAdminAccess,
+            ZohoSyncService sync,
+            CancellationToken cancellationToken) =>
+        {
+            if (!await tenantAdminAccess.IsCurrentTenantAdminAsync(user, cancellationToken))
+                return Results.Forbid();
+
+            return Results.Ok(await sync.GetRecentSnapshotsAsync(
+                limit ?? 50,
+                cancellationToken));
+        });
+
         protectedGroup.MapGet("/sync/{runId:guid}", async (
             Guid runId,
             ZohoSyncService sync,

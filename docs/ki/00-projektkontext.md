@@ -30,6 +30,8 @@ Stand: 2026-08-30.
   verarbeitet. Fortschritt, Abschluss und Fehler werden über einen
   tenantgesicherten SignalR-Hub an das Frontend gemeldet; die `RunId` erlaubt
   die Statuswiederaufnahme nach einem Seitenwechsel.
+- Die app-lokale Route `/jobs` zeigt die letzten und laufenden Importjobs. Eine
+  generische Jobansicht ist als spätere Plattform-Komponente vorgesehen.
 - Die allgemeine CRM-Integration wird über die Application Settings der
   Identity Platform je App/Mandant ausgewählt. Zoho ist aktuell der erste
   auswählbare Provider; seine Client-ID, sein Datacenter und sein Client-Secret
