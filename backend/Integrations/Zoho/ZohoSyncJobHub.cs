@@ -14,7 +14,10 @@ public sealed class ZohoSyncJobHub(ZohoSyncService syncService) : Hub
         if (!tenant.IsValid || tenant.TenantId is null)
             throw new HubException("Der Tenant-Kontext ist ungültig.");
 
-        var snapshot = await syncService.GetSnapshotAsync(runId, Context.ConnectionAborted);
+        var snapshot = await syncService.GetSnapshotAsync(
+            runId,
+            tenant.TenantId.Value,
+            Context.ConnectionAborted);
         if (snapshot is null)
             throw new HubException("Der Importauftrag wurde nicht gefunden.");
 

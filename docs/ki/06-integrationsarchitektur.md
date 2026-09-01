@@ -180,6 +180,9 @@ dem Status `queued` an und stellt eine providerneutrale Work-Item-Referenz in
 die durable RabbitMQ-Queue `identity-platform.crm-sync.sales-plattform.backend`.
 Ein `BackgroundService` verarbeitet den Lauf mit dem jeweils registrierten
 `ICrmAdapter`, `ICrmRecordMapper` und `ISalesCrmRepository`.
+Der Worker liest die tenantbezogene CRM-Konfiguration ohne Benutzer-Bearer
+aus der verschlüsselten App-Datenbank; ein Zugriffstoken wird nie in das
+RabbitMQ-Work Item aufgenommen.
 
 Der Fortschritt wird in `integration_sync_runs`, `integration_sync_run_items`
 und `integration_sync_errors` gespeichert. Ein tenantgesicherter SignalR-Hub

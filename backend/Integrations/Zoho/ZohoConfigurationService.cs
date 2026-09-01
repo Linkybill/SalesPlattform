@@ -23,6 +23,7 @@ public sealed record ZohoTenantConfiguration(
 /// </summary>
 public sealed class ZohoConfigurationService(
         ApplicationSettingsResolver resolver,
+        IApplicationSettingsStore localSettings,
         IOptions<ApplicationSettingsOptions> settingsOptions,
         IOptions<ZohoOptions> zohoOptions,
         ZohoLegacySecretMigrationService legacySecretMigration,
@@ -33,9 +34,52 @@ public sealed class ZohoConfigurationService(
     public Task<ZohoTenantConfiguration> ResolveCurrentAsync(
         CancellationToken cancellationToken = default)
     {
-        var user = httpContextAccessor.HttpContext?.User
+        var httpContext = httpContextAccessor.HttpContext;
+        var user = httpContext?.User
             ?? throw new InvalidOperationException("Für die Zoho-Konfiguration ist ein angemeldeter Benutzer erforderlich.");
+        if (string.IsNullOrWhiteSpace(httpContext.Request.Headers.Authorization.FirstOrDefault())
+            && Guid.TryParse(user.FindFirstValue("tenant_id"), out var tenantId)
+            && !string.IsNullOrWhiteSpace(user.FindFirstValue("sub")))
+        {
+            return ResolveBackgroundAsync(tenantId, user.FindFirstValue("sub")!, cancellationToken);
+        }
+
         return ResolveAsync(user, cancellationToken);
+    }
+
+    private async Task<ZohoTenantConfiguration> ResolveBackgroundAsync(
+        Guid tenantId,
+        string userId,
+        CancellationToken cancellationToken)
+    {
+        var context = new ApplicationSettingsContext(
+            settingsOptions.Value.ApplicationKey,
+            tenantId,
+            Guid.Empty,
+            userId);
+        var local = await localSettings.LoadAsync(context, cancellationToken);
+        var selectedIntegration = ReadString(local, "crm.integration") ?? "none";
+        if (!string.Equals(selectedIntegration, CrmProviders.Zoho, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Zoho CRM ist für diesen Mandanten nicht als CRM-Integration ausgewählt.");
+
+        var clientId = ReadRequiredString(local, "zoho.clientId");
+        var clientSecret = await legacySecretMigration.GetOrMigrateClientSecretAsync(
+            context,
+            userId,
+            cancellationToken)
+            ?? throw new InvalidOperationException("Die Einstellung 'zoho.clientSecret' ist für diesen Mandanten nicht konfiguriert.");
+        var dataCenter = ReadString(local, "zoho.datacenter") ?? "eu";
+        var (accountsUrl, apiUrl) = ResolveDataCenter(dataCenter);
+        options.ValidateForOAuth();
+        return new ZohoTenantConfiguration(
+            clientId,
+            clientSecret,
+            accountsUrl,
+            apiUrl,
+            options.RedirectUri,
+            options.FrontendCallbackUrl,
+            options.GetScopes(),
+            options.OAuthStateLifetimeMinutes);
     }
 
     public async Task<ZohoTenantConfiguration> ResolveAsync(
@@ -94,6 +138,25 @@ public sealed class ZohoConfigurationService(
             ?.EffectiveValue?.GetString() is { Length: > 0 } value
                 ? value
                 : null;
+
+    private static string ReadRequiredString(
+        IReadOnlyCollection<ApplicationSettingValueRecord> settings,
+        string key)
+        => ReadString(settings, key)
+            ?? throw new InvalidOperationException($"Die Einstellung '{key}' ist für diesen Mandanten nicht konfiguriert.");
+
+    private static string? ReadString(
+        IReadOnlyCollection<ApplicationSettingValueRecord> settings,
+        string key)
+    {
+        var setting = settings.FirstOrDefault(item =>
+            string.Equals(item.Key, key, StringComparison.OrdinalIgnoreCase));
+        return setting is not null
+            && setting.Value.ValueKind == System.Text.Json.JsonValueKind.String
+            && setting.Value.GetString() is { Length: > 0 } value
+                ? value
+                : null;
+    }
 
     private static (string AccountsUrl, string ApiUrl) ResolveDataCenter(string value)
         => value.Trim().ToLowerInvariant() switch
