@@ -62,6 +62,17 @@ keine stillschweigend getroffenen Anforderungen:
 - Zielarten, Genehmigung und Historisierung von Zieländerungen;
 - Aufbewahrung und Archivierung von CRM-Historie, Snapshots und Auditdaten.
 
+## Datenmodellstatus
+
+- Das vollständige CRM-neutrale Zieldatenmodell ist in
+  [`07-ziel-datenmodell.md`](./07-ziel-datenmodell.md) geplant.
+- Die bestehenden `Sales*`-Tabellen und die
+  `AddCrmIntegrationFoundation`-Migration sind nur die technische Grundlage;
+  sie sind noch nicht das vollständige fachliche Zielmodell.
+- Ein produktiver Vollimport startet erst nach Bestätigung der dort genannten
+  Zoho-Mappings, Pipelines, Rollen, Arbeitszeit-/Geschäftsjahres- und
+  Aufbewahrungsentscheidungen.
+
 ## Implementierungsstatus
 
 | Bereich | Status |
@@ -74,6 +85,7 @@ keine stillschweigend getroffenen Anforderungen:
 | Pflichtenheft und KI-Kontext | vorhanden |
 | Zoho-Authentifizierung, Adapter und erster Import | vorhanden |
 | Eigene Sales-Domänenmodelle und Regelengine | Datenmodell-Grundlage vorhanden; Regelengine offen |
+| Vollständiges Zieldatenmodell vor dem Vollimport | geplant in `07-ziel-datenmodell.md`; EF-Entitäten/Migration offen |
 | Fachansichten und KPI-Cockpit | offen / nicht implementiert |
 | Fachliche Rollenmatrix | offen |
 

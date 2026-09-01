@@ -84,7 +84,9 @@ Identitätszuordnung mindestens:
 Die fachlichen Tabellen dürfen keine Zoho-spezifischen Feldnamen oder DTOs als
 Voraussetzung haben. Anbieter-spezifische Rohdaten und Sync-Zustände gehören in
 den Integrationsbereich. Die vollständige Zielstruktur ist in
-[`06-integrationsarchitektur.md`](./06-integrationsarchitektur.md) beschrieben.
+[`06-integrationsarchitektur.md`](./06-integrationsarchitektur.md) beschrieben;
+die konkrete Entitäten-, Tabellen- und Constraint-Planung steht in
+[`07-ziel-datenmodell.md`](./07-ziel-datenmodell.md).
 
 ## Rückschreiben
 

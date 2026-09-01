@@ -13,6 +13,7 @@ geben, ersetzen aber nicht die Fachquelle unter `docs/pflichtenheft/`.
 | [`04-rollen-ansichten-und-berechtigungen.md`](./04-rollen-ansichten-und-berechtigungen.md) | Sichtbarkeit, Freigaben und Schreibgrenzen |
 | [`05-offene-punkte-und-entscheidungen.md`](./05-offene-punkte-und-entscheidungen.md) | Offene Fragen, technische Folgeentscheidungen und Implementierungsstatus |
 | [`06-integrationsarchitektur.md`](./06-integrationsarchitektur.md) | Anbieter-neutrales Domainmodell und CRM-Adapter |
+| [`07-ziel-datenmodell.md`](./07-ziel-datenmodell.md) | Vollständige Tabellen-, Entitäten- und Importplanung vor dem ersten Vollimport |
 
 ## Pflegeprinzip
 
