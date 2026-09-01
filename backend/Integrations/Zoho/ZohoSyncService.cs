@@ -74,8 +74,11 @@ public sealed class ZohoSyncService(
         {
             Id = Guid.NewGuid(),
             ProviderKey = CrmProviders.Zoho,
+            ConnectionKey = "default",
             Mode = "full",
             Status = "running",
+            RequestedModulesJson = JsonSerializer.Serialize(modules),
+            QueuedAt = DateTimeOffset.UtcNow,
             StartedAt = DateTimeOffset.UtcNow
         };
         db.IntegrationSyncRuns.Add(run);
@@ -187,21 +190,25 @@ public sealed class ZohoSyncService(
         if (raw is null)
         {
             raw = new IntegrationRawRecord
-            {
-                Id = Guid.NewGuid(),
-                ProviderKey = CrmProviders.Zoho,
-                EntityType = entityType,
-                ExternalId = record.ExternalId,
-                PayloadJson = record.Payload.GetRawText(),
-                ExternalModifiedAt = record.ModifiedAt,
-                SyncedAt = DateTimeOffset.UtcNow
-            };
+                {
+                    Id = Guid.NewGuid(),
+                    ProviderKey = CrmProviders.Zoho,
+                    ConnectionKey = "default",
+                    EntityType = entityType,
+                    ExternalId = record.ExternalId,
+                    PayloadJson = record.Payload.GetRawText(),
+                    ExternalModifiedAt = record.ModifiedAt,
+                    FirstSeenAt = DateTimeOffset.UtcNow,
+                    LastSeenAt = DateTimeOffset.UtcNow,
+                    SyncedAt = DateTimeOffset.UtcNow
+                };
             db.IntegrationRawRecords.Add(raw);
         }
         else
         {
             raw.PayloadJson = record.Payload.GetRawText();
             raw.ExternalModifiedAt = record.ModifiedAt;
+            raw.LastSeenAt = DateTimeOffset.UtcNow;
             raw.SyncedAt = DateTimeOffset.UtcNow;
         }
 
@@ -241,6 +248,7 @@ public sealed class ZohoSyncService(
             {
                 Id = Guid.NewGuid(),
                 ProviderKey = CrmProviders.Zoho,
+                ConnectionKey = "default",
                 EntityType = CrmEntityTypes.Customer,
                 ExternalId = record.ExternalId,
                 InternalEntityType = CrmEntityTypes.Customer,
@@ -260,9 +268,8 @@ public sealed class ZohoSyncService(
         customer.Industry = ZohoFieldReader.String(record.Payload, "Industry");
         customer.PostalCode = ZohoFieldReader.String(record.Payload, "Billing_Code", "Zip", "Postal_Code");
         customer.City = ZohoFieldReader.String(record.Payload, "Billing_City", "City");
-        customer.Country = ZohoFieldReader.String(record.Payload, "Billing_Country", "Country");
-        customer.OwnerExternalId = ZohoFieldReader.LookupId(record.Payload, "Owner");
-        customer.Status = ZohoFieldReader.String(record.Payload, "Account_Status", "Status");
+        customer.CountryCode = ZohoFieldReader.String(record.Payload, "Billing_Country", "Country");
+        customer.Status = ZohoFieldReader.String(record.Payload, "Account_Status", "Status") ?? customer.Status;
         customer.SourceCreatedAt = ZohoFieldReader.DateTimeOffset(record.Payload, "Created_Time", "CreatedTime");
         customer.SourceModifiedAt = record.ModifiedAt;
         link.LastSeenAt = DateTimeOffset.UtcNow;
@@ -287,6 +294,7 @@ public sealed class ZohoSyncService(
             {
                 Id = Guid.NewGuid(),
                 ProviderKey = CrmProviders.Zoho,
+                ConnectionKey = "default",
                 EntityType = CrmEntityTypes.Deal,
                 ExternalId = record.ExternalId,
                 InternalEntityType = CrmEntityTypes.Deal,
@@ -309,15 +317,14 @@ public sealed class ZohoSyncService(
         deal.Name = ZohoFieldReader.String(record.Payload, "Deal_Name", "Name") ?? deal.Name;
         deal.Amount = ZohoFieldReader.Decimal(record.Payload, "Amount");
         deal.Currency = ZohoFieldReader.String(record.Payload, "Currency", "Currency_Code");
-        deal.PipelineKey = ZohoFieldReader.String(record.Payload, "Pipeline");
-        deal.StageKey = ZohoFieldReader.String(record.Payload, "Stage");
-        deal.ProductName = ZohoFieldReader.String(record.Payload, "Product_Name", "Product", "Produkt");
+        deal.NeedsReview = ZohoFieldReader.String(record.Payload, "Pipeline") is not null
+            || ZohoFieldReader.String(record.Payload, "Stage") is not null
+            || ZohoFieldReader.String(record.Payload, "Product_Name", "Product", "Produkt") is not null;
         deal.DurationMonths = ZohoFieldReader.Decimal(record.Payload, "Contract_Term", "Duration_Months", "Laufzeit");
         deal.ContractEndAt = ZohoFieldReader.Date(record.Payload, "Contract_End_Date", "Vertragsende");
         deal.ClosingAt = ZohoFieldReader.Date(record.Payload, "Closing_Date", "closing_date");
-        deal.Status = ZohoFieldReader.String(record.Payload, "Stage", "Status");
+        deal.Status = ZohoFieldReader.String(record.Payload, "Stage", "Status") ?? deal.Status;
         deal.LossReason = ZohoFieldReader.String(record.Payload, "Reason_for_Loss__s", "Loss_Reason", "verlustgrund");
-        deal.OwnerExternalId = ZohoFieldReader.LookupId(record.Payload, "Owner");
         deal.LastActivityAt = ZohoFieldReader.DateTimeOffset(record.Payload, "Last_Activity_Time");
         deal.SourceCreatedAt = ZohoFieldReader.DateTimeOffset(record.Payload, "Created_Time", "CreatedTime");
         deal.SourceModifiedAt = record.ModifiedAt;
@@ -344,6 +351,7 @@ public sealed class ZohoSyncService(
             {
                 Id = Guid.NewGuid(),
                 ProviderKey = CrmProviders.Zoho,
+                ConnectionKey = "default",
                 EntityType = CrmEntityTypes.Lead,
                 ExternalId = record.ExternalId,
                 InternalEntityType = CrmEntityTypes.Lead,
@@ -363,15 +371,14 @@ public sealed class ZohoSyncService(
         lead.CompanyName = ZohoFieldReader.String(record.Payload, "Company");
         lead.Email = ZohoFieldReader.String(record.Payload, "Email");
         lead.Phone = ZohoFieldReader.String(record.Payload, "Phone");
-        lead.Status = ZohoFieldReader.String(record.Payload, "Lead_Status", "Status");
+        lead.Status = ZohoFieldReader.String(record.Payload, "Lead_Status", "Status") ?? lead.Status;
         lead.Source = ZohoFieldReader.String(record.Payload, "Lead_Source", "LeadSource");
         lead.LastContactAt = ZohoFieldReader.DateTimeOffset(
             record.Payload,
             "Last_Call",
             "Last_Activity_Time",
             "Last_Contact");
-        lead.CallAttempts = ZohoFieldReader.Int32(record.Payload, "Call_Attempts", "anrufversuche") ?? lead.CallAttempts;
-        lead.OwnerExternalId = ZohoFieldReader.LookupId(record.Payload, "Owner");
+        lead.TotalCallAttempts = ZohoFieldReader.Int32(record.Payload, "Call_Attempts", "anrufversuche") ?? lead.TotalCallAttempts;
         lead.SourceCreatedAt = ZohoFieldReader.DateTimeOffset(record.Payload, "Created_Time", "CreatedTime");
         lead.SourceModifiedAt = record.ModifiedAt;
         link.LastSeenAt = DateTimeOffset.UtcNow;

@@ -65,10 +65,12 @@ keine stillschweigend getroffenen Anforderungen:
 ## Datenmodellstatus
 
 - Das vollständige CRM-neutrale Zieldatenmodell ist in
-  [`07-ziel-datenmodell.md`](./07-ziel-datenmodell.md) geplant.
+  [`07-ziel-datenmodell.md`](./07-ziel-datenmodell.md) beschrieben und als
+  EF-Modell umgesetzt.
 - Die bestehenden `Sales*`-Tabellen und die
-  `AddCrmIntegrationFoundation`-Migration sind nur die technische Grundlage;
-  sie sind noch nicht das vollständige fachliche Zielmodell.
+  `AddCrmIntegrationFoundation`-Migration bleiben als technische Grundlage;
+  die additive Migration `CompleteSalesDomainModel` erweitert sie um das
+  vollständige fachliche Zielmodell.
 - Ein produktiver Vollimport startet erst nach Bestätigung der dort genannten
   Zoho-Mappings, Pipelines, Rollen, Arbeitszeit-/Geschäftsjahres- und
   Aufbewahrungsentscheidungen.
@@ -84,8 +86,8 @@ keine stillschweigend getroffenen Anforderungen:
 | Native Windows-Rebuilds | vorhanden |
 | Pflichtenheft und KI-Kontext | vorhanden |
 | Zoho-Authentifizierung, Adapter und erster Import | vorhanden |
-| Eigene Sales-Domänenmodelle und Regelengine | Datenmodell-Grundlage vorhanden; Regelengine offen |
-| Vollständiges Zieldatenmodell vor dem Vollimport | geplant in `07-ziel-datenmodell.md`; EF-Entitäten/Migration offen |
+| Eigene Sales-Domänenmodelle und Regelengine | EF-Datenmodell vorhanden; Regelengine offen |
+| Vollständiges Zieldatenmodell vor dem Vollimport | EF-Entitäten und additive Migration umgesetzt; fachliche Mappings und Import-Worker offen |
 | Fachansichten und KPI-Cockpit | offen / nicht implementiert |
 | Fachliche Rollenmatrix | offen |
 
