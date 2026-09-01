@@ -85,9 +85,9 @@ keine stillschweigend getroffenen Anforderungen:
 | App-Manifest und `sales-user`-Rolle | vorhanden |
 | Native Windows-Rebuilds | vorhanden |
 | Pflichtenheft und KI-Kontext | vorhanden |
-| Zoho-Authentifizierung, Adapter und erster Import | vorhanden |
+| Zoho-Authentifizierung, Adapter und Hintergrundimport für Accounts/Deals/Leads | vorhanden |
 | Eigene Sales-Domänenmodelle und Regelengine | EF-Datenmodell vorhanden; Regelengine offen |
-| Vollständiges Zieldatenmodell vor dem Vollimport | EF-Entitäten und additive Migration umgesetzt; fachliche Mappings und Import-Worker offen |
+| Vollständiges Zieldatenmodell vor dem Vollimport | EF-Entitäten und additive Migration umgesetzt; Mappings für weitere Module und Anbieter offen |
 | Fachansichten und KPI-Cockpit | offen / nicht implementiert |
 | Fachliche Rollenmatrix | offen |
 

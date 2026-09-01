@@ -25,6 +25,11 @@ Stand: 2026-08-30.
   von Accounts, Deals und Leads sind umgesetzt. Die Identity Platform stellt
   dafür nur eine provider-neutrale Credential-Ablage bereit und enthält keine
   Zoho-Fachlogik.
+- Der manuelle Zoho-Import wird als persistierter `IntegrationSyncRun` gestartet
+  und im App-Container durch einen `BackgroundService` verarbeitet. Fortschritt,
+  Abschluss und Fehler werden über einen tenantgesicherten SignalR-Hub an das
+  Frontend gemeldet; die `RunId` erlaubt die Statuswiederaufnahme nach einem
+  Seitenwechsel.
 - Die allgemeine CRM-Integration wird über die Application Settings der
   Identity Platform je App/Mandant ausgewählt. Zoho ist aktuell der erste
   auswählbare Provider; seine Client-ID, sein Datacenter und sein Client-Secret

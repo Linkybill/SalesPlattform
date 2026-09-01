@@ -1,0 +1,52 @@
+using SalesPlattform.Backend.Data;
+using SalesPlattform.Backend.Integrations.Abstractions;
+
+namespace SalesPlattform.Backend.Integrations.Repositories;
+
+public interface ISalesCrmRepository
+{
+    Task<bool> HasActiveSyncRunAsync(
+        string providerKey,
+        string connectionKey,
+        CancellationToken cancellationToken);
+
+    void AddSyncRun(IntegrationSyncRun run);
+
+    Task<IntegrationSyncRun?> GetSyncRunAsync(
+        Guid runId,
+        bool includeItems,
+        bool asNoTracking,
+        CancellationToken cancellationToken);
+
+    Task<IntegrationSyncRunItem> GetOrCreateSyncRunItemAsync(
+        IntegrationSyncRun run,
+        string module,
+        CancellationToken cancellationToken);
+
+    Task UpsertAsync(
+        CrmCanonicalRecord record,
+        Guid syncRunId,
+        CancellationToken cancellationToken);
+
+    Task<IntegrationSyncCursor> GetOrCreateCursorAsync(
+        string providerKey,
+        string connectionKey,
+        string entityType,
+        CancellationToken cancellationToken);
+
+    void AddSyncError(
+        Guid syncRunId,
+        Guid syncRunItemId,
+        string module,
+        string? externalId,
+        Exception exception);
+
+    void DetachRecordChanges();
+
+    Task SaveChangesAsync(CancellationToken cancellationToken);
+}
+
+public interface ISalesCrmRepositoryFactory
+{
+    ISalesCrmRepository Create(SalesPlattformDbContext db);
+}

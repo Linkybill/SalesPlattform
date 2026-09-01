@@ -20,6 +20,10 @@ erste Import von Accounts, Deals und Leads wird im kanonischen
 SalesPlattform-Modell abgelegt. Weitere Provider wie Pipedrive können später
 denselben Adaptervertrag implementieren.
 
+Der manuelle Import startet einen tenantbezogenen Hintergrundjob. Der Backend-
+Worker schreibt den Laufstatus in die Tenant-Datenbank und sendet Fortschritt,
+Abschluss und Fehler über SignalR an die Importseite.
+
 ## Voraussetzungen
 
 Für die lokale Entwicklung liegt das Identity-Platform-Repository neben

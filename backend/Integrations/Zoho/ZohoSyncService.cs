@@ -3,50 +3,218 @@ using IdentityPlatform.Shared.Database;
 using Microsoft.EntityFrameworkCore;
 using SalesPlattform.Backend.Data;
 using SalesPlattform.Backend.Integrations.Abstractions;
+using SalesPlattform.Backend.Integrations.Repositories;
 
 namespace SalesPlattform.Backend.Integrations.Zoho;
 
-public sealed record ZohoSyncResult(
-    Guid RunId,
-    string Status,
-    int RecordsRead,
-    int RecordsWritten,
-    int RecordsFailed,
-    IReadOnlyCollection<string> Modules);
+public sealed class ZohoSyncAlreadyRunningException : InvalidOperationException
+{
+    public ZohoSyncAlreadyRunningException()
+        : base("Für diesen Mandanten läuft bereits ein Zoho-Import.")
+    {
+    }
+}
 
 public sealed class ZohoSyncService(
     PlatformTenantDbContextFactory<SalesPlattformDbContext> dbFactory,
     ICrmAdapter adapter,
+    ICrmRecordMapper recordMapper,
+    ISalesCrmRepositoryFactory repositoryFactory,
     ZohoConnectionStore connectionStore,
+    ZohoSyncJobStore jobStore,
     ILogger<ZohoSyncService> logger)
 {
-    private static readonly IReadOnlyDictionary<string, string[]> PreferredFields =
-        new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["Accounts"] =
-            [
-                "id", "Account_Name", "Name", "Industry", "Billing_Code", "Billing_City",
-                "Billing_Country", "Billing_State", "Billing_Street", "Owner",
-                "Account_Status", "Created_Time", "Modified_Time"
-            ],
-            ["Deals"] =
-            [
-                "id", "Deal_Name", "Account_Name", "Amount", "Currency", "Stage",
-                "Pipeline", "Product_Name", "Product", "Contract_Term",
-                "Contract_End_Date", "Closing_Date", "Owner", "Reason_for_Loss__s",
-                "Last_Activity_Time", "Created_Time", "Modified_Time"
-            ],
-            ["Leads"] =
-            [
-                "id", "Full_Name", "Last_Name", "Company", "Email", "Phone",
-                "Lead_Status", "Lead_Source", "Last_Activity_Time", "Last_Call",
-                "Call_Attempts", "Owner", "Created_Time", "Modified_Time"
-            ]
-        };
-
-    public async Task<ZohoSyncResult> SyncAsync(
+    public async Task<ZohoSyncJobStartResult> StartAsync(
         IReadOnlyCollection<string>? requestedModules,
+        Guid tenantId,
+        string requestedBy,
         CancellationToken cancellationToken = default)
+    {
+        await using var session = await dbFactory.OpenAsync(cancellationToken);
+        var repository = repositoryFactory.Create(session.Context);
+        var modules = NormalizeModules(requestedModules);
+        if (await repository.HasActiveSyncRunAsync(
+                adapter.ProviderKey,
+                "default",
+                cancellationToken))
+        {
+            throw new ZohoSyncAlreadyRunningException();
+        }
+
+        var run = new IntegrationSyncRun
+        {
+            Id = Guid.NewGuid(),
+            ProviderKey = adapter.ProviderKey,
+            ConnectionKey = "default",
+            Mode = "full",
+            Status = "queued",
+            RequestedModulesJson = JsonSerializer.Serialize(modules),
+            QueuedAt = DateTimeOffset.UtcNow,
+            RequestedBy = requestedBy
+        };
+        repository.AddSyncRun(run);
+        await repository.SaveChangesAsync(cancellationToken);
+
+        if (!jobStore.TryEnqueue(new ZohoSyncJobWorkItem(run.Id, tenantId, requestedBy)))
+        {
+            run.Status = "failed";
+            run.FinishedAt = DateTimeOffset.UtcNow;
+            run.Error = "Der Importauftrag konnte nicht in die Hintergrundwarteschlange eingestellt werden.";
+            await repository.SaveChangesAsync(cancellationToken);
+            throw new InvalidOperationException(run.Error);
+        }
+
+        return new ZohoSyncJobStartResult(run.Id, run.Status);
+    }
+
+    public async Task<ZohoSyncJobSnapshot?> GetSnapshotAsync(
+        Guid runId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var session = await dbFactory.OpenReadOnlyAsync(cancellationToken);
+        var repository = repositoryFactory.Create(session.Context);
+        var run = await repository.GetSyncRunAsync(
+            runId,
+            includeItems: true,
+            asNoTracking: true,
+            cancellationToken);
+        return run is null ? null : ZohoSyncJobSnapshotMapper.Map(run);
+    }
+
+    internal async Task RunAsync(
+        ZohoSyncJobWorkItem workItem,
+        Func<ZohoSyncJobSnapshot, Task> publish,
+        CancellationToken cancellationToken = default)
+    {
+        await using var session = await dbFactory.OpenAsync(cancellationToken);
+        var repository = repositoryFactory.Create(session.Context);
+        var run = await repository.GetSyncRunAsync(
+            workItem.RunId,
+            includeItems: true,
+            asNoTracking: false,
+            cancellationToken);
+        if (run is null)
+        {
+            logger.LogWarning("Zoho import job {RunId} was not found in the tenant database.", workItem.RunId);
+            return;
+        }
+        if (run.Status != "queued")
+        {
+            logger.LogInformation("Zoho import job {RunId} is already in state {Status}; skipping it.", workItem.RunId, run.Status);
+            return;
+        }
+
+        run.Status = "running";
+        run.StartedAt = DateTimeOffset.UtcNow;
+        run.WorkerId = Environment.MachineName;
+        await repository.SaveChangesAsync(cancellationToken);
+        await NotifyAsync(publish, run);
+
+        try
+        {
+            var modules = NormalizeModules(JsonSerializer.Deserialize<string[]>(run.RequestedModulesJson));
+            var availableModules = await adapter.GetModulesAsync(cancellationToken);
+            var unavailable = modules
+                .Where(module => !availableModules.Contains(module, StringComparer.OrdinalIgnoreCase))
+                .ToArray();
+            if (unavailable.Length > 0)
+            {
+                throw new InvalidOperationException(
+                    $"Diese Zoho-Module sind nicht verfügbar: {string.Join(", ", unavailable)}.");
+            }
+
+            foreach (var module in modules)
+            {
+                run.CurrentModule = module;
+                var runItem = await repository.GetOrCreateSyncRunItemAsync(run, module, cancellationToken);
+                runItem.Status = "running";
+                runItem.StartedAt ??= DateTimeOffset.UtcNow;
+                await repository.SaveChangesAsync(cancellationToken);
+                await NotifyAsync(publish, run);
+
+                var fields = await ResolveFieldsAsync(module, cancellationToken);
+                var records = (await adapter.GetRecordsAsync(module, fields, cancellationToken)).ToArray();
+                run.RecordsRead += records.Length;
+                runItem.RecordsRead = records.Length;
+                await repository.SaveChangesAsync(cancellationToken);
+                await NotifyAsync(publish, run);
+
+                for (var index = 0; index < records.Length; index++)
+                {
+                    var record = records[index];
+                    try
+                    {
+                        var canonical = recordMapper.Map(record);
+                        await repository.UpsertAsync(canonical, run.Id, cancellationToken);
+                        await repository.SaveChangesAsync(cancellationToken);
+                        run.RecordsWritten++;
+                        runItem.RecordsWritten++;
+                    }
+                    catch (Exception exception) when (exception is not OperationCanceledException)
+                    {
+                        repository.DetachRecordChanges();
+                        run.RecordsFailed++;
+                        runItem.RecordsFailed++;
+                        repository.AddSyncError(run.Id, runItem.Id, module, record.ExternalId, exception);
+                        logger.LogError(
+                            exception,
+                            "Zoho record {Module}/{ExternalId} could not be imported.",
+                            record.Module,
+                            record.ExternalId);
+                        await repository.SaveChangesAsync(cancellationToken);
+                    }
+
+                    if ((index + 1) % 10 == 0 || index == records.Length - 1)
+                        await NotifyAsync(publish, run);
+                }
+
+                var cursor = await repository.GetOrCreateCursorAsync(
+                    adapter.ProviderKey,
+                    "default",
+                    recordMapper.GetEntityType(module),
+                    cancellationToken);
+                cursor.LastModifiedAt = records
+                    .Where(record => record.ModifiedAt.HasValue)
+                    .Select(record => record.ModifiedAt)
+                    .Max();
+                cursor.LastExternalId = records.LastOrDefault()?.ExternalId;
+                cursor.UpdatedAt = DateTimeOffset.UtcNow;
+                runItem.Status = runItem.RecordsFailed == 0 ? "succeeded" : "completed_with_errors";
+                runItem.FinishedAt = DateTimeOffset.UtcNow;
+                await repository.SaveChangesAsync(cancellationToken);
+                await NotifyAsync(publish, run);
+            }
+
+            run.Status = run.RecordsFailed == 0 ? "succeeded" : "completed_with_errors";
+            run.CurrentModule = null;
+            run.FinishedAt = DateTimeOffset.UtcNow;
+            run.Error = run.RecordsFailed == 0
+                ? null
+                : $"{run.RecordsFailed} Datensätze konnten nicht importiert werden.";
+            await repository.SaveChangesAsync(cancellationToken);
+            await connectionStore.MarkSyncAsync(cancellationToken);
+            await NotifyAsync(publish, run);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            run.Status = "failed";
+            run.CurrentModule = null;
+            run.FinishedAt = DateTimeOffset.UtcNow;
+            run.Error = exception.Message[..Math.Min(exception.Message.Length, 4000)];
+            var currentItem = run.Items.SingleOrDefault(item => item.Status == "running");
+            if (currentItem is not null)
+            {
+                currentItem.Status = "failed";
+                currentItem.FinishedAt = DateTimeOffset.UtcNow;
+                currentItem.Error = run.Error;
+            }
+            await repository.SaveChangesAsync(cancellationToken);
+            await NotifyAsync(publish, run);
+            throw;
+        }
+    }
+
+    public static string[] NormalizeModules(IReadOnlyCollection<string>? requestedModules)
     {
         var modules = (requestedModules is { Count: > 0 }
                 ? requestedModules
@@ -57,105 +225,7 @@ public sealed class ZohoSyncService(
             .ToArray();
         if (modules.Length == 0)
             throw new InvalidOperationException("Es wurde kein Zoho-Modul für den Import angegeben.");
-
-        var availableModules = await adapter.GetModulesAsync(cancellationToken);
-        var unavailable = modules
-            .Where(module => !availableModules.Contains(module, StringComparer.OrdinalIgnoreCase))
-            .ToArray();
-        if (unavailable.Length > 0)
-        {
-            throw new InvalidOperationException(
-                $"Diese Zoho-Module sind nicht verfügbar: {string.Join(", ", unavailable)}.");
-        }
-
-        await using var session = await dbFactory.OpenAsync(cancellationToken);
-        var db = session.Context;
-        var run = new IntegrationSyncRun
-        {
-            Id = Guid.NewGuid(),
-            ProviderKey = CrmProviders.Zoho,
-            ConnectionKey = "default",
-            Mode = "full",
-            Status = "running",
-            RequestedModulesJson = JsonSerializer.Serialize(modules),
-            QueuedAt = DateTimeOffset.UtcNow,
-            StartedAt = DateTimeOffset.UtcNow
-        };
-        db.IntegrationSyncRuns.Add(run);
-        await db.SaveChangesAsync(cancellationToken);
-
-        try
-        {
-            foreach (var module in OrderModules(modules))
-            {
-                var fields = await ResolveFieldsAsync(module, cancellationToken);
-                var records = await adapter.GetRecordsAsync(module, fields, cancellationToken);
-                run.RecordsRead += records.Count;
-                foreach (var record in records)
-                {
-                    try
-                    {
-                        await UpsertRecordAsync(db, record, cancellationToken);
-                        run.RecordsWritten++;
-                    }
-                    catch (Exception exception) when (exception is not OperationCanceledException)
-                    {
-                        run.RecordsFailed++;
-                        logger.LogError(
-                            exception,
-                            "Zoho record {Module}/{ExternalId} could not be imported.",
-                            record.Module,
-                            record.ExternalId);
-                    }
-                }
-
-                var entityType = EntityTypeForModule(module);
-                var cursor = await db.IntegrationSyncCursors
-                    .SingleOrDefaultAsync(item => item.ProviderKey == CrmProviders.Zoho
-                        && item.EntityType == entityType, cancellationToken);
-                if (cursor is null)
-                {
-                    cursor = new IntegrationSyncCursor
-                    {
-                        Id = Guid.NewGuid(),
-                        ProviderKey = CrmProviders.Zoho,
-                        EntityType = entityType
-                    };
-                    db.IntegrationSyncCursors.Add(cursor);
-                }
-
-                cursor.LastModifiedAt = records
-                    .Where(record => record.ModifiedAt.HasValue)
-                    .Select(record => record.ModifiedAt)
-                    .Max();
-                cursor.LastExternalId = records.LastOrDefault()?.ExternalId;
-                cursor.UpdatedAt = DateTimeOffset.UtcNow;
-                await db.SaveChangesAsync(cancellationToken);
-            }
-
-            run.Status = run.RecordsFailed == 0 ? "succeeded" : "completed_with_errors";
-            run.FinishedAt = DateTimeOffset.UtcNow;
-            run.Error = run.RecordsFailed == 0
-                ? null
-                : $"{run.RecordsFailed} Datensätze konnten nicht importiert werden.";
-            await db.SaveChangesAsync(cancellationToken);
-            await connectionStore.MarkSyncAsync(cancellationToken);
-            return new ZohoSyncResult(
-                run.Id,
-                run.Status,
-                run.RecordsRead,
-                run.RecordsWritten,
-                run.RecordsFailed,
-                modules);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            run.Status = "failed";
-            run.FinishedAt = DateTimeOffset.UtcNow;
-            run.Error = exception.Message[..Math.Min(exception.Message.Length, 4000)];
-            await db.SaveChangesAsync(cancellationToken);
-            throw;
-        }
+        return modules;
     }
 
     private async Task<IReadOnlyCollection<string>> ResolveFieldsAsync(
@@ -167,262 +237,24 @@ public sealed class ZohoSyncService(
             .Select(field => field.ApiName)
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .ToArray();
-        var preferred = PreferredFields.TryGetValue(module, out var fields)
-            ? fields
-            : [];
-        return preferred
+        return recordMapper.GetPreferredFields(module)
             .Concat(actualNames)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(50)
             .ToArray();
     }
 
-    private async Task UpsertRecordAsync(
-        SalesPlattformDbContext db,
-        CrmExternalRecord record,
-        CancellationToken cancellationToken)
+    private async Task NotifyAsync(
+        Func<ZohoSyncJobSnapshot, Task> publish,
+        IntegrationSyncRun run)
     {
-        var entityType = EntityTypeForModule(record.Module);
-        var raw = await db.IntegrationRawRecords
-            .SingleOrDefaultAsync(item => item.ProviderKey == CrmProviders.Zoho
-                && item.EntityType == entityType
-                && item.ExternalId == record.ExternalId, cancellationToken);
-        if (raw is null)
+        try
         {
-            raw = new IntegrationRawRecord
-                {
-                    Id = Guid.NewGuid(),
-                    ProviderKey = CrmProviders.Zoho,
-                    ConnectionKey = "default",
-                    EntityType = entityType,
-                    ExternalId = record.ExternalId,
-                    PayloadJson = record.Payload.GetRawText(),
-                    ExternalModifiedAt = record.ModifiedAt,
-                    FirstSeenAt = DateTimeOffset.UtcNow,
-                    LastSeenAt = DateTimeOffset.UtcNow,
-                    SyncedAt = DateTimeOffset.UtcNow
-                };
-            db.IntegrationRawRecords.Add(raw);
+            await publish(ZohoSyncJobSnapshotMapper.Map(run));
         }
-        else
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            raw.PayloadJson = record.Payload.GetRawText();
-            raw.ExternalModifiedAt = record.ModifiedAt;
-            raw.LastSeenAt = DateTimeOffset.UtcNow;
-            raw.SyncedAt = DateTimeOffset.UtcNow;
+            logger.LogDebug(exception, "Could not publish Zoho import update for job {RunId}.", run.Id);
         }
-
-        switch (record.Module.ToLowerInvariant())
-        {
-            case "accounts":
-                await UpsertCustomerAsync(db, record, cancellationToken);
-                break;
-            case "deals":
-                await UpsertDealAsync(db, record, cancellationToken);
-                break;
-            case "leads":
-                await UpsertLeadAsync(db, record, cancellationToken);
-                break;
-            default:
-                throw new InvalidOperationException(
-                    $"Der Import des Moduls '{record.Module}' ist noch nicht implementiert.");
-        }
-    }
-
-    private static async Task UpsertCustomerAsync(
-        SalesPlattformDbContext db,
-        CrmExternalRecord record,
-        CancellationToken cancellationToken)
-    {
-        var link = await FindLinkAsync(db, CrmEntityTypes.Customer, record.ExternalId, cancellationToken);
-        SalesCustomer customer;
-        if (link is null)
-        {
-            customer = new SalesCustomer
-            {
-                Id = Guid.NewGuid(),
-                Name = ZohoFieldReader.String(record.Payload, "Account_Name", "Name") ?? record.ExternalId
-            };
-            db.SalesCustomers.Add(customer);
-            link = new IntegrationEntityLink
-            {
-                Id = Guid.NewGuid(),
-                ProviderKey = CrmProviders.Zoho,
-                ConnectionKey = "default",
-                EntityType = CrmEntityTypes.Customer,
-                ExternalId = record.ExternalId,
-                InternalEntityType = CrmEntityTypes.Customer,
-                InternalEntityId = customer.Id
-            };
-            db.IntegrationEntityLinks.Add(link);
-        }
-        else
-        {
-            customer = await db.SalesCustomers
-                .SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
-                ?? throw new InvalidOperationException(
-                    $"Die interne Kundenentität {link.InternalEntityId} fehlt.");
-        }
-
-        customer.Name = ZohoFieldReader.String(record.Payload, "Account_Name", "Name") ?? customer.Name;
-        customer.Industry = ZohoFieldReader.String(record.Payload, "Industry");
-        customer.PostalCode = ZohoFieldReader.String(record.Payload, "Billing_Code", "Zip", "Postal_Code");
-        customer.City = ZohoFieldReader.String(record.Payload, "Billing_City", "City");
-        customer.CountryCode = ZohoFieldReader.String(record.Payload, "Billing_Country", "Country");
-        customer.Status = ZohoFieldReader.String(record.Payload, "Account_Status", "Status") ?? customer.Status;
-        customer.SourceCreatedAt = ZohoFieldReader.DateTimeOffset(record.Payload, "Created_Time", "CreatedTime");
-        customer.SourceModifiedAt = record.ModifiedAt;
-        link.LastSeenAt = DateTimeOffset.UtcNow;
-    }
-
-    private static async Task UpsertDealAsync(
-        SalesPlattformDbContext db,
-        CrmExternalRecord record,
-        CancellationToken cancellationToken)
-    {
-        var link = await FindLinkAsync(db, CrmEntityTypes.Deal, record.ExternalId, cancellationToken);
-        SalesDeal deal;
-        if (link is null)
-        {
-            deal = new SalesDeal
-            {
-                Id = Guid.NewGuid(),
-                Name = ZohoFieldReader.String(record.Payload, "Deal_Name", "Name") ?? record.ExternalId
-            };
-            db.SalesDeals.Add(deal);
-            link = new IntegrationEntityLink
-            {
-                Id = Guid.NewGuid(),
-                ProviderKey = CrmProviders.Zoho,
-                ConnectionKey = "default",
-                EntityType = CrmEntityTypes.Deal,
-                ExternalId = record.ExternalId,
-                InternalEntityType = CrmEntityTypes.Deal,
-                InternalEntityId = deal.Id
-            };
-            db.IntegrationEntityLinks.Add(link);
-        }
-        else
-        {
-            deal = await db.SalesDeals
-                .SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
-                ?? throw new InvalidOperationException(
-                    $"Die interne Dealentität {link.InternalEntityId} fehlt.");
-        }
-
-        var accountExternalId = ZohoFieldReader.LookupId(record.Payload, "Account_Name", "Account");
-        deal.CustomerId = accountExternalId is null
-            ? null
-            : await FindInternalIdAsync(db, CrmEntityTypes.Customer, accountExternalId, cancellationToken);
-        deal.Name = ZohoFieldReader.String(record.Payload, "Deal_Name", "Name") ?? deal.Name;
-        deal.Amount = ZohoFieldReader.Decimal(record.Payload, "Amount");
-        deal.Currency = ZohoFieldReader.String(record.Payload, "Currency", "Currency_Code");
-        deal.NeedsReview = ZohoFieldReader.String(record.Payload, "Pipeline") is not null
-            || ZohoFieldReader.String(record.Payload, "Stage") is not null
-            || ZohoFieldReader.String(record.Payload, "Product_Name", "Product", "Produkt") is not null;
-        deal.DurationMonths = ZohoFieldReader.Decimal(record.Payload, "Contract_Term", "Duration_Months", "Laufzeit");
-        deal.ContractEndAt = ZohoFieldReader.Date(record.Payload, "Contract_End_Date", "Vertragsende");
-        deal.ClosingAt = ZohoFieldReader.Date(record.Payload, "Closing_Date", "closing_date");
-        deal.Status = ZohoFieldReader.String(record.Payload, "Stage", "Status") ?? deal.Status;
-        deal.LossReason = ZohoFieldReader.String(record.Payload, "Reason_for_Loss__s", "Loss_Reason", "verlustgrund");
-        deal.LastActivityAt = ZohoFieldReader.DateTimeOffset(record.Payload, "Last_Activity_Time");
-        deal.SourceCreatedAt = ZohoFieldReader.DateTimeOffset(record.Payload, "Created_Time", "CreatedTime");
-        deal.SourceModifiedAt = record.ModifiedAt;
-        link.LastSeenAt = DateTimeOffset.UtcNow;
-    }
-
-    private static async Task UpsertLeadAsync(
-        SalesPlattformDbContext db,
-        CrmExternalRecord record,
-        CancellationToken cancellationToken)
-    {
-        var link = await FindLinkAsync(db, CrmEntityTypes.Lead, record.ExternalId, cancellationToken);
-        SalesLead lead;
-        if (link is null)
-        {
-            lead = new SalesLead
-            {
-                Id = Guid.NewGuid(),
-                Name = ZohoFieldReader.String(record.Payload, "Full_Name", "Last_Name", "Company")
-                    ?? record.ExternalId
-            };
-            db.SalesLeads.Add(lead);
-            link = new IntegrationEntityLink
-            {
-                Id = Guid.NewGuid(),
-                ProviderKey = CrmProviders.Zoho,
-                ConnectionKey = "default",
-                EntityType = CrmEntityTypes.Lead,
-                ExternalId = record.ExternalId,
-                InternalEntityType = CrmEntityTypes.Lead,
-                InternalEntityId = lead.Id
-            };
-            db.IntegrationEntityLinks.Add(link);
-        }
-        else
-        {
-            lead = await db.SalesLeads
-                .SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
-                ?? throw new InvalidOperationException(
-                    $"Die interne Leadentität {link.InternalEntityId} fehlt.");
-        }
-
-        lead.Name = ZohoFieldReader.String(record.Payload, "Full_Name", "Last_Name", "Company") ?? lead.Name;
-        lead.CompanyName = ZohoFieldReader.String(record.Payload, "Company");
-        lead.Email = ZohoFieldReader.String(record.Payload, "Email");
-        lead.Phone = ZohoFieldReader.String(record.Payload, "Phone");
-        lead.Status = ZohoFieldReader.String(record.Payload, "Lead_Status", "Status") ?? lead.Status;
-        lead.Source = ZohoFieldReader.String(record.Payload, "Lead_Source", "LeadSource");
-        lead.LastContactAt = ZohoFieldReader.DateTimeOffset(
-            record.Payload,
-            "Last_Call",
-            "Last_Activity_Time",
-            "Last_Contact");
-        lead.TotalCallAttempts = ZohoFieldReader.Int32(record.Payload, "Call_Attempts", "anrufversuche") ?? lead.TotalCallAttempts;
-        lead.SourceCreatedAt = ZohoFieldReader.DateTimeOffset(record.Payload, "Created_Time", "CreatedTime");
-        lead.SourceModifiedAt = record.ModifiedAt;
-        link.LastSeenAt = DateTimeOffset.UtcNow;
-    }
-
-    private static async Task<IntegrationEntityLink?> FindLinkAsync(
-        SalesPlattformDbContext db,
-        string entityType,
-        string externalId,
-        CancellationToken cancellationToken)
-        => await db.IntegrationEntityLinks
-            .SingleOrDefaultAsync(item => item.ProviderKey == CrmProviders.Zoho
-                && item.EntityType == entityType
-                && item.ExternalId == externalId, cancellationToken);
-
-    private static async Task<Guid?> FindInternalIdAsync(
-        SalesPlattformDbContext db,
-        string entityType,
-        string externalId,
-        CancellationToken cancellationToken)
-        => await db.IntegrationEntityLinks
-            .Where(item => item.ProviderKey == CrmProviders.Zoho
-                && item.EntityType == entityType
-                && item.ExternalId == externalId)
-            .Select(item => (Guid?)item.InternalEntityId)
-            .SingleOrDefaultAsync(cancellationToken);
-
-    private static string EntityTypeForModule(string module)
-        => module.ToLowerInvariant() switch
-        {
-            "accounts" => CrmEntityTypes.Customer,
-            "deals" => CrmEntityTypes.Deal,
-            "leads" => CrmEntityTypes.Lead,
-            _ => module.ToLowerInvariant()
-        };
-
-    private static IEnumerable<string> OrderModules(IEnumerable<string> modules)
-    {
-        var order = new[] { "Accounts", "Deals", "Leads" };
-        return modules.OrderBy(module =>
-            Array.FindIndex(order, item => string.Equals(item, module, StringComparison.OrdinalIgnoreCase)) switch
-            {
-                -1 => order.Length,
-                var index => index
-            });
     }
 }

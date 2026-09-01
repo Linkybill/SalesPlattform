@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useApplicationContext } from '@hammer2fall/identity-platform-react'
+import { HubConnectionBuilder, HttpTransportType, LogLevel } from '@microsoft/signalr'
 
 type ZohoStatus = {
   connected: boolean
@@ -14,6 +15,34 @@ type ApiErrorPayload = {
   detail?: string
   title?: string
 }
+
+type ZohoSyncModule = {
+  module: string
+  status: string
+  recordsRead: number
+  recordsWritten: number
+  recordsFailed: number
+  startedAt: string | null
+  finishedAt: string | null
+  error: string | null
+}
+
+type ZohoSyncJob = {
+  runId: string
+  status: string
+  modules: string[]
+  currentModule: string | null
+  recordsRead: number
+  recordsWritten: number
+  recordsFailed: number
+  queuedAt: string
+  startedAt: string | null
+  finishedAt: string | null
+  error: string | null
+  items: ZohoSyncModule[]
+}
+
+const syncJobStorageKey = (tenantId: string) => `sales-zoho-sync-job:${tenantId}`
 
 async function readJson<T>(response: Response): Promise<T | null> {
   const body = await response.text()
@@ -41,7 +70,23 @@ export function ImportPage() {
   const [zohoLoading, setZohoLoading] = useState(false)
   const [zohoMessage, setZohoMessage] = useState<string | null>(null)
   const [zohoError, setZohoError] = useState<string | null>(null)
+  const [zohoJob, setZohoJob] = useState<ZohoSyncJob | null>(null)
   const canManageImport = activeTenant?.isTenantAdmin === true
+  const zohoImportActive = zohoJob?.status === 'queued' || zohoJob?.status === 'running'
+
+  const applyZohoJob = useCallback((job: ZohoSyncJob) => {
+    setZohoJob(job)
+    const active = job.status === 'queued' || job.status === 'running'
+    setZohoLoading(active)
+    if (!active && activeTenantId) sessionStorage.removeItem(syncJobStorageKey(activeTenantId))
+    if (job.status === 'succeeded') {
+      setZohoMessage(`Import abgeschlossen: ${job.recordsWritten} geschrieben, ${job.recordsFailed} Fehler bei ${job.recordsRead} Datensätzen.`)
+    } else if (job.status === 'completed_with_errors') {
+      setZohoError(job.error ?? `Import mit ${job.recordsFailed} Fehlern abgeschlossen.`)
+    } else if (job.status === 'failed') {
+      setZohoError(job.error ?? 'Der Zoho-Import ist fehlgeschlagen.')
+    }
+  }, [activeTenantId])
 
   const loadZohoStatus = useCallback(async () => {
     if (!user || !activeTenantId || !canManageImport) return
@@ -106,25 +151,56 @@ export function ImportPage() {
         body: JSON.stringify({ modules: ['Accounts', 'Deals', 'Leads'] }),
       })
       const payload = await readJson<{
-        recordsRead?: number
-        recordsWritten?: number
-        recordsFailed?: number
+        runId?: string
+        status?: string
         message?: string
       } & ApiErrorPayload>(apiResponse)
       if (!apiResponse.ok) {
         throw new Error(getApiErrorMessage(payload, 'Zoho-Sync antwortete mit HTTP ' + apiResponse.status + '.'))
       }
-      setZohoMessage(
-        'Import abgeschlossen: ' + (payload?.recordsWritten ?? 0) + ' geschrieben, '
-        + (payload?.recordsFailed ?? 0) + ' Fehler bei ' + (payload?.recordsRead ?? 0) + ' Datensätzen.',
-      )
-      await loadZohoStatus()
+      if (!payload?.runId || !activeTenantId) throw new Error('Der Zoho-Import lieferte keine gültige RunId.')
+      sessionStorage.setItem(syncJobStorageKey(activeTenantId), payload.runId)
+      setZohoJob({
+        runId: payload.runId,
+        status: payload.status ?? 'queued',
+        modules: ['Accounts', 'Deals', 'Leads'],
+        currentModule: null,
+        recordsRead: 0,
+        recordsWritten: 0,
+        recordsFailed: 0,
+        queuedAt: new Date().toISOString(),
+        startedAt: null,
+        finishedAt: null,
+        error: null,
+        items: [],
+      })
+      setZohoMessage('Import wurde gestartet und läuft im Hintergrund.')
     } catch (reason) {
       setZohoError(reason instanceof Error ? reason.message : 'Der Zoho-Import ist fehlgeschlagen.')
     } finally {
       setZohoLoading(false)
     }
-  }, [authorizedFetch, loadZohoStatus])
+  }, [activeTenantId, authorizedFetch])
+
+  const loadZohoJob = useCallback(async () => {
+    if (!user || !activeTenantId || !canManageImport) return
+    const runId = sessionStorage.getItem(syncJobStorageKey(activeTenantId))
+    if (!runId) return
+
+    try {
+      const apiResponse = await authorizedFetch(`/api/integrations/zoho/sync/${runId}`)
+      if (apiResponse.status === 404) {
+        sessionStorage.removeItem(syncJobStorageKey(activeTenantId))
+        return
+      }
+      const payload = await readJson<ZohoSyncJob & ApiErrorPayload>(apiResponse)
+      if (!apiResponse.ok || !payload) return
+      applyZohoJob(payload)
+    } catch {
+      // The SignalR connection will report live connectivity errors; a failed
+      // status refresh must not hide the rest of the import page.
+    }
+  }, [activeTenantId, applyZohoJob, authorizedFetch, canManageImport, user])
 
   useEffect(() => {
     if (!user || !activeTenantId || !canManageImport) return
@@ -144,6 +220,7 @@ export function ImportPage() {
 
     if (!code || !state) {
       void loadZohoStatus()
+      void loadZohoJob()
       return
     }
 
@@ -173,7 +250,28 @@ export function ImportPage() {
         setZohoLoading(false)
       }
     })()
-  }, [activeTenantId, authorizedFetch, canManageImport, loadZohoStatus, user])
+  }, [activeTenantId, authorizedFetch, canManageImport, loadZohoJob, loadZohoStatus, user])
+
+  useEffect(() => {
+    if (!zohoJob?.runId || !activeTenantId || !user?.accessToken) return
+
+    const connection = new HubConnectionBuilder()
+      .withUrl(`${window.location.origin}/apps/sales-plattform/${activeTenantId}/api/hubs/zoho-sync`, {
+        accessTokenFactory: () => user.accessToken ?? '',
+        transport: HttpTransportType.LongPolling,
+      })
+      .withAutomaticReconnect()
+      .configureLogging(LogLevel.Warning)
+      .build()
+
+    connection.on('jobUpdated', (snapshot: ZohoSyncJob) => applyZohoJob(snapshot))
+    void connection.start()
+      .then(() => connection.invoke<ZohoSyncJob>('Watch', zohoJob.runId))
+      .then(snapshot => applyZohoJob(snapshot))
+      .catch(reason => setZohoError(`Live-Verbindung zum Import fehlgeschlagen: ${reason instanceof Error ? reason.message : String(reason)}`))
+
+    return () => { void connection.stop() }
+  }, [activeTenantId, applyZohoJob, user?.accessToken, zohoJob?.runId])
 
   if (!canManageImport) {
     return (
@@ -219,8 +317,8 @@ export function ImportPage() {
 
         <div className="button-row">
           {zohoStatus?.connected ? (
-            <button className="primary-button" type="button" onClick={() => void syncZoho()} disabled={zohoLoading}>
-              {zohoLoading ? 'Import läuft …' : 'Accounts, Deals und Leads importieren'}
+            <button className="primary-button" type="button" onClick={() => void syncZoho()} disabled={zohoLoading || zohoImportActive}>
+              {zohoLoading || zohoImportActive ? 'Import läuft …' : 'Accounts, Deals und Leads importieren'}
             </button>
           ) : (
             <button className="primary-button" type="button" onClick={() => void connectZoho()} disabled={zohoLoading}>
@@ -240,6 +338,20 @@ export function ImportPage() {
             <span>
               Letzter Import:{' '}
               <code>{zohoStatus.lastSyncAt ? new Date(zohoStatus.lastSyncAt).toLocaleString('de-DE') : 'noch keiner'}</code>
+            </span>
+          </div>
+        )}
+
+        {zohoJob && (zohoJob.status === 'queued' || zohoJob.status === 'running') && (
+          <div className="integration-progress">
+            <span>
+              Status: <code>{zohoJob.status === 'queued' ? 'WARTESCHLANGE' : 'LÄUFT'}</code>
+            </span>
+            <span>
+              Modul: <code>{zohoJob.currentModule ?? 'wird vorbereitet'}</code>
+            </span>
+            <span>
+              Fortschritt: <code>{zohoJob.recordsWritten} geschrieben / {zohoJob.recordsRead} gelesen</code>
             </span>
           </div>
         )}

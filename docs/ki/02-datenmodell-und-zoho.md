@@ -19,6 +19,9 @@ vom kanonischen Domainmodell getrennt.
 - Deals und Aktivitäten: stündlich.
 - Accounts und Produkte/Stammdaten: täglich.
 - Manueller Refresh zusätzlich vorsehen.
+- Der manuelle Refresh startet einen Hintergrundjob. Das Frontend wartet nicht
+  auf den gesamten CRM-Lauf, sondern beobachtet den persistierten Laufstatus
+  per SignalR und kann ihn über die `RunId` erneut laden.
 - Beim ersten Sync die vollständige Stage-Historie aus dem CRM abziehen und
   dauerhaft speichern.
 - Speicherung in UTC, Anzeige in lokaler Zeit.

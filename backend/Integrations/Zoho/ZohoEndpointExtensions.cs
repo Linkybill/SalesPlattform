@@ -100,12 +100,36 @@ public static class ZohoEndpointExtensions
 
             try
             {
-                return Results.Ok(await sync.SyncAsync(request?.Modules, cancellationToken));
+                if (!Guid.TryParse(user.FindFirstValue("tenant_id"), out var tenantId))
+                    return Results.BadRequest(new { message = "Der Access Token enthält keine gültige tenant_id." });
+                var requestedBy = user.FindFirstValue("sub");
+                if (string.IsNullOrWhiteSpace(requestedBy))
+                    return Results.BadRequest(new { message = "Der angemeldete Benutzer besitzt keine gültige Subject-ID." });
+
+                var result = await sync.StartAsync(
+                    request?.Modules,
+                    tenantId,
+                    requestedBy,
+                    cancellationToken);
+                return Results.Accepted($"/api/integrations/zoho/sync/{result.RunId:D}", result);
+            }
+            catch (ZohoSyncAlreadyRunningException exception)
+            {
+                return Results.Conflict(new { message = exception.Message });
             }
             catch (InvalidOperationException exception)
             {
                 return Results.BadRequest(new { message = exception.Message });
             }
+        });
+
+        protectedGroup.MapGet("/sync/{runId:guid}", async (
+            Guid runId,
+            ZohoSyncService sync,
+            CancellationToken cancellationToken) =>
+        {
+            var snapshot = await sync.GetSnapshotAsync(runId, cancellationToken);
+            return snapshot is null ? Results.NotFound() : Results.Ok(snapshot);
         });
 
         endpoints.MapGet("/api/integrations/zoho/oauth/callback", (

@@ -8,9 +8,12 @@ using IdentityPlatform.Shared.Registration;
 using SalesPlattform.Backend.Integrations.Abstractions;
 using SalesPlattform.Backend.Integrations.Zoho;
 using SalesPlattform.Backend.Authorization;
+using SalesPlattform.Backend.Integrations.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddIdentityPlatform();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddSignalR();
 
 builder.Services.AddPlatformTenantDatabase<SalesPlattformDbContext>();
 builder.Services.AddApplicationSettings<SalesPlattformDbContext>(builder.Configuration, options =>
@@ -29,7 +32,11 @@ builder.Services.AddScoped<ZohoOAuthService>();
 builder.Services.AddScoped<ZohoCrmAdapter>();
 builder.Services.AddScoped<ICrmAdapter>(services =>
     services.GetRequiredService<ZohoCrmAdapter>());
+builder.Services.AddSingleton<ICrmRecordMapper, ZohoCrmRecordMapper>();
+builder.Services.AddSingleton<ISalesCrmRepositoryFactory, SalesCrmRepositoryFactory>();
+builder.Services.AddSingleton<ZohoSyncJobStore>();
 builder.Services.AddScoped<ZohoSyncService>();
+builder.Services.AddHostedService<ZohoSyncJobWorker>();
 
 var app = builder.Build();
 
@@ -37,6 +44,7 @@ app.UseIdentityPlatform();
 app.MapIdentityPlatformEndpoints();
 app.MapApplicationSettingsEndpoints();
 app.MapZohoIntegrationEndpoints();
+app.MapHub<ZohoSyncJobHub>("/api/hubs/zoho-sync");
 
 app.MapGet("/api/hello-world", async (
     ClaimsPrincipal user,
