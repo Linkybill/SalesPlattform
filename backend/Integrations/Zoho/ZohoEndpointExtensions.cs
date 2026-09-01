@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using SalesPlattform.Backend.Authorization;
 using SalesPlattform.Backend.Integrations.Abstractions;
 
 namespace SalesPlattform.Backend.Integrations.Zoho;
@@ -89,9 +90,14 @@ public static class ZohoEndpointExtensions
 
         protectedGroup.MapPost("/sync", async (
             ZohoSyncRequest? request,
+            ClaimsPrincipal user,
+            TenantAdminAccessService tenantAdminAccess,
             ZohoSyncService sync,
             CancellationToken cancellationToken) =>
         {
+            if (!await tenantAdminAccess.IsCurrentTenantAdminAsync(user, cancellationToken))
+                return Results.Forbid();
+
             try
             {
                 return Results.Ok(await sync.SyncAsync(request?.Modules, cancellationToken));

@@ -7,6 +7,7 @@ using IdentityPlatform.Shared.Hosting;
 using IdentityPlatform.Shared.Registration;
 using SalesPlattform.Backend.Integrations.Abstractions;
 using SalesPlattform.Backend.Integrations.Zoho;
+using SalesPlattform.Backend.Authorization;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddIdentityPlatform();
@@ -16,6 +17,7 @@ builder.Services.AddApplicationSettings<SalesPlattformDbContext>(builder.Configu
 {
     options.ApplicationKey = builder.Configuration["IdentityPlatform:ApplicationKey"] ?? "sales-plattform";
 });
+builder.Services.AddScoped<TenantAdminAccessService>();
 builder.Services.AddScoped<HelloWorldService>();
 builder.Services.AddOptions<ZohoOptions>()
     .Bind(builder.Configuration.GetSection("Zoho"));
