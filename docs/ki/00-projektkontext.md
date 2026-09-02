@@ -81,7 +81,7 @@ Stand: 2026-09-02.
   über „AppSettings“ der SalesPlattform gepflegt. Die Sales-App liest die
   effektiven Werte nur noch serverseitig für die Regelbewertung.
 - Die aktuell integrierten Paketstände sind `@hammer2fall/identity-platform-react`
-  `0.1.43` im Frontend und `IdentityPlatform.Shared` `0.1.40` im Backend.
+  `0.1.43` im Frontend und `IdentityPlatform.Shared` `0.1.41` im Backend.
   Die Jobdefinition enthält neben Zeitplan und Aktivierung auch
   `ConcurrencyGroup` und `ConcurrencyScope`; Vollimport und Crawl verwenden
   gemeinsam `crm-synchronization`.
