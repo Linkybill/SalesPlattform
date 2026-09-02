@@ -26,6 +26,7 @@ builder.Services.AddApplicationSettings<SalesPlattformDbContext>(builder.Configu
 });
 builder.Services.AddScoped<TenantAdminAccessService>();
 builder.Services.AddScoped<HelloWorldService>();
+builder.Services.AddScoped<WorklistService>();
 builder.Services.AddOptions<ZohoOptions>()
     .Bind(builder.Configuration.GetSection("Zoho"));
 builder.Services.AddScoped<ZohoConfigurationService>();
@@ -72,6 +73,55 @@ app.UseIdentityPlatform();
 app.MapIdentityPlatformEndpoints();
 app.MapApplicationSettingsEndpoints();
 app.MapZohoIntegrationEndpoints();
+
+app.MapGet("/api/worklist", async (
+    ClaimsPrincipal user,
+    WorklistService worklist,
+    bool? refresh,
+    CancellationToken cancellationToken) =>
+{
+    if (!Guid.TryParse(user.FindFirstValue("tenant_id"), out _))
+    {
+        return Results.BadRequest(new { message = "The access token does not contain a valid tenant_id claim." });
+    }
+
+    var result = await worklist.GetAsync(user, refresh ?? false, cancellationToken);
+    return Results.Ok(result);
+}).RequireAuthorization("sales-user");
+
+app.MapPost("/api/worklist/{workItemId:guid}/complete", async (
+    Guid workItemId,
+    ClaimsPrincipal user,
+    WorklistService worklist,
+    CancellationToken cancellationToken) =>
+{
+    if (!Guid.TryParse(user.FindFirstValue("tenant_id"), out _))
+        return Results.BadRequest(new { message = "The access token does not contain a valid tenant_id claim." });
+
+    var result = await worklist.CompleteAsync(workItemId, user, cancellationToken);
+    return result is null ? Results.NotFound() : Results.Ok(result);
+}).RequireAuthorization("sales-user");
+
+app.MapPost("/api/worklist/{workItemId:guid}/snooze", async (
+    Guid workItemId,
+    SnoozeWorklistItemRequest request,
+    ClaimsPrincipal user,
+    WorklistService worklist,
+    CancellationToken cancellationToken) =>
+{
+    if (!Guid.TryParse(user.FindFirstValue("tenant_id"), out _))
+        return Results.BadRequest(new { message = "The access token does not contain a valid tenant_id claim." });
+
+    try
+    {
+        var result = await worklist.SnoozeAsync(workItemId, request.Until, user, cancellationToken);
+        return result is null ? Results.NotFound() : Results.Ok(result);
+    }
+    catch (ArgumentOutOfRangeException exception)
+    {
+        return Results.BadRequest(new { message = exception.Message });
+    }
+}).RequireAuthorization("sales-user");
 
 app.MapGet("/api/hello-world", async (
     ClaimsPrincipal user,

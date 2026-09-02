@@ -112,8 +112,9 @@ keine stillschweigend getroffenen Anforderungen:
 | Native Windows-Rebuilds | vorhanden |
 | Pflichtenheft und KI-Kontext | vorhanden |
 | Zoho-Authentifizierung, Adapter und vollständiger fachlicher Hintergrundimport | vorhanden |
-| Eigene Sales-Domänenmodelle und Regelengine | EF-Datenmodell vorhanden; Regelengine offen |
+| Eigene Sales-Domänenmodelle und Regelengine | EF-Datenmodell vorhanden; erste Arbeitslisten-Projektion für R-05/R-06/R-07/R-08/R-09/R-10/R-12 umgesetzt |
 | Vollständiges Zieldatenmodell vor dem Vollimport | EF-Entitäten und additive Migration umgesetzt; Zoho-Mappings für den fachlichen Initialimport umgesetzt |
+| Start-Arbeitsliste | umgesetzt; weitere Wiedervorlagen-, Team- und KPI-Sichten offen |
 | Fachansichten und KPI-Cockpit | offen / nicht implementiert |
 | Fachliche Rollenmatrix | offen |
 

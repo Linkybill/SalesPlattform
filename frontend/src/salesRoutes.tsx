@@ -7,7 +7,7 @@ export const salesRoutes: readonly UserAuthorisationRoute[] = [
   {
     id: 'dashboard',
     route: applicationRouteBase,
-    title: 'Übersicht',
+    title: 'Arbeitsliste',
     icon: <HomeIcon />,
     visibleForRoles: ['sales-user'],
   },

@@ -39,6 +39,30 @@ h2 { margin-bottom: 0; font-size: 22px; }
 .integration-meta { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 18px; color: #9aaac0; font-size: 13px; }
 .integration-progress { display: grid; gap: 10px; margin-top: 18px; padding: 13px 15px; border: 1px solid #2a5570; border-radius: 9px; color: #b7c9dc; background: #0d2034; font-size: 13px; }
 .integration-progress code { color: #b3f0f7; font-size: 12px; }
+.worklist-card { margin-bottom: 22px; }
+.worklist-refresh { color: #8fa9c5; font-size: 13px; }
+.worklist-list { display: grid; gap: 12px; margin-top: 20px; }
+.worklist-item { display: flex; justify-content: space-between; gap: 22px; padding: 18px; border: 1px solid #294766; border-radius: 12px; background: #0d2034; }
+.worklist-item-main { min-width: 0; }
+.worklist-item-topline, .worklist-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
+.worklist-item-topline { margin-bottom: 8px; }
+.worklist-item h3 { margin: 0 0 7px; font-size: 18px; }
+.worklist-item p { margin: 0; color: #a8bdd5; line-height: 1.5; }
+.worklist-type { color: #71d9ec; font-size: 12px; font-weight: 700; }
+.worklist-score { margin-left: auto; color: #f5d27b; font-size: 12px; font-weight: 700; }
+.worklist-meta { margin-top: 13px; color: #8fa9c5; font-size: 12px; }
+.worklist-meta strong { color: #d9e8f8; font-weight: 600; }
+.worklist-meta code { color: #b3f0f7; }
+.priority-badge { border-radius: 999px; padding: 4px 8px; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.priority-critical { color: #ffd8a1; background: #713e12; }
+.priority-high { color: #ffe2a7; background: #5a3b16; }
+.priority-medium { color: #b4edfa; background: #17455a; }
+.priority-low { color: #b9c7d8; background: #263b54; }
+.worklist-actions { display: flex; flex: 0 0 auto; align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+.worklist-actions .primary-button, .worklist-actions .secondary-button { padding: 8px 11px; font-size: 12px; }
+.worklist-empty { display: grid; gap: 7px; margin: 25px 0 8px; padding: 28px; border: 1px dashed #365674; border-radius: 12px; color: #a8bdd5; text-align: center; }
+.worklist-empty strong { color: #e8eef8; }
+.info-message { border-color: #2a5570; color: #c4e9f1; background: #102e43; }
 .integration-progress-heading, .integration-progress-summary, .integration-progress-module { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
 .integration-progress-modules { display: grid; gap: 6px; padding-top: 3px; border-top: 1px solid #23445b; }
 .integration-progress-module { padding-top: 6px; }
@@ -71,4 +95,6 @@ h2 { margin-bottom: 0; font-size: 22px; }
   .status-badge { white-space: normal; }
   .sales-card { padding: 24px 25px; }
   .card-heading { align-items: flex-start; flex-direction: column; }
+  .worklist-item { flex-direction: column; }
+  .worklist-actions { align-items: stretch; }
 }

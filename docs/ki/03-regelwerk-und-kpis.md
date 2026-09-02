@@ -27,6 +27,11 @@ Vorgeschlagene Basiswerte:
 Basiswerte, Deckelungen und der Divisor sind konfigurierbar. Die Punkte werden
 im Listeneintrag angezeigt.
 
+Die erste produktive Projektion berechnet die Werte für die Arbeitsliste mit
+diesen Startwerten. Vertragsenden unter 30 Tagen werden als eigener kritischer
+Vorgang geführt; Cross-Selling verwendet 20 Basispunkte. Eine Änderung durch
+Praxiswerte muss später über das konfigurierbare Prioritätsprofil erfolgen.
+
 ## Gespräch und Anrufzähler
 
 Ein Gespräch zählt standardmäßig ab 20 Sekunden. 0 Sekunden bzw. nicht
@@ -61,6 +66,15 @@ eingehender Anrufe ist noch offen.
 
 Wiedervorlagen erzeugt und verwaltet das Tool selbst. Grenzwerte, Intervalle,
 Besitzerlogik und Automatisierungsgrade gehören in die Konfiguration.
+
+### Umsetzungsstand der ersten Arbeitsliste
+
+Aktiv ausgewertet werden R-05, R-06, R-07, R-08, R-09, R-10 und R-12. Die
+Projektion schreibt passende `SalesWorkItem`-Einträge, Regelruns und
+Regelauswertungen. Erledigen und Zurückstellen werden als WorkItem-Event und
+Audit protokolliert. R-09 nutzt bis zur Aktivierung eines Arbeitszeitkalenders
+eine verstrichene Stunde; R-01 bis R-04, R-11, R-13 und R-14 bleiben weitere
+Regelengine-Ausbaustufen.
 
 ## Sortierung
 

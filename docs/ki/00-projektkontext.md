@@ -14,7 +14,8 @@ Leitung belastbare Steuerungsinformationen geben.
 Stand: 2026-09-02.
 
 - React/Vite-Frontend.
-- ASP.NET-Core-Backend mit geschütztem `GET /api/hello-world`.
+- ASP.NET-Core-Backend mit geschütztem `GET /api/worklist` sowie dem bisherigen
+  technischen `GET /api/hello-world`.
 - EF-Core-Datenmodell und tenant-isolierte Plattform-Datenbank.
 - Registrierung über `backend/manifest.json` in der Identity Platform.
 - Vorhandene App-Rolle: `sales-user` / „SalesPlattform Benutzer“.
@@ -63,9 +64,29 @@ Stand: 2026-09-02.
   sind jeweils `1/1` bereit. Die laufenden Anwendungstags sind Aufmaß `1.0.0`
   und Sales `0.1.0`. Die Plattformdatenbank enthält die Migration
   `20260902090000_AddApplicationJobConcurrency`.
-- Regelengine, Cockpit und Fachansichten bleiben weiterer Zielumfang; die
-  importierten Entitäten und Historien stehen dafür jetzt vollständig zur
-  Verfügung.
+- Die erste fachliche Arbeitslisten-Projektion für R-05, R-06, R-07, R-08, R-09,
+  R-10 und R-12 ist umgesetzt. Cockpit, Team- und weitere Fachansichten bleiben
+  weiterer Zielumfang; die importierten Entitäten und Historien stehen dafür
+  vollständig zur Verfügung.
+
+## Erste fachliche Umsetzung: Arbeitsliste
+
+Die Startansicht ist jetzt eine persönliche, backendseitig gefilterte
+Arbeitsliste. `GET /api/worklist?refresh=true` projiziert die aktuellen CRM-Daten
+in die vorhandenen `sales_work_items` und sortiert sie nach dem dokumentierten
+Prioritätsscore. Umgesetzt sind zunächst R-05 (hängender Deal), R-06
+(Vertragsverlängerung), R-07 (fehlender/alter Kundenkontakt), R-08
+(Zuständigkeitswechsel), R-09 (neuer Lead ohne Erstreaktion), R-10
+(Cross-Selling) und R-12 (mehrfach verschobener Termin).
+
+Die Einträge verwenden eine stabile Identität aus Mandant, Regel und Zielobjekt.
+Dadurch bleiben `POST /api/worklist/{id}/complete` und
+`POST /api/worklist/{id}/snooze` über weitere Refreshes wirksam. Aktionen erzeugen
+ein WorkItem-Ereignis und einen Audit-Eintrag. Besitzer werden über die
+Benutzer-E-Mail dem CRM-Besitzer zugeordnet; bis zur Zuordnung werden nur
+unzugeordnete Vorgänge gezeigt. Die erste R-09-Variante misst eine verstrichene
+Stunde; die vorhandenen Arbeitszeitkalender werden für die Arbeitszeitrechnung
+der nächsten Regelengine-Stufe verwendet.
 
 ## Zielarchitektur
 

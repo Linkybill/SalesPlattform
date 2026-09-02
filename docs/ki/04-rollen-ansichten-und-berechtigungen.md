@@ -32,6 +32,12 @@ bestätigen. „Teamweit sichtbar“ bedeutet, dass alle Mitarbeiter Ziele und
 Zielerreichungen sehen dürfen; die Arbeitsliste bleibt standardmäßig auf den
 jeweiligen Besitzer gefiltert.
 
+Die erste Arbeitslisten-API setzt diesen Grundsatz serverseitig um. Ein CRM-
+Besitzer wird über die E-Mail des authentifizierten Plattform-Benutzers gesucht;
+ein Benutzer ohne Zuordnung erhält nur nicht zugeordnete Vorgänge und eine
+transparente Hinweismeldung. Ein Benutzer kann fremde, besitzerbezogene
+Vorgänge auch über eine direkt bekannte ID nicht erledigen oder zurückstellen.
+
 ## Schreib- und Freigabegrenzen
 
 - Wiedervorlagen entstehen und ändern sich in der SalesPlattform.
