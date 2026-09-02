@@ -11,7 +11,7 @@ Leitung belastbare Steuerungsinformationen geben.
 
 ## Aktueller technischer Stand
 
-Stand: 2026-08-30.
+Stand: 2026-09-02.
 
 - React/Vite-Frontend.
 - ASP.NET-Core-Backend mit geschütztem `GET /api/hello-world`.
@@ -21,30 +21,50 @@ Stand: 2026-08-30.
 - Native Windows-PowerShell- und Docker-Rebuilds über `rebuild-all.ps1` bzw.
   `rebuild-all.cmd`.
 - Zoho-OAuth, die Zoho-Token-Erneuerung in der SalesPlattform, verschlüsselte
-  tenantbezogene Refresh-Tokens, Metadatenabruf und ein erster read-only Import
-  von Accounts, Deals und Leads sind umgesetzt. Die Identity Platform stellt
-  dafür nur eine provider-neutrale Credential-Ablage bereit und enthält keine
-  Zoho-Fachlogik.
-- Der manuelle Zoho-Import wird als persistierter `IntegrationSyncRun` gestartet
-  und als durable Work Item in RabbitMQ durch einen `BackgroundService`
-  verarbeitet. Fortschritt, Abschluss und Fehler werden über einen
-  tenantgesicherten SignalR-Hub an das Frontend gemeldet; die `RunId` erlaubt
-  die Statuswiederaufnahme nach einem Seitenwechsel.
-- Die app-lokale Route `/jobs` zeigt die letzten und laufenden Importjobs. Eine
-  generische Jobansicht ist als spätere Plattform-Komponente vorgesehen.
+  tenantbezogene Refresh-Tokens, Metadatenabruf und der vollständige read-only
+  Initialimport der für das Pflichtenheft benötigten CRM-Daten sind umgesetzt.
+  Die Identity Platform stellt dafür nur eine provider-neutrale
+  Credential-Ablage bereit und enthält keine Zoho-Fachlogik.
+- Die Identity Platform besitzt Definition, tenantbezogenen Cron-Zeitplan,
+  durable RabbitMQ-Zustellung, Run-/Event-Historie und SignalR-Live-Status der
+  Hintergrundjobs. Die gemeinsame Jobdetailansicht zeigt Live-Fortschritt,
+  Logs, Fehler und strukturierte JSON-Details; aktive Läufe können dort echt
+  abgebrochen werden. Die SalesPlattform registriert ihre
+  Implementierungsklassen über `IdentityPlatform.Shared`.
+- `crm-full-import` ist durch Tenant-Admins konfigurierbar (Default täglich);
+  `crm-incremental-crawl` läuft fest alle 15 Minuten. Die gemeinsame React-
+  Library integriert `/jobs` automatisch als tenantadmin-geschützten
+  Headerpunkt.
+- Beide Jobs rufen `CrmSynchronizationService` und anschließend den anhand von
+  `crm.integration` ausgewählten `ICrmSynchronizationAdapter` auf. Zoho kennt
+  weder Plattformjobdefinition noch Zeitplan; die Jobs kennen keine Zoho-API.
+- Der Lauf protokolliert zuerst den Synchronisationsplan, danach den aktuellen
+  Modulschritt mit gelesenen, geschriebenen, fehlgeschlagenen und noch offenen
+  Datensätzen. Die Abschlussdetails enthalten zusätzlich die geschriebenen
+  Records als strukturiertes JSON für die Jobdetailansicht.
+- E-Mails bleiben Bestandteil desselben CRM-Sync-Laufs. Sie werden als
+  Related-List der Elternobjekte Accounts, Kontakte, Leads und Deals gelesen;
+  es gibt keinen separaten E-Mail-Sync-Job.
+- Vollimport und inkrementeller Crawl sind über die zentrale, mandantenbezogene
+  Exklusivgruppe `crm-synchronization` gekoppelt und können nicht gleichzeitig
+  laufen.
 - Die allgemeine CRM-Integration wird über die Application Settings der
   Identity Platform je App/Mandant ausgewählt. Zoho ist aktuell der erste
   auswählbare Provider; seine Client-ID, sein Datacenter und sein Client-Secret
   werden nur eingeblendet, wenn `Zoho CRM` ausgewählt ist. Das Client-Secret ist
   ein verschlüsseltes Secret-Setting.
-- Regelengine, Cockpit und Fachansichten bleiben weiterer Zielumfang.
+- Regelengine, Cockpit und Fachansichten bleiben weiterer Zielumfang; die
+  importierten Entitäten und Historien stehen dafür jetzt vollständig zur
+  Verfügung.
 
 ## Zielarchitektur
 
 ```text
 Zoho CRM / Pipedrive / weitere CRM-Systeme
-    -> jeweiliger Adapter
-    -> periodischer Sync und Normalisierung
+    -> jeweiliger ICrmSynchronizationAdapter
+Identity-Platform-Jobs (voll / incremental / später webhook)
+    -> CrmSynchronizationService
+    -> Adapter liest, normalisiert und nutzt kanonische Repositories
 Kanonisches SalesPlattform-Domainmodell in eigener Datenbank
     -> Regelengine / Berechnungen / Snapshots
 React-Ansichten und Arbeitslisten

@@ -16,16 +16,38 @@ Anwendung besteht aktuell aus:
 
 Die Zoho-Anbindung ist als provider-neutraler CRM-Adapter umgesetzt; Zoho ist
 der erste Provider. OAuth-Verbindungen werden pro Tenant gespeichert und der
-erste Import von Accounts, Deals und Leads wird im kanonischen
-SalesPlattform-Modell abgelegt. Weitere Provider wie Pipedrive können später
-denselben Adaptervertrag implementieren.
+vollständige fachliche Initialimport von Ownern, Accounts, Kontakten, Leads,
+Produkten, Pipelines, Deals, Aktivitäten, Terminen, E-Mails und
+Stage-Historien wird im kanonischen SalesPlattform-Modell abgelegt. Weitere
+Provider wie Pipedrive können später denselben Adaptervertrag implementieren.
 
-Der manuelle Import startet einen tenantbezogenen Hintergrundjob. Das Work Item
-liegt dauerhaft in RabbitMQ; der Backend-Worker schreibt den Laufstatus in die
-Tenant-Datenbank und sendet Fortschritt, Abschluss und Fehler über SignalR an
-die Importseite. Die Route `/jobs` zeigt die aktiven und letzten Läufe aktuell
-app-lokal an; die generische Jobansicht soll später in die Identity Platform
-verschoben werden.
+Vollimport und inkrementelle Synchronisation sind zentrale Anwendungsjobs der
+Identity Platform. Die Plattform besitzt Zeitpläne, durable RabbitMQ-Zustellung,
+Run-Historie, Live-Logs, strukturierte Laufdetails und SignalR-Live-Status. Die
+gemeinsame Detailansicht erlaubt auch den echten Abbruch eines aktiven Laufs.
+Die SalesPlattform registriert nur zwei
+providerneutrale Implementierungen: `crm-full-import` ist je Tenant per UI
+konfigurierbar (Standard täglich), `crm-incremental-crawl` läuft fest alle
+15 Minuten. Die gemeinsame Route `/jobs` wird von der React-Plattformlibrary
+im Header eingeblendet und ist Tenant-Admins vorbehalten.
+
+Beide CRM-Jobs verwenden die mandantenbezogene Exklusivgruppe
+`crm-synchronization`; Vollimport und Incremental-Crawl laufen daher nicht
+parallel. Vor jedem neuen Lauf wird zusätzlich geprüft, ob ein gespeicherter
+app-eigener Sync-Lauf noch einen aktiven Plattformlauf besitzt. Verwaiste
+Läufe werden bereinigt. E-Mails bleiben Related-Lists desselben CRM-Laufs und
+sind kein eigener Synchronisationsjob.
+
+Der Initialimport umfasst alle für das Pflichtenheft benötigten Zoho-Daten und
+läuft als idempotenter Plattformjob. Der inkrementelle Crawl liest jedes
+Quellmodul ab seinem letzten erfolgreichen Cursor, mit Überlappungsfenster und
+Soft-Delete-Verarbeitung. Nach einer Erweiterung der Zoho-Scopes
+muss die Verbindung einmal über „Zoho verbinden“ neu autorisiert werden, damit
+Benutzer, Pipelines, E-Mails und Stage-Historien gelesen werden dürfen.
+
+Provider-Webhooks werden später ergänzend an denselben neutralen Sync-Pfad
+angebunden. Sie liefern Änderungen sofort; der 15-Minuten-Crawl schließt
+verpasste Events, der Vollimport dient der periodischen Reconciliation.
 
 ## Voraussetzungen
 

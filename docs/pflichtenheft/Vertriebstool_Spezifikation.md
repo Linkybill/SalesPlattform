@@ -421,7 +421,9 @@ Die Berechnung liegt vollständig im Tool; das CRM liefert Rohdaten.
 | Thema | Festlegung |
 |---|---|
 | Datenhaltung | Eigene Datenbank mit periodischem Sync, kein Live-Durchgriff bei jedem Seitenaufruf |
-| Sync | Deals/Aktivitäten stündlich, Accounts/Produkte täglich, manueller Refresh |
+| Sync | Zentraler Vollimport täglich um 02:00 Uhr, inkrementeller Crawl alle 15 Minuten, beide manuell startbar; E-Mails und Stage-Historie bleiben Teil desselben CRM-Laufs |
+| Sync-Protokoll | Live-Fortschritt je Modul, gelesene/geschriebene/fehlgeschlagene und verbleibende Records, Fehlerdetails sowie geschriebene Records als JSON im Laufdetail |
+| Sync-Steuerung | Tenant-Admin kann aktive Läufe abbrechen; Vollimport und inkrementeller Crawl teilen eine mandantenbezogene Exklusivgruppe |
 | Stage-Historie | Beim ersten Sync vollständig aus dem CRM abziehen und dauerhaft speichern |
 | Snapshots | Täglich Pipeline-Wert, offene Deals, ARR und Zielerreichung speichern |
 | Zeitzonen | UTC speichern, lokal anzeigen |

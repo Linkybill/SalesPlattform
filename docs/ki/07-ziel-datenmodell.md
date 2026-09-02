@@ -1,13 +1,14 @@
 # Ziel-Datenmodell der SalesPlattform
 
-**Status:** fachlicher Datenmodell-Entwurf vor dem ersten produktiven Import  
+**Status:** EF-Modell, additive Migration und Zoho-Initialimport umgesetzt; produktiver Lauf steht nach der OAuth-Neuautorisierung aus
 **Quelle:** Pflichtenheft, insbesondere Abschnitte 02, 04, 06, 08–18, sowie
 `02-datenmodell-und-zoho.md` und `06-integrationsarchitektur.md`.
 
-Diese Datei beschreibt das vollständige Zielmodell. Sie ist noch keine EF-
-Migration und kein Auftrag, die Tabellen sofort anzulegen. Erst die offenen
-Mapping- und Fachentscheidungen werden bestätigt; danach werden Entitäten,
-Migration und Importvertrag daraus abgeleitet.
+Diese Datei beschreibt das vollständige Zielmodell. Die Entitäten und die
+additive EF-Migration sind im Backend vorhanden. Offene Mapping- und
+Fachentscheidungen bleiben für spätere Anbieter, Rückschreiben und
+Regelberechnungen bestehen; der fachliche Zoho-Initialimport ist davon nicht
+mehr abhängig.
 
 ## Leitentscheidungen
 
@@ -743,9 +744,11 @@ ExternalModifiedAt, FirstSeenAt, LastSeenAt, SourceDeletedAt und den
 zugehörigen `SyncRunId`. Rohdaten sind für Debugging und Reprocessing da, nicht
 für fachliche SQL-Abfragen.
 
-### Importlauf als persistenter Job
+### Fachlicher CRM-Synchronisationslauf
 
-`integration_sync_runs` wird von einer reinen Laufhistorie zu Job und Lauf:
+Die zentrale Jobdefinition und Run-Historie gehören der Identity Platform.
+`integration_sync_runs` bleibt die app-eigene, tenantisolierte Fachhistorie
+mit Modulständen, Cursorn und Datensatzfehlern und verwendet dieselbe Run-ID:
 
 ```text
 Id                     uuid PK
@@ -778,15 +781,12 @@ Retry-Information.
 Der Ablauf ist:
 
 ```text
-API: Tenant-Admin -> queued Run in Tenant-DB -> durable Queue-Nachricht
-Worker: TenantId/RunId claimen -> Tenant-DB explizit öffnen -> Adapter lesen
-       -> raw/link/upsert -> Historie/Cursor speichern -> Run abschließen
-API: Status des eigenen Tenants lesen und an Frontend liefern
+Platform: Zeitplan/manueller Start -> zentraler Run -> durable Queue-Nachricht
+Shared Worker: TenantId/RunId setzen -> registrierte Jobklasse aufrufen
+Sales Job: CrmSynchronizationService -> ausgewählten Provideradapter aufrufen
+Adapter: raw/link/upsert -> Modulhistorie/Cursor/Fehler in Tenant-DB speichern
+Platform: Fortschritt/Abschluss speichern und per SignalR an `/jobs` senden
 ```
-
-Der Worker benötigt deshalb eine Shared-NuGet-Funktion, mit der die
-Tenant-Datenbank außerhalb eines HTTP-Kontexts explizit über `TenantId`
-geöffnet werden kann. Ein künstlich gesetzter `HttpContext` ist dafür nicht
 zulässig.
 
 `integration_sync_cursors` wird um `ConnectionKey`, `LastSuccessfulRunId`,
@@ -895,8 +895,11 @@ Import werden Regel- und Snapshot-Läufe separat und nachvollziehbar gestartet.
 4. Provider-neutrale Normalisierungs- und Mapping-DTOs definieren.
 5. Zoho-Adapter auf alle Zielentitäten und Historien erweitern.
 6. Ersten Full-Import als Job ausführen und Datenqualitätsbericht prüfen.
-7. Inkrementellen Sync, Regelengine und Snapshots aktivieren.
+7. Inkrementellen Sync ist als Cursor-/Soft-Delete-Job umgesetzt; Regelengine
+   und Snapshots werden nachgelagert aktiviert.
 
-Bis Punkt 6 wird kein produktiver Vollimport gestartet. Die bisherige
-`AddCrmIntegrationFoundation`-Migration ist als technische Grundlage zu
-behandeln, nicht als vollständiges Zielmodell.
+Punkt 6 ist technisch implementiert und wird nach der einmaligen OAuth-
+Neuautorisierung mit den erweiterten Zoho-Scopes produktiv ausgeführt. Die
+Migration `CompleteSalesDomainModel` bildet die für Initial- und
+inkrementelle Läufe nötige Struktur ab; Regelengine, Snapshots und weitere
+Provider bleiben nachgelagerte Arbeit.

@@ -39,11 +39,37 @@
   provider-neutrale Credential-API der Identity Platform verschlüsselt
   verwaltet, nicht in der Tenant-Datenbank der SalesPlattform. Die Identity
   Platform enthält dabei keine Zoho-spezifischen URLs, Einstellungen oder
-  Tokenlogik.
+  Tokenlogik. Client-Secret und Refresh-Token liegen verschlüsselt in der
+  app-eigenen, tenantisolierten Sales-Datenbank.
 - Pipedrive und weitere CRM-Systeme werden später über eigene Adapter an dasselbe
   kanonische Modell angeschlossen.
 - Anbieter-IDs, Rohdaten, OAuth-Verbindungen und Sync-Zustände bleiben im
   Integrationsbereich und werden nicht in fachliche Regeln geleakt.
+- Jobdefinitionen, tenantbezogene Cron-Zeitpläne, Queue-Zustellung, Runhistorie
+  und Live-UI sind generische Funktionen der Identity Platform. Die Sales-
+  Implementierungen sind providerneutral; Zoho ist ein austauschbarer
+  `ICrmSynchronizationAdapter`.
+- Provider-Webhooks ergänzen später den festen 15-Minuten-Crawl. Sie ersetzen
+  weder den Lückenschluss durch Incremental-Crawls noch den Reconciliation-
+  Vollimport.
+- Die technische Laufzeitprüfung generischer Jobs erfolgt über eine Heartbeat-
+  Lease des `IdentityPlatform.Shared`-Workers. Verwaiste `queued`- oder
+  `running`-Läufe werden nach 90 Sekunden ohne Heartbeat aus der Platform-
+  Runhistorie entfernt, bevor ein Lauf angezeigt oder ein neuer gestartet wird.
+- Jobs können eine gemeinsame mandantenbezogene `ConcurrencyGroup` deklarieren.
+  Die Plattform verhindert dann parallel eingeplante bzw. laufende Jobs dieser
+  Gruppe. Der CRM-Vollimport und der inkrementelle Crawl teilen die Gruppe
+  `crm-synchronization`; die Prüfung erfolgt beim Einplanen und nochmals beim
+  atomaren Worker-Claim.
+- Ein laufender Plattformjob kann aus der zentralen Detailansicht echt
+  abgebrochen werden. Der Abbruch wird persistiert und über die Queue an den
+  Worker weitergegeben; die Sales-Synchronisation reicht das
+  `CancellationToken` bis zu Zoho-, Datenbank- und Batchoperationen durch.
+- Ein neuer CRM-Lauf prüft neben der app-eigenen Sync-Historie den echten
+  Plattformstatus. Ist ein gespeicherter Lauf nicht mehr `queued` oder
+  `running`, wird der verwaiste app-eigene Lauf bereinigt und der neue Lauf
+  darf starten. E-Mails bleiben eine Related-List desselben CRM-Laufs und
+  werden nicht als eigener Job geführt.
 
 ## Noch zu entscheiden, bevor die Fachintegration beginnt
 
@@ -85,9 +111,9 @@ keine stillschweigend getroffenen Anforderungen:
 | App-Manifest und `sales-user`-Rolle | vorhanden |
 | Native Windows-Rebuilds | vorhanden |
 | Pflichtenheft und KI-Kontext | vorhanden |
-| Zoho-Authentifizierung, Adapter und Hintergrundimport für Accounts/Deals/Leads | vorhanden |
+| Zoho-Authentifizierung, Adapter und vollständiger fachlicher Hintergrundimport | vorhanden |
 | Eigene Sales-Domänenmodelle und Regelengine | EF-Datenmodell vorhanden; Regelengine offen |
-| Vollständiges Zieldatenmodell vor dem Vollimport | EF-Entitäten und additive Migration umgesetzt; Mappings für weitere Module und Anbieter offen |
+| Vollständiges Zieldatenmodell vor dem Vollimport | EF-Entitäten und additive Migration umgesetzt; Zoho-Mappings für den fachlichen Initialimport umgesetzt |
 | Fachansichten und KPI-Cockpit | offen / nicht implementiert |
 | Fachliche Rollenmatrix | offen |
 

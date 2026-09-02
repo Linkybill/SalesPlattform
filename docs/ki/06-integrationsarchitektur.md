@@ -174,36 +174,76 @@ aus Zoho- oder Pipedrive-JSON befüllt.
 
 ### Hintergrundjobs und Fortschritt
 
-Ein manueller oder später periodischer Sync läuft nicht innerhalb der HTTP-
-Anfrage. Die Application-Schicht legt zunächst einen `IntegrationSyncRun` mit
-dem Status `queued` an und stellt eine providerneutrale Work-Item-Referenz in
-die durable RabbitMQ-Queue `identity-platform.crm-sync.sales-plattform.backend`.
-Ein `BackgroundService` verarbeitet den Lauf mit dem jeweils registrierten
-`ICrmAdapter`, `ICrmRecordMapper` und `ISalesCrmRepository`.
-Der Worker liest die tenantbezogene CRM-Konfiguration ohne Benutzer-Bearer
-aus der verschlüsselten App-Datenbank; ein Zugriffstoken wird nie in das
-RabbitMQ-Work Item aufgenommen.
+Ein Sync läuft nie innerhalb einer lang laufenden Browseranfrage. Die
+SalesPlattform registriert `CrmFullImportJob` und `CrmIncrementalCrawlJob` über
+das Shared-NuGet. Die Identity Platform verwaltet Definitionen, tenantbezogene
+Cron-Konfiguration, dauerhafte RabbitMQ-Zustellung, jeden Run und seine Events.
+Der Shared-Worker setzt beim Verarbeiten den Tenant-Kontext und ruft die
+registrierte Implementierung aus dem DI-Scope auf.
+Der Worker meldet während der Ausführung regelmäßig einen Heartbeat. Die
+Platform bereinigt `queued`- oder `running`-Läufe ohne Heartbeat-Lease nach
+90 Sekunden beim Auflisten, beim Start eines neuen Laufs und im Scheduler.
+Damit kann ein abgestürzter Worker keinen neuen CRM-Sync dauerhaft blockieren;
+fachliche Sync-Historie und Datensatzfehler bleiben weiterhin in der
+tenantisolierten Sales-Datenbank.
 
-Der Fortschritt wird in `integration_sync_runs`, `integration_sync_run_items`
-und `integration_sync_errors` gespeichert. Ein tenantgesicherter SignalR-Hub
-sendet Snapshots an die zugehörige Frontend-Ansicht. Die Ansicht kann bei einem
-Seitenwechsel über die `RunId` den aktuellen Snapshot erneut laden. Die Route
-`GET /api/integrations/zoho/sync/active` findet den aktiven Auftrag des aktuellen
-Tenant und nimmt einen nach einem Pod-Rebuild unterbrochenen Lauf wieder in die
-durable Queue auf. Zoho bleibt
-dabei auf `ZohoCrmAdapter`, `ZohoCrmRecordMapper` und OAuth/Token-Dienste
-begrenzt; die kanonische Persistenz kennt keine Zoho-Feldnamen.
+Beide Implementierungen delegieren an `CrmSynchronizationService`. Der Service
+liest `crm.integration` aus der app-eigenen Tenant-Datenbank und wählt über
+`CrmSynchronizationAdapterRegistry` genau einen `ICrmSynchronizationAdapter`.
+Aktuell implementiert `ZohoSyncService` diese High-Level-Grenze. Paging,
+Zoho-Module, Related-Lists, Mapping und OAuth liegen hinter dem Adapter; die
+Jobs selbst enthalten keine Providerlogik. Der Adapter schreibt ausschließlich
+über `ISalesCrmRepository` in das kanonische Modell.
 
-Die erste Jobübersicht liegt unter der app-lokalen Route `/jobs` und zeigt
-Zoho-Läufe aus `integration_sync_runs` einschließlich Modulfortschritt. Die
-Ansicht ist absichtlich so geschnitten, dass ihr generisches Jobmodell später
-in die Identity Platform ausgelagert werden kann; die SalesPlattform registriert
-dann nur noch Jobtyp, Statusquelle und Detailansicht.
+Fachlicher Detailfortschritt wird weiterhin laufbezogen in
+`integration_sync_runs`, `integration_sync_run_items` und
+`integration_sync_errors` gespeichert. Modulstände und Fehler werden als
+providerneutrale Jobdetails an die Platform gemeldet. Die gemeinsame React-
+Library zeigt `/jobs` im App-Header, konfiguriert Zeitpläne und beobachtet Läufe
+über den zentralen SignalR-Hub. Beim Öffnen eines Laufs erscheinen die
+Ereignisse live; strukturierte Details können als JSON aufgeklappt werden.
+Ein Lauf kann aus derselben Detailansicht abgebrochen werden. Die Abbruchkette
+läuft von Platform API und Outbox über den Shared-Worker bis zum
+`CancellationToken` des CRM-Adapters. Die früheren Zoho-spezifischen Queue-,
+Worker- und SignalR-Komponenten existieren nicht mehr.
+
+Jeder CRM-Lauf meldet zuerst seinen vollständigen Modulplan und danach den
+aktuellen Modulstatus. Die Fortschrittswerte unterscheiden gelesene,
+geschriebene und fehlgeschlagene Records; aus diesen Werten wird die
+Restmenge je Modul berechnet. Der Abschluss übergibt die geschriebenen Records
+zusätzlich als strukturierte `writtenRecords`-Liste in den Plattformdetails.
+Die Plattform ist für Transport, Speicherung und Live-Anzeige zuständig; die
+SalesPlattform liefert fachliche Schritte, Zähler, Fehler und Payload-Details.
 
 Der erste Lauf ist ein vollständiger Import. Danach laufen inkrementelle
 Synchronisationen anhand des Änderungsstands des jeweiligen Anbieters. Jeder
 Lauf muss wiederholbar sein: derselbe Datensatz darf bei einem Retry keine
 Duplikate erzeugen.
+
+E-Mails und Deal-Stage-Historie bleiben Related-List-Module desselben
+CRM-Sync-Jobs. E-Mails werden beim Iterieren der geänderten bzw. vollständigen
+Elternobjekte Accounts, Kontakte, Leads und Deals gelesen. Für die Related
+Lists gelten vier parallele Leseoperationen und batchweise Writes; diese
+Begrenzung schützt die Provider-API und die Tenant-Datenbank, während die
+Elternbeziehungen erhalten bleiben. Ein separater E-Mail-Job ist fachlich
+nicht vorgesehen.
+
+### Exklusive Prozessgruppen
+
+Jobs, die dieselben fachlichen Daten verändern und deshalb nicht parallel laufen
+dürfen, deklarieren eine gemeinsame `ConcurrencyGroup`. Die Gruppe ist aktuell
+mandantenbezogen und erlaubt genau einen aktiven oder eingeplanten Lauf. Der
+CRM-Vollimport und der inkrementelle Crawl verwenden beide die Gruppe
+`crm-synchronization`.
+
+Die Identity Platform prüft die Gruppe beim manuellen Einplanen, im Scheduler
+und unmittelbar vor dem Worker-Start unter derselben Datenbank-Sperre. Ein
+konkurrierender manueller Lauf wird abgewiesen. Zeitgesteuerte Läufe bleiben
+fällig und werden eingeplant, sobald die Gruppe frei ist; ein verwaister Lauf
+wird zuerst über die bestehende Heartbeat-Prüfung bereinigt. Die zentrale
+Job-UI zeigt den blockierenden Lauf an. Sales bleibt für fachlichen Fortschritt,
+Logs, Datensätze und Fehler zuständig, besitzt aber keine zweite konkurrierende
+Sperrlogik.
 
 ## Mandanten und Verbindungen
 
@@ -262,14 +302,20 @@ Pflichtenheft beschriebenen menschlichen Freigaben gebunden.
 
 ## Konsequenz für die Umsetzung
 
-Die nächste Implementierung baut nicht zuerst `ZohoDeal`-Tabellen, sondern:
+Die Initialimport-Implementierung besteht aus:
 
 1. provider-neutrale kanonische Tabellen und externe Identitäten,
 2. Integrations- und Sync-Tabellen,
 3. eine Adapter-Schnittstelle,
 4. den read-only Zoho-Adapter,
-5. einen ersten vollständigen Account-/Deal-Import,
-6. danach Leads, Aktivitäten, Termine und Stage-Historie.
+5. dem vollständigen Initialimport für Owner, Accounts, Kontakte, Leads,
+   Produkte, Pipelines, Stufen und Deals,
+6. dem Import der Related-Lists für E-Mails und Deal-Stage-Historie,
+7. dem Import von Calls, Tasks und Events/Terminen.
+
+Der Import läuft als zentraler Anwendungsjob der Identity Platform. Das
+Frontend erhält Status und Fehler über die gemeinsame Jobseite; Modul- und
+Datensatzdetails stammen aus der tenantisolierten Sales-Datenbank.
 
 Die Zoho-Anbindung ist damit die erste Implementierung eines allgemeinen
 Integrationsmusters und kein Sonderweg für die gesamte Anwendung.
