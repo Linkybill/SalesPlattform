@@ -53,6 +53,16 @@ Stand: 2026-09-02.
   auswählbare Provider; seine Client-ID, sein Datacenter und sein Client-Secret
   werden nur eingeblendet, wenn `Zoho CRM` ausgewählt ist. Das Client-Secret ist
   ein verschlüsseltes Secret-Setting.
+- Die aktuell integrierten Paketstände sind `@hammer2fall/identity-platform-react`
+  `0.1.43` im Frontend und `IdentityPlatform.Shared` `0.1.37` im Backend.
+  Die Jobdefinition enthält neben Zeitplan und Aktivierung auch
+  `ConcurrencyGroup` und `ConcurrencyScope`; Vollimport und Crawl verwenden
+  gemeinsam `crm-synchronization`.
+- Der lokale K3d-Rollout vom 2026-09-02 ist verifiziert: Identity-Platform-API
+  und Deployment-Controller, Aufmaß-Backend/-Frontend sowie Sales-Backend/-Frontend
+  sind jeweils `1/1` bereit. Die laufenden Anwendungstags sind Aufmaß `1.0.0`
+  und Sales `0.1.0`. Die Plattformdatenbank enthält die Migration
+  `20260902090000_AddApplicationJobConcurrency`.
 - Regelengine, Cockpit und Fachansichten bleiben weiterer Zielumfang; die
   importierten Entitäten und Historien stehen dafür jetzt vollständig zur
   Verfügung.
