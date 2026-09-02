@@ -42,6 +42,8 @@ h2 { margin-bottom: 0; font-size: 22px; }
 .integration-progress-heading, .integration-progress-summary, .integration-progress-module { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
 .integration-progress-modules { display: grid; gap: 6px; padding-top: 3px; border-top: 1px solid #23445b; }
 .integration-progress-module { padding-top: 6px; }
+.integration-progress-module-copy, .job-module-copy { display: grid; gap: 4px; min-width: 0; }
+.integration-progress-module-error, .job-module-error { color: #ffb8c2; font-size: 12px; line-height: 1.4; }
 .jobs-card { margin-bottom: 22px; }
 .jobs-layout { display: grid; grid-template-columns: minmax(250px, 0.8fr) minmax(0, 1.6fr); gap: 18px; margin-top: 20px; }
 .jobs-list, .job-detail { display: grid; gap: 8px; align-content: start; }

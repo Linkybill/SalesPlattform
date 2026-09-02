@@ -57,7 +57,7 @@ public static class ZohoEndpointExtensions
             Results.Ok(await connections.GetStatusAsync(cancellationToken)));
 
         protectedGroup.MapGet("/test-connection", async (
-            ICrmAdapter adapter,
+            ZohoCrmAdapter adapter,
             CancellationToken cancellationToken) =>
         {
             try
@@ -72,7 +72,7 @@ public static class ZohoEndpointExtensions
 
         protectedGroup.MapGet("/metadata", async (
             string module,
-            ICrmAdapter adapter,
+            ZohoCrmAdapter adapter,
             CancellationToken cancellationToken) =>
         {
             if (string.IsNullOrWhiteSpace(module))
@@ -86,86 +86,6 @@ public static class ZohoEndpointExtensions
             {
                 return Results.BadRequest(new { message = exception.Message });
             }
-        });
-
-        protectedGroup.MapPost("/sync", async (
-            ZohoSyncRequest? request,
-            ClaimsPrincipal user,
-            TenantAdminAccessService tenantAdminAccess,
-            ZohoSyncService sync,
-            CancellationToken cancellationToken) =>
-        {
-            if (!await tenantAdminAccess.IsCurrentTenantAdminAsync(user, cancellationToken))
-                return Results.Forbid();
-
-            try
-            {
-                if (!Guid.TryParse(user.FindFirstValue("tenant_id"), out var tenantId))
-                    return Results.BadRequest(new { message = "Der Access Token enthält keine gültige tenant_id." });
-                var requestedBy = user.FindFirstValue("sub");
-                if (string.IsNullOrWhiteSpace(requestedBy))
-                    return Results.BadRequest(new { message = "Der angemeldete Benutzer besitzt keine gültige Subject-ID." });
-
-                var result = await sync.StartAsync(
-                    request?.Modules,
-                    tenantId,
-                    requestedBy,
-                    cancellationToken);
-                return Results.Accepted($"/api/integrations/zoho/sync/{result.RunId:D}", result);
-            }
-            catch (ZohoSyncAlreadyRunningException exception)
-            {
-                return Results.Conflict(new { message = exception.Message });
-            }
-            catch (InvalidOperationException exception)
-            {
-                return Results.BadRequest(new { message = exception.Message });
-            }
-        });
-
-        protectedGroup.MapGet("/sync/active", async (
-            ClaimsPrincipal user,
-            TenantAdminAccessService tenantAdminAccess,
-            ZohoSyncService sync,
-            CancellationToken cancellationToken) =>
-        {
-            if (!await tenantAdminAccess.IsCurrentTenantAdminAsync(user, cancellationToken))
-                return Results.Forbid();
-            if (!Guid.TryParse(user.FindFirstValue("tenant_id"), out var tenantId))
-                return Results.BadRequest(new { message = "Der Access Token enthält keine gültige tenant_id." });
-            var requestedBy = user.FindFirstValue("sub");
-            if (string.IsNullOrWhiteSpace(requestedBy))
-                return Results.BadRequest(new { message = "Der angemeldete Benutzer besitzt keine gültige Subject-ID." });
-
-            var snapshot = await sync.GetActiveSnapshotAndRecoverAsync(
-                tenantId,
-                requestedBy,
-                cancellationToken);
-            return snapshot is null ? Results.NoContent() : Results.Ok(snapshot);
-        });
-
-        protectedGroup.MapGet("/sync/runs", async (
-            int? limit,
-            ClaimsPrincipal user,
-            TenantAdminAccessService tenantAdminAccess,
-            ZohoSyncService sync,
-            CancellationToken cancellationToken) =>
-        {
-            if (!await tenantAdminAccess.IsCurrentTenantAdminAsync(user, cancellationToken))
-                return Results.Forbid();
-
-            return Results.Ok(await sync.GetRecentSnapshotsAsync(
-                limit ?? 50,
-                cancellationToken));
-        });
-
-        protectedGroup.MapGet("/sync/{runId:guid}", async (
-            Guid runId,
-            ZohoSyncService sync,
-            CancellationToken cancellationToken) =>
-        {
-            var snapshot = await sync.GetSnapshotAsync(runId, cancellationToken);
-            return snapshot is null ? Results.NotFound() : Results.Ok(snapshot);
         });
 
         endpoints.MapGet("/api/integrations/zoho/oauth/callback", (
@@ -188,6 +108,3 @@ public static class ZohoEndpointExtensions
 public sealed record ZohoOAuthCompleteRequest(
     string Code,
     string State);
-
-public sealed record ZohoSyncRequest(
-    IReadOnlyCollection<string>? Modules);

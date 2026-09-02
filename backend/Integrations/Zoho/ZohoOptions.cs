@@ -13,7 +13,7 @@ public sealed class ZohoOptions
         "http://localhost:3101/apps/sales-plattform/";
 
     public string Scopes { get; set; } =
-        "ZohoCRM.modules.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ";
+        "ZohoCRM.modules.READ,ZohoCRM.users.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ,ZohoCRM.settings.layouts.READ,ZohoCRM.settings.pipeline.READ,ZohoCRM.settings.related_lists.READ,ZohoCRM.modules.emails.READ";
 
     public int OAuthStateLifetimeMinutes { get; set; } = 10;
 

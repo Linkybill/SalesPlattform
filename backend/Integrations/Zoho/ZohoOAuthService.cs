@@ -20,7 +20,8 @@ public sealed class ZohoOAuthService(
     IHttpClientFactory httpClientFactory,
     IOptions<ZohoOptions> configuredOptions,
     ZohoConfigurationService configurationService,
-    ZohoConnectionStore connectionStore)
+    ZohoConnectionStore connectionStore,
+    ZohoTokenService tokenService)
 {
     private readonly ZohoOptions options = configuredOptions.Value;
 
@@ -49,6 +50,7 @@ public sealed class ZohoOAuthService(
                 ["client_id"] = configuration.ClientId,
                 ["response_type"] = "code",
                 ["access_type"] = "offline",
+                ["prompt"] = "consent",
                 ["redirect_uri"] = configuration.RedirectUri,
                 ["state"] = state
             });
@@ -97,6 +99,7 @@ public sealed class ZohoOAuthService(
             token.ApiDomain ?? configuration.ApiUrl,
             subject,
             cancellationToken);
+        tokenService.InvalidateCachedToken();
         return new ZohoConnectionResult(
             true,
             "zoho",

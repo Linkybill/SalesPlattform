@@ -112,7 +112,7 @@ $zohoFrontendCallbackUrl = if ([string]::IsNullOrWhiteSpace($env:ZOHO_FRONTEND_C
     'http://localhost:3101/apps/sales-plattform/import'
 } else { $env:ZOHO_FRONTEND_CALLBACK_URL }
 $zohoScopes = if ([string]::IsNullOrWhiteSpace($env:ZOHO_SCOPES)) {
-    'ZohoCRM.modules.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ'
+    'ZohoCRM.modules.READ,ZohoCRM.users.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ,ZohoCRM.settings.layouts.READ,ZohoCRM.settings.pipeline.READ,ZohoCRM.settings.related_lists.READ,ZohoCRM.modules.emails.READ'
 } else { $env:ZOHO_SCOPES }
 
 function Get-SalesDeployments {
@@ -391,23 +391,27 @@ foreach ($deployment in $deployments) {
 }
 
 foreach ($deployment in $deployments | Where-Object Component -eq 'backend') {
+    $deploymentJson = (Invoke-Captured $kubectlCommand get deployment `
+        -n $deployment.Namespace $deployment.Name -o json) | ConvertFrom-Json
+    $selector = @($deploymentJson.spec.selector.matchLabels.PSObject.Properties |
+        ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ','
     $podOutput = Invoke-Captured $kubectlCommand get pods -n $deployment.Namespace `
-        -l "identity-platform.io/app-key=$applicationKey,identity-platform.io/component-key=backend" `
-        -o 'custom-columns=NAME:.metadata.name,PHASE:.status.phase' --no-headers
+        -l $selector `
+        -o 'custom-columns=NAME:.metadata.name,READY:.status.containerStatuses[0].ready,PHASE:.status.phase' `
+        --sort-by=.metadata.creationTimestamp --no-headers
     $podRows = @($podOutput -split "`r?`n")
     $podName = $podRows |
         ForEach-Object {
             $columns = $_ -split '\s+'
-            if ($columns.Count -ge 2 -and $columns[1] -eq 'Running') { $columns[0] }
+            if ($columns.Count -ge 3 -and $columns[1] -eq 'true' -and $columns[2] -eq 'Running') { $columns[0] }
         } |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
-        Select-Object -First 1
+        Select-Object -Last 1
     if ([string]::IsNullOrWhiteSpace($podName)) {
         throw "Kein laufender Backend-Pod für '$($deployment.Namespace)/$($deployment.Name)' gefunden."
     }
     $logs = Invoke-Captured $kubectlCommand logs -n $deployment.Namespace pod/$podName --tail=250
-    if ($logs -notmatch 'Received HTTP response headers.*200' -or
-        $logs -notmatch 'Application manifest registered' -or
+    if ($logs -notmatch 'Application manifest registered' -or
         $logs -notmatch 'Application started') {
         Write-Host $logs
         throw "Die SalesPlattform-Instanz '$($deployment.Namespace)/$($deployment.Name)' hat sich nicht erfolgreich registriert."

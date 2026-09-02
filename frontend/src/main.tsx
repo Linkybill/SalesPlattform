@@ -11,6 +11,11 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <IdentityPlatformApplication
       {...identityPlatformConfig}
+      jobs={{
+        navigationTitle: 'Jobs',
+        title: 'Jobübersicht',
+        description: 'Konfigurieren und überwachen Sie die Hintergrundaufträge dieses Mandanten.',
+      }}
       header={{
         eyebrow: 'IDENTITY PLATFORM APP',
         applicationName: 'SalesPlattform',

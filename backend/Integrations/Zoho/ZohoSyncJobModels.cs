@@ -3,11 +3,7 @@ using SalesPlattform.Backend.Data;
 
 namespace SalesPlattform.Backend.Integrations.Zoho;
 
-public sealed record ZohoSyncJobStartResult(
-    Guid RunId,
-    string Status);
-
-public sealed record ZohoSyncModuleSnapshot(
+internal sealed record ZohoSynchronizationModuleSnapshot(
     string Module,
     string Status,
     int RecordsRead,
@@ -15,11 +11,27 @@ public sealed record ZohoSyncModuleSnapshot(
     int RecordsFailed,
     DateTimeOffset? StartedAt,
     DateTimeOffset? FinishedAt,
-    string? Error);
+    string? Error,
+    IReadOnlyCollection<ZohoSynchronizationErrorSnapshot> Errors);
 
-public sealed record ZohoSyncJobSnapshot(
+internal sealed record ZohoSynchronizationErrorSnapshot(
+    string? ExternalId,
+    string ErrorCode,
+    string Message,
+    bool Retryable,
+    DateTimeOffset OccurredAt);
+
+internal sealed record ZohoSynchronizationWrittenRecordSnapshot(
+    string EntityType,
+    string ExternalId,
+    string PayloadJson,
+    DateTimeOffset? ExternalModifiedAt,
+    DateTimeOffset SyncedAt);
+
+internal sealed record ZohoSynchronizationSnapshot(
     Guid RunId,
     string Status,
+    string Mode,
     IReadOnlyCollection<string> Modules,
     string? CurrentModule,
     int RecordsRead,
@@ -29,21 +41,25 @@ public sealed record ZohoSyncJobSnapshot(
     DateTimeOffset? StartedAt,
     DateTimeOffset? FinishedAt,
     string? Error,
-    IReadOnlyCollection<ZohoSyncModuleSnapshot> Items);
+    IReadOnlyCollection<ZohoSynchronizationModuleSnapshot> Items,
+    IReadOnlyCollection<ZohoSynchronizationWrittenRecordSnapshot> WrittenRecords);
 
-internal sealed record ZohoSyncJobWorkItem(
+internal sealed record ZohoSynchronizationWorkItem(
     Guid RunId,
     Guid TenantId,
     string UserSubject);
 
-internal static class ZohoSyncJobSnapshotMapper
+internal static class ZohoSynchronizationSnapshotMapper
 {
-    public static ZohoSyncJobSnapshot Map(IntegrationSyncRun run)
+    public static ZohoSynchronizationSnapshot Map(
+        IntegrationSyncRun run,
+        IReadOnlyCollection<ZohoSynchronizationWrittenRecordSnapshot>? writtenRecords = null)
     {
         var modules = JsonSerializer.Deserialize<string[]>(run.RequestedModulesJson) ?? [];
-        return new ZohoSyncJobSnapshot(
+        return new ZohoSynchronizationSnapshot(
             run.Id,
             run.Status,
+            run.Mode,
             modules,
             run.CurrentModule,
             run.RecordsRead,
@@ -55,7 +71,7 @@ internal static class ZohoSyncJobSnapshotMapper
             run.Error,
             run.Items
                 .OrderBy(item => item.Module)
-                .Select(item => new ZohoSyncModuleSnapshot(
+                .Select(item => new ZohoSynchronizationModuleSnapshot(
                     item.Module,
                     item.Status,
                     item.RecordsRead,
@@ -63,7 +79,18 @@ internal static class ZohoSyncJobSnapshotMapper
                     item.RecordsFailed,
                     item.StartedAt,
                     item.FinishedAt,
-                    item.Error))
-                .ToArray());
+                    item.Error,
+                    item.Errors
+                        .OrderByDescending(error => error.OccurredAt)
+                        .Take(5)
+                        .Select(error => new ZohoSynchronizationErrorSnapshot(
+                            error.ExternalId,
+                            error.ErrorCode,
+                            error.Message,
+                            error.Retryable,
+                            error.OccurredAt))
+                        .ToArray()))
+                .ToArray(),
+            writtenRecords ?? []);
     }
 }

@@ -7,13 +7,25 @@ public static class CrmProviders
     public const string Zoho = "zoho";
 }
 
+public static class CrmSyncModes
+{
+    public const string Full = "full";
+    public const string Incremental = "incremental";
+}
+
 public static class CrmEntityTypes
 {
+    public const string Owner = "owner";
     public const string Customer = "customer";
     public const string Contact = "contact";
     public const string Lead = "lead";
+    public const string ProductCategory = "product-category";
     public const string Deal = "deal";
     public const string Product = "product";
+    public const string Pipeline = "pipeline";
+    public const string PipelineStage = "pipeline-stage";
+    public const string DealStageHistory = "deal-stage-history";
+    public const string Contract = "contract";
     public const string Activity = "activity";
     public const string Appointment = "appointment";
 }
@@ -35,7 +47,22 @@ public sealed record CrmExternalRecord(
     string Module,
     string ExternalId,
     JsonElement Payload,
-    DateTimeOffset? ModifiedAt);
+    DateTimeOffset? ModifiedAt,
+    IReadOnlyCollection<CrmRecordRelation>? Relations = null,
+    string ConnectionKey = "default");
+
+public sealed record CrmDeletedRecord(
+    string Provider,
+    string Module,
+    string EntityType,
+    string ExternalId,
+    DateTimeOffset DeletedAt,
+    string ConnectionKey = "default");
+
+public sealed record CrmRecordRelation(
+    string EntityType,
+    string ExternalId,
+    string? Role = null);
 
 public interface ICrmAdapter
 {
@@ -54,5 +81,19 @@ public interface ICrmAdapter
     Task<IReadOnlyCollection<CrmExternalRecord>> GetRecordsAsync(
         string module,
         IReadOnlyCollection<string> fields,
+        DateTimeOffset? modifiedSince = null,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<CrmDeletedRecord>> GetDeletedRecordsAsync(
+        string module,
+        DateTimeOffset? deletedSince = null,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyCollection<CrmExternalRecord>> GetRelatedRecordsAsync(
+        string parentModule,
+        string parentExternalId,
+        string relatedList,
+        IReadOnlyCollection<string> fields,
+        DateTimeOffset? modifiedSince = null,
         CancellationToken cancellationToken = default);
 }

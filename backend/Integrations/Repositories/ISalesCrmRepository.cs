@@ -48,12 +48,27 @@ public interface ISalesCrmRepository
         string entityType,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<string>> GetExternalIdsAsync(
+        string providerKey,
+        string connectionKey,
+        string entityType,
+        CancellationToken cancellationToken);
+
+    Task MarkDeletedAsync(
+        CrmDeletedRecord record,
+        Guid syncRunId,
+        CancellationToken cancellationToken);
+
     void AddSyncError(
         Guid syncRunId,
         Guid syncRunItemId,
         string module,
         string? externalId,
         Exception exception);
+
+    Task ClearSyncErrorsAsync(
+        Guid syncRunId,
+        CancellationToken cancellationToken);
 
     void DetachRecordChanges();
 

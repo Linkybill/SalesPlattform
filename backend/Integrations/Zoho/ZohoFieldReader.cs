@@ -52,6 +52,19 @@ internal static class ZohoFieldReader
             ? value
             : null;
 
+    public static bool Bool(JsonElement record, params string[] fieldNames)
+    {
+        var value = Find(record, fieldNames);
+        if (value is null) return false;
+        if (value.Value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            return value.Value.GetBoolean();
+        var text = String(record, fieldNames);
+        return string.Equals(text, "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(text, "yes", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(text, "active", StringComparison.OrdinalIgnoreCase)
+            || text == "1";
+    }
+
     public static DateTimeOffset? DateTimeOffset(JsonElement record, params string[] fieldNames)
     {
         var text = String(record, fieldNames);

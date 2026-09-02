@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using IdentityPlatform.Shared.ApplicationSettings;
 using Microsoft.Extensions.Options;
 using SalesPlattform.Backend.Integrations;
@@ -111,6 +112,7 @@ public sealed class ZohoConfigurationService(
             cancellationToken)
             ?? throw new InvalidOperationException("Die Einstellung 'zoho.clientSecret' ist für diesen Mandanten nicht konfiguriert.");
         var dataCenter = ReadString(effective, "zoho.datacenter") ?? "eu";
+        await MirrorBackgroundSettingsAsync(settings, effective, userId, cancellationToken);
         var (accountsUrl, apiUrl) = ResolveDataCenter(dataCenter);
         options.ValidateForOAuth();
         return new ZohoTenantConfiguration(
@@ -122,6 +124,34 @@ public sealed class ZohoConfigurationService(
             options.FrontendCallbackUrl,
             options.GetScopes(),
             options.OAuthStateLifetimeMinutes);
+    }
+
+    private async Task MirrorBackgroundSettingsAsync(
+        ApplicationSettingsContext context,
+        EffectiveApplicationSettings effective,
+        string updatedBy,
+        CancellationToken cancellationToken)
+    {
+        // Interactive requests can resolve tenant-app settings from the
+        // platform. Background workers deliberately have no user bearer token,
+        // so keep the non-secret CRM connection values in the app-owned tenant
+        // database as well. The client secret is handled exclusively by the
+        // secret store and is never copied through this method.
+        foreach (var key in new[] { "crm.integration", "zoho.datacenter", "zoho.clientId" })
+        {
+            var setting = effective.Settings.FirstOrDefault(item =>
+                string.Equals(item.Definition.Key, key, StringComparison.OrdinalIgnoreCase));
+            if (setting?.EffectiveValue is not JsonElement value)
+                continue;
+
+            await localSettings.SetAsync(
+                context,
+                key,
+                ApplicationSettingScopes.TenantApp,
+                value.Clone(),
+                updatedBy,
+                cancellationToken);
+        }
     }
 
     private static string ReadRequiredString(

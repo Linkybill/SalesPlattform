@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SalesPlattform.Backend.Data;
 using SalesPlattform.Backend.Integrations.Abstractions;
+using SalesPlattform.Backend.Integrations;
 
 namespace SalesPlattform.Backend.Integrations.Repositories;
 
@@ -33,7 +34,14 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
     {
         IQueryable<IntegrationSyncRun> query = db.IntegrationSyncRuns;
         if (asNoTracking) query = query.AsNoTracking();
-        if (includeItems) query = query.Include(item => item.Items);
+        if (includeItems)
+        {
+            query = query
+                .Include(item => item.Items)
+                    .ThenInclude(item => item.Errors)
+                .Include(item => item.Errors);
+            query = query.AsSplitQuery();
+        }
         return await query.SingleOrDefaultAsync(item => item.Id == runId, cancellationToken);
     }
 
@@ -46,7 +54,14 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
     {
         IQueryable<IntegrationSyncRun> query = db.IntegrationSyncRuns;
         if (asNoTracking) query = query.AsNoTracking();
-        if (includeItems) query = query.Include(item => item.Items);
+        if (includeItems)
+        {
+            query = query
+                .Include(item => item.Items)
+                    .ThenInclude(item => item.Errors)
+                .Include(item => item.Errors);
+            query = query.AsSplitQuery();
+        }
         return await query
             .Where(item => item.ProviderKey == providerKey
                 && item.ConnectionKey == connectionKey
@@ -63,7 +78,14 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         CancellationToken cancellationToken)
     {
         IQueryable<IntegrationSyncRun> query = db.IntegrationSyncRuns.AsNoTracking();
-        if (includeItems) query = query.Include(item => item.Items);
+        if (includeItems)
+        {
+            query = query
+                .Include(item => item.Items)
+                    .ThenInclude(item => item.Errors)
+                .Include(item => item.Errors);
+            query = query.AsSplitQuery();
+        }
         return await query
             .Where(item => item.ProviderKey == providerKey
                 && item.ConnectionKey == connectionKey)
@@ -86,8 +108,7 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
             Id = Guid.NewGuid(),
             SyncRunId = run.Id,
             Module = module,
-            Status = "running",
-            StartedAt = DateTimeOffset.UtcNow
+            Status = "queued"
         };
         run.Items.Add(item);
         db.IntegrationSyncRunItems.Add(item);
@@ -133,14 +154,44 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
 
         switch (record)
         {
+            case CrmCanonicalOwner owner:
+                await UpsertOwnerAsync(owner, cancellationToken);
+                break;
             case CrmCanonicalCustomer customer:
                 await UpsertCustomerAsync(customer, cancellationToken);
+                break;
+            case CrmCanonicalContact contact:
+                await UpsertContactAsync(contact, cancellationToken);
+                break;
+            case CrmCanonicalLead lead:
+                await UpsertLeadAsync(lead, cancellationToken);
+                break;
+            case CrmCanonicalProductCategory category:
+                await UpsertProductCategoryAsync(category, cancellationToken);
+                break;
+            case CrmCanonicalProduct product:
+                await UpsertProductAsync(product, cancellationToken);
+                break;
+            case CrmCanonicalPipeline pipeline:
+                await UpsertPipelineAsync(pipeline, cancellationToken);
+                break;
+            case CrmCanonicalPipelineStage stage:
+                await UpsertPipelineStageAsync(stage, cancellationToken);
                 break;
             case CrmCanonicalDeal deal:
                 await UpsertDealAsync(deal, cancellationToken);
                 break;
-            case CrmCanonicalLead lead:
-                await UpsertLeadAsync(lead, cancellationToken);
+            case CrmCanonicalDealStageHistory history:
+                await UpsertDealStageHistoryAsync(history, cancellationToken);
+                break;
+            case CrmCanonicalContract contract:
+                await UpsertContractAsync(contract, cancellationToken);
+                break;
+            case CrmCanonicalActivity activity:
+                await UpsertActivityAsync(activity, cancellationToken);
+                break;
+            case CrmCanonicalAppointment appointment:
+                await UpsertAppointmentAsync(appointment, cancellationToken);
                 break;
             default:
                 throw new InvalidOperationException(
@@ -171,6 +222,95 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         return cursor;
     }
 
+    public async Task<IReadOnlyCollection<string>> GetExternalIdsAsync(
+        string providerKey,
+        string connectionKey,
+        string entityType,
+        CancellationToken cancellationToken)
+        => await db.IntegrationEntityLinks
+            .AsNoTracking()
+            .Where(item => item.ProviderKey == providerKey
+                && item.ConnectionKey == connectionKey
+                && item.EntityType == entityType
+                && item.SourceDeletedAt == null)
+            .Select(item => item.ExternalId)
+            .ToArrayAsync(cancellationToken);
+
+    public async Task MarkDeletedAsync(
+        CrmDeletedRecord record,
+        Guid syncRunId,
+        CancellationToken cancellationToken)
+    {
+        var link = await db.IntegrationEntityLinks
+            .SingleOrDefaultAsync(item => item.ProviderKey == record.Provider
+                && item.ConnectionKey == record.ConnectionKey
+                && item.EntityType == record.EntityType
+                && item.ExternalId == record.ExternalId, cancellationToken);
+        if (link is null)
+            return;
+
+        link.SourceDeletedAt = record.DeletedAt;
+        var raw = await db.IntegrationRawRecords
+            .SingleOrDefaultAsync(item => item.ProviderKey == record.Provider
+                && item.ConnectionKey == record.ConnectionKey
+                && item.EntityType == record.EntityType
+                && item.ExternalId == record.ExternalId, cancellationToken);
+        if (raw is not null)
+        {
+            raw.SourceDeletedAt = record.DeletedAt;
+            raw.SyncRunId = syncRunId;
+            raw.SyncedAt = DateTimeOffset.UtcNow;
+        }
+
+        switch (link.InternalEntityType)
+        {
+            case CrmEntityTypes.Owner:
+                var owner = await db.SalesOwners.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
+                if (owner is not null) { owner.IsActive = false; owner.SourceDeletedAt = record.DeletedAt; }
+                break;
+            case CrmEntityTypes.Customer:
+                var customer = await db.SalesCustomers.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
+                if (customer is not null) { customer.IsActive = false; customer.SourceDeletedAt = record.DeletedAt; }
+                break;
+            case CrmEntityTypes.Contact:
+                var contact = await db.SalesContacts.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
+                if (contact is not null) { contact.IsActive = false; contact.SourceDeletedAt = record.DeletedAt; }
+                break;
+            case CrmEntityTypes.Lead:
+                var lead = await db.SalesLeads.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
+                if (lead is not null) { lead.IsActive = false; lead.SourceDeletedAt = record.DeletedAt; }
+                break;
+            case CrmEntityTypes.Product:
+                var product = await db.SalesProducts.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
+                if (product is not null) { product.IsActive = false; product.SourceDeletedAt = record.DeletedAt; }
+                break;
+            case CrmEntityTypes.ProductCategory:
+                var category = await db.SalesProductCategories.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
+                if (category is not null) category.IsActive = false;
+                break;
+            case CrmEntityTypes.Pipeline:
+                var pipeline = await db.SalesPipelines.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
+                if (pipeline is not null) pipeline.IsActive = false;
+                break;
+            case CrmEntityTypes.PipelineStage:
+                var stage = await db.SalesPipelineStages.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
+                if (stage is not null) stage.IsActive = false;
+                break;
+            case CrmEntityTypes.Deal:
+                var deal = await db.SalesDeals.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
+                if (deal is not null) { deal.IsActive = false; deal.SourceDeletedAt = record.DeletedAt; }
+                break;
+            case CrmEntityTypes.Activity:
+                var activity = await db.SalesActivities.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
+                if (activity is not null) activity.SourceDeletedAt = record.DeletedAt;
+                break;
+            case CrmEntityTypes.Appointment:
+                var appointment = await db.SalesAppointments.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
+                if (appointment is not null) { appointment.IsActive = false; appointment.SourceDeletedAt = record.DeletedAt; }
+                break;
+        }
+    }
+
     public void AddSyncError(
         Guid syncRunId,
         Guid syncRunItemId,
@@ -185,18 +325,26 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
             Module = module,
             ExternalId = externalId,
             ErrorCode = exception.GetType().Name,
-            Message = exception.Message[..Math.Min(exception.Message.Length, 4000)],
+            Message = IntegrationErrorFormatter.Describe(exception),
             Retryable = false,
             Attempt = 1,
             OccurredAt = DateTimeOffset.UtcNow
         });
+
+    public Task ClearSyncErrorsAsync(
+        Guid syncRunId,
+        CancellationToken cancellationToken)
+        => db.IntegrationSyncErrors
+            .Where(error => error.SyncRunId == syncRunId)
+            .ExecuteDeleteAsync(cancellationToken);
 
     public void DetachRecordChanges()
     {
         foreach (var entry in db.ChangeTracker.Entries().Where(entry =>
                      entry.Entity is not IntegrationSyncRun
                      && entry.Entity is not IntegrationSyncRunItem
-                     && entry.Entity is not IntegrationSyncError))
+                     && entry.Entity is not IntegrationSyncError
+                     && entry.Entity is not IntegrationSyncCursor))
         {
             entry.State = EntityState.Detached;
         }
@@ -205,139 +353,623 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
     public Task SaveChangesAsync(CancellationToken cancellationToken)
         => db.SaveChangesAsync(cancellationToken);
 
-    private async Task UpsertCustomerAsync(
-        CrmCanonicalCustomer record,
-        CancellationToken cancellationToken)
+    private async Task UpsertOwnerAsync(CrmCanonicalOwner record, CancellationToken cancellationToken)
     {
         var link = await FindLinkAsync(record, cancellationToken);
-        SalesCustomer customer;
+        var owner = link is null
+            ? new SalesOwner { Id = Guid.NewGuid(), DisplayName = record.DisplayName }
+            : await db.SalesOwners.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Owner", link.InternalEntityId);
         if (link is null)
         {
-            customer = new SalesCustomer { Id = Guid.NewGuid(), Name = record.Name };
-            db.SalesCustomers.Add(customer);
-            link = NewLink(record, CrmEntityTypes.Customer, customer.Id);
-            db.IntegrationEntityLinks.Add(link);
+            db.SalesOwners.Add(owner);
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.Owner, owner.Id));
         }
-        else
+        owner.DisplayName = record.DisplayName;
+        owner.Email = record.Email;
+        owner.IsActive = record.IsActive;
+        owner.SourceCreatedAt = record.CreatedAt;
+        owner.SourceModifiedAt = record.ModifiedAt;
+        owner.LastSeenAt = DateTimeOffset.UtcNow;
+    }
+
+    private async Task UpsertCustomerAsync(CrmCanonicalCustomer record, CancellationToken cancellationToken)
+    {
+        var link = await FindLinkAsync(record, cancellationToken);
+        var customer = link is null
+            ? new SalesCustomer { Id = Guid.NewGuid(), Name = record.Name }
+            : await db.SalesCustomers.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Kunde", link.InternalEntityId);
+        var previousStatus = customer.Status;
+        var isNewCustomer = link is null;
+        if (link is null)
         {
-            customer = await db.SalesCustomers
-                .SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
-                ?? throw new InvalidOperationException(
-                    $"Die interne Kundenentität {link.InternalEntityId} fehlt.");
+            db.SalesCustomers.Add(customer);
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.Customer, customer.Id));
         }
 
         customer.Name = record.Name;
+        customer.LegalName = record.LegalName;
+        customer.TaxNumber = record.TaxNumber;
+        customer.WebsiteDomain = record.WebsiteDomain;
         customer.Industry = record.Industry;
         customer.PostalCode = record.PostalCode;
         customer.City = record.City;
+        customer.RegionCode = record.RegionCode;
         customer.CountryCode = record.CountryCode;
+        customer.AddressLine1 = record.AddressLine1;
+        customer.HouseNumber = record.HouseNumber;
+        customer.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
         customer.Status = record.Status ?? customer.Status;
+        customer.IsActive = true;
+        customer.NeedsReview = string.IsNullOrWhiteSpace(customer.CountryCode)
+            || string.IsNullOrWhiteSpace(customer.PostalCode)
+            || string.IsNullOrWhiteSpace(customer.Industry);
         customer.SourceCreatedAt = record.CreatedAt;
         customer.SourceModifiedAt = record.ModifiedAt;
-        link.LastSeenAt = DateTimeOffset.UtcNow;
+        customer.LastSeenAt = DateTimeOffset.UtcNow;
+        SetLinkSeen(link, record);
+
+        if (isNewCustomer || !string.Equals(previousStatus, customer.Status, StringComparison.OrdinalIgnoreCase))
+        {
+            db.SalesCustomerStatusHistories.Add(new SalesCustomerStatusHistory
+            {
+                Id = Guid.NewGuid(),
+                CustomerId = customer.Id,
+                Status = customer.Status,
+                ValidFrom = record.ModifiedAt ?? record.CreatedAt ?? DateTimeOffset.UtcNow
+            });
+        }
     }
 
-    private async Task UpsertDealAsync(
-        CrmCanonicalDeal record,
-        CancellationToken cancellationToken)
+    private async Task UpsertContactAsync(CrmCanonicalContact record, CancellationToken cancellationToken)
     {
         var link = await FindLinkAsync(record, cancellationToken);
-        SalesDeal deal;
+        var contact = link is null
+            ? new SalesContact { Id = Guid.NewGuid(), Name = record.Name }
+            : await db.SalesContacts.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Kontakt", link.InternalEntityId);
         if (link is null)
         {
-            deal = new SalesDeal { Id = Guid.NewGuid(), Name = record.Name };
-            db.SalesDeals.Add(deal);
-            link = NewLink(record, CrmEntityTypes.Deal, deal.Id);
-            db.IntegrationEntityLinks.Add(link);
-        }
-        else
-        {
-            deal = await db.SalesDeals
-                .SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
-                ?? throw new InvalidOperationException(
-                    $"Die interne Dealentität {link.InternalEntityId} fehlt.");
+            db.SalesContacts.Add(contact);
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.Contact, contact.Id));
         }
 
-        deal.CustomerId = record.CustomerExternalId is null
-            ? null
-            : await FindInternalIdAsync(record, CrmEntityTypes.Customer, record.CustomerExternalId, cancellationToken);
-        deal.Name = record.Name;
-        deal.Amount = record.Amount;
-        deal.Currency = record.Currency;
-        deal.NeedsReview = record.PipelineKey is not null
-            || record.StageKey is not null
-            || record.ProductName is not null;
-        deal.DurationMonths = record.DurationMonths;
-        deal.ContractEndAt = record.ContractEndAt;
-        deal.ClosingAt = record.ClosingAt;
-        deal.Status = record.Status ?? deal.Status;
-        deal.LossReason = record.LossReason;
-        deal.LastActivityAt = record.LastActivityAt;
-        deal.SourceCreatedAt = record.CreatedAt;
-        deal.SourceModifiedAt = record.ModifiedAt;
-        link.LastSeenAt = DateTimeOffset.UtcNow;
+        contact.Name = record.Name;
+        contact.FirstName = record.FirstName;
+        contact.LastName = record.LastName;
+        contact.CustomerId = await FindInternalIdAsync(record, CrmEntityTypes.Customer, record.CustomerExternalId, cancellationToken);
+        contact.Email = record.Email;
+        contact.NormalizedEmail = NormalizeEmail(record.Email);
+        contact.Phone = record.Phone;
+        contact.NormalizedPhone = NormalizePhone(record.Phone);
+        contact.MobilePhone = record.MobilePhone;
+        contact.JobTitle = record.JobTitle;
+        contact.IsPrimary = record.IsPrimary;
+        contact.IsActive = true;
+        contact.SourceCreatedAt = record.CreatedAt;
+        contact.SourceModifiedAt = record.ModifiedAt;
+        contact.LastSeenAt = DateTimeOffset.UtcNow;
+        SetLinkSeen(link, record);
     }
 
-    private async Task UpsertLeadAsync(
-        CrmCanonicalLead record,
-        CancellationToken cancellationToken)
+    private async Task UpsertLeadAsync(CrmCanonicalLead record, CancellationToken cancellationToken)
     {
         var link = await FindLinkAsync(record, cancellationToken);
-        SalesLead lead;
+        var lead = link is null
+            ? new SalesLead { Id = Guid.NewGuid(), Name = record.Name }
+            : await db.SalesLeads.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Lead", link.InternalEntityId);
         if (link is null)
         {
-            lead = new SalesLead { Id = Guid.NewGuid(), Name = record.Name };
             db.SalesLeads.Add(lead);
-            link = NewLink(record, CrmEntityTypes.Lead, lead.Id);
-            db.IntegrationEntityLinks.Add(link);
-        }
-        else
-        {
-            lead = await db.SalesLeads
-                .SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
-                ?? throw new InvalidOperationException(
-                    $"Die interne Leadentität {link.InternalEntityId} fehlt.");
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.Lead, lead.Id));
         }
 
         lead.Name = record.Name;
         lead.CompanyName = record.CompanyName;
+        lead.CustomerId = await FindInternalIdAsync(record, CrmEntityTypes.Customer, record.CustomerExternalId, cancellationToken);
+        lead.ContactId = await FindInternalIdAsync(record, CrmEntityTypes.Contact, record.ContactExternalId, cancellationToken);
+        lead.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
         lead.Email = record.Email;
+        lead.NormalizedEmail = NormalizeEmail(record.Email);
         lead.Phone = record.Phone;
+        lead.NormalizedPhone = NormalizePhone(record.Phone);
         lead.Status = record.Status ?? lead.Status;
         lead.Source = record.Source;
         lead.LastContactAt = record.LastContactAt;
+        lead.LastPhoneCallAt = record.LastPhoneCallAt;
+        if (record.CallsSinceConversation.HasValue) lead.CallsSinceConversation = record.CallsSinceConversation.Value;
         if (record.TotalCallAttempts.HasValue) lead.TotalCallAttempts = record.TotalCallAttempts.Value;
+        lead.IsActive = true;
         lead.SourceCreatedAt = record.CreatedAt;
         lead.SourceModifiedAt = record.ModifiedAt;
-        link.LastSeenAt = DateTimeOffset.UtcNow;
+        lead.LastSeenAt = DateTimeOffset.UtcNow;
+        SetLinkSeen(link, record);
     }
 
-    private async Task<IntegrationEntityLink?> FindLinkAsync(
-        CrmCanonicalRecord record,
+    private async Task UpsertProductCategoryAsync(CrmCanonicalProductCategory record, CancellationToken cancellationToken)
+    {
+        var link = await FindLinkAsync(record, cancellationToken);
+        var category = link is null
+            ? new SalesProductCategory { Id = Guid.NewGuid(), Key = record.Key, Name = record.Name }
+            : await db.SalesProductCategories.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Produktkategorie", link.InternalEntityId);
+        if (link is null)
+        {
+            db.SalesProductCategories.Add(category);
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.ProductCategory, category.Id));
+        }
+        category.Key = record.Key;
+        category.Name = record.Name;
+        category.IsActive = true;
+        SetLinkSeen(link, record);
+    }
+
+    private async Task UpsertProductAsync(CrmCanonicalProduct record, CancellationToken cancellationToken)
+    {
+        var link = await FindLinkAsync(record, cancellationToken);
+        var product = link is null
+            ? new SalesProduct { Id = Guid.NewGuid(), Key = record.Key, Name = record.Name }
+            : await db.SalesProducts.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Produkt", link.InternalEntityId);
+        if (link is null)
+        {
+            db.SalesProducts.Add(product);
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.Product, product.Id));
+        }
+
+        product.Key = record.Key;
+        product.Name = record.Name;
+        product.Description = record.Description;
+        product.IsActive = record.IsActive;
+        product.CategoryId = await ResolveProductCategoryAsync(record, cancellationToken);
+        product.SourceCreatedAt = record.CreatedAt;
+        product.SourceModifiedAt = record.ModifiedAt;
+        product.LastSeenAt = DateTimeOffset.UtcNow;
+        SetLinkSeen(link, record);
+    }
+
+    private async Task<Guid?> ResolveProductCategoryAsync(CrmCanonicalProduct record, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(record.CategoryName) && string.IsNullOrWhiteSpace(record.CategoryExternalId))
+            return null;
+        var externalId = record.CategoryExternalId ?? $"name:{record.CategoryName!.Trim().ToLowerInvariant()}";
+        var link = await db.IntegrationEntityLinks.SingleOrDefaultAsync(item => item.ProviderKey == record.ProviderKey
+            && item.ConnectionKey == record.ConnectionKey
+            && item.EntityType == CrmEntityTypes.ProductCategory
+            && item.ExternalId == externalId, cancellationToken);
+        if (link is not null) return link.InternalEntityId;
+
+        var category = new SalesProductCategory
+        {
+            Id = Guid.NewGuid(),
+            Key = externalId,
+            Name = record.CategoryName ?? externalId,
+            IsActive = true
+        };
+        db.SalesProductCategories.Add(category);
+        db.IntegrationEntityLinks.Add(new IntegrationEntityLink
+        {
+            Id = Guid.NewGuid(),
+            ProviderKey = record.ProviderKey,
+            ConnectionKey = record.ConnectionKey,
+            EntityType = CrmEntityTypes.ProductCategory,
+            ExternalId = externalId,
+            InternalEntityType = CrmEntityTypes.ProductCategory,
+            InternalEntityId = category.Id,
+            LastSeenAt = DateTimeOffset.UtcNow
+        });
+        return category.Id;
+    }
+
+    private async Task UpsertPipelineAsync(CrmCanonicalPipeline record, CancellationToken cancellationToken)
+    {
+        var link = await FindLinkAsync(record, cancellationToken);
+        var pipeline = link is null
+            ? new SalesPipeline { Id = Guid.NewGuid(), Key = record.Key, Name = record.Name }
+            : await db.SalesPipelines.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Pipeline", link.InternalEntityId);
+        if (link is null)
+        {
+            db.SalesPipelines.Add(pipeline);
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.Pipeline, pipeline.Id));
+        }
+        pipeline.Key = record.Key;
+        pipeline.Name = record.Name;
+        pipeline.Description = record.Description;
+        pipeline.SortOrder = record.SortOrder;
+        pipeline.IsActive = true;
+        pipeline.SourceCreatedAt = record.CreatedAt;
+        pipeline.SourceModifiedAt = record.ModifiedAt;
+        SetLinkSeen(link, record);
+    }
+
+    private async Task UpsertPipelineStageAsync(CrmCanonicalPipelineStage record, CancellationToken cancellationToken)
+    {
+        var pipelineId = await ResolvePipelineIdAsync(record, record.PipelineExternalId, null, cancellationToken);
+        if (!pipelineId.HasValue)
+            throw new InvalidOperationException($"Die Pipeline '{record.PipelineExternalId}' der Stufe '{record.Name}' fehlt.");
+
+        var link = await FindLinkAsync(record, cancellationToken);
+        var stage = link is null
+            ? new SalesPipelineStage { Id = Guid.NewGuid(), PipelineId = pipelineId.Value, Key = record.Key, Name = record.Name, StageType = record.StageType }
+            : await db.SalesPipelineStages.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Pipeline-Stufe", link.InternalEntityId);
+        if (link is null)
+        {
+            db.SalesPipelineStages.Add(stage);
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.PipelineStage, stage.Id));
+        }
+        stage.PipelineId = pipelineId.Value;
+        stage.Key = record.Key;
+        stage.Name = record.Name;
+        stage.StageType = record.StageType;
+        stage.SortOrder = record.SortOrder;
+        stage.Probability = record.Probability;
+        stage.IsTerminal = record.IsTerminal;
+        stage.IsActive = true;
+        stage.SourceModifiedAt = record.ModifiedAt;
+        SetLinkSeen(link, record);
+    }
+
+    private async Task UpsertDealAsync(CrmCanonicalDeal record, CancellationToken cancellationToken)
+    {
+        var link = await FindLinkAsync(record, cancellationToken);
+        var deal = link is null
+            ? new SalesDeal { Id = Guid.NewGuid(), Name = record.Name }
+            : await db.SalesDeals.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Deal", link.InternalEntityId);
+        if (link is null)
+        {
+            db.SalesDeals.Add(deal);
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.Deal, deal.Id));
+        }
+
+        deal.CustomerId = await FindInternalIdAsync(record, CrmEntityTypes.Customer, record.CustomerExternalId, cancellationToken);
+        deal.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
+        deal.PipelineId = await ResolvePipelineIdAsync(record, record.PipelineExternalId, record.PipelineKey, cancellationToken);
+        deal.PipelineStageId = await ResolveStageIdAsync(record, deal.PipelineId, record.StageExternalId, record.StageKey, cancellationToken);
+        deal.ProductId = await ResolveProductIdAsync(record, record.ProductExternalId, record.ProductName, cancellationToken);
+        deal.Name = record.Name;
+        deal.Amount = record.Amount;
+        deal.Currency = record.Currency;
+        deal.NeedsReview = !deal.CustomerId.HasValue || !deal.PipelineStageId.HasValue || !deal.ProductId.HasValue;
+        deal.DurationMonths = record.DurationMonths;
+        deal.ContractStartAt = record.ContractStartAt;
+        deal.ContractEndAt = record.ContractEndAt;
+        deal.ClosingAt = record.ClosingAt;
+        deal.Status = NormalizeDealStatus(record.Status);
+        deal.LossReason = record.LossReason;
+        deal.LastActivityAt = record.LastActivityAt;
+        deal.IsActive = true;
+        deal.SourceCreatedAt = record.CreatedAt;
+        deal.SourceModifiedAt = record.ModifiedAt;
+        deal.LastSeenAt = DateTimeOffset.UtcNow;
+        SetLinkSeen(link, record);
+
+        if (deal.Status == "won" && deal.CustomerId.HasValue)
+        {
+            await UpsertContractAsync(new CrmCanonicalContract(
+                record.ProviderKey,
+                record.ConnectionKey,
+                $"deal:{record.ExternalId}",
+                record.Payload,
+                record.CreatedAt,
+                record.ModifiedAt,
+                record.CustomerExternalId ?? string.Empty,
+                record.ExternalId,
+                record.ProductExternalId,
+                record.OwnerExternalId,
+                record.Name,
+                "active",
+                record.ContractStartAt,
+                record.ContractEndAt,
+                record.DurationMonths,
+                record.Amount,
+                record.Currency),
+                deal.CustomerId.Value,
+                deal.Id,
+                cancellationToken);
+        }
+    }
+
+    private async Task UpsertDealStageHistoryAsync(CrmCanonicalDealStageHistory record, CancellationToken cancellationToken)
+    {
+        var dealId = await FindInternalIdAsync(record, CrmEntityTypes.Deal, record.DealExternalId, cancellationToken)
+            ?? throw new InvalidOperationException($"Der Deal '{record.DealExternalId}' der Stage-Historie fehlt.");
+        var link = await FindLinkAsync(record, cancellationToken);
+        var history = link is null
+            ? new SalesDealStageHistory { Id = Guid.NewGuid(), DealId = dealId, StageKeySnapshot = record.StageKeySnapshot, EnteredAt = record.EnteredAt }
+            : await db.SalesDealStageHistory.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Deal-Stage-Historie", link.InternalEntityId);
+        if (link is null)
+        {
+            db.SalesDealStageHistory.Add(history);
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.DealStageHistory, history.Id));
+        }
+        var deal = await db.SalesDeals.SingleOrDefaultAsync(item => item.Id == dealId, cancellationToken);
+        history.DealId = dealId;
+        history.PipelineId = await ResolvePipelineIdAsync(record, record.PipelineExternalId, null, cancellationToken)
+            ?? deal?.PipelineId;
+        history.PipelineStageId = await ResolveStageIdAsync(record, history.PipelineId, record.StageExternalId, record.StageKeySnapshot, cancellationToken);
+        history.StageKeySnapshot = record.StageKeySnapshot;
+        history.EnteredAt = record.EnteredAt;
+        history.ExitedAt = record.ExitedAt;
+        history.SourceObservedAt = record.ModifiedAt;
+        history.SourceEventKey = record.ExternalId;
+        SetLinkSeen(link, record);
+    }
+
+    private async Task UpsertContractAsync(CrmCanonicalContract record, CancellationToken cancellationToken)
+    {
+        var customerId = await FindInternalIdAsync(record, CrmEntityTypes.Customer, record.CustomerExternalId, cancellationToken);
+        var dealId = await FindInternalIdAsync(record, CrmEntityTypes.Deal, record.DealExternalId, cancellationToken);
+        if (!customerId.HasValue || !dealId.HasValue)
+            return;
+
+        await UpsertContractAsync(record, customerId.Value, dealId.Value, cancellationToken);
+    }
+
+    private async Task UpsertContractAsync(
+        CrmCanonicalContract record,
+        Guid customerId,
+        Guid dealId,
         CancellationToken cancellationToken)
-        => await db.IntegrationEntityLinks
-            .SingleOrDefaultAsync(item => item.ProviderKey == record.ProviderKey
-                && item.ConnectionKey == record.ConnectionKey
-                && item.EntityType == record.EntityType
-                && item.ExternalId == record.ExternalId, cancellationToken);
+    {
+        var link = await FindLinkAsync(record, cancellationToken);
+        var contract = link is null
+            ? new SalesContract { Id = Guid.NewGuid(), CustomerId = customerId, Status = record.Status }
+            : await db.SalesContracts.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Vertrag", link.InternalEntityId);
+        if (link is null)
+        {
+            db.SalesContracts.Add(contract);
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.Contract, contract.Id));
+        }
+        contract.CustomerId = customerId;
+        contract.DealId = dealId;
+        contract.ProductId = await FindInternalIdAsync(record, CrmEntityTypes.Product, record.ProductExternalId, cancellationToken);
+        contract.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
+        contract.ContractNumber = record.ContractNumber;
+        contract.Status = record.Status;
+        contract.StartAt = record.StartAt;
+        contract.EndAt = record.EndAt;
+        contract.DurationMonths = record.DurationMonths;
+        contract.RecurringAmount = record.RecurringAmount;
+        contract.Currency = record.Currency;
+        contract.IsActive = string.Equals(record.Status, "active", StringComparison.OrdinalIgnoreCase);
+        contract.SourceModifiedAt = record.ModifiedAt;
+        contract.LastSeenAt = DateTimeOffset.UtcNow;
+        SetLinkSeen(link, record);
+    }
+
+    private async Task UpsertActivityAsync(CrmCanonicalActivity record, CancellationToken cancellationToken)
+    {
+        var link = await FindLinkAsync(record, cancellationToken);
+        var activity = link is null
+            ? new SalesActivity { Id = Guid.NewGuid(), ActivityType = record.ActivityType, OccurredAt = record.OccurredAt }
+            : await db.SalesActivities.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Aktivität", link.InternalEntityId);
+        if (link is null)
+        {
+            db.SalesActivities.Add(activity);
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.Activity, activity.Id));
+        }
+        activity.ActivityType = record.ActivityType;
+        activity.Subject = record.Subject;
+        activity.OccurredAt = record.OccurredAt;
+        activity.DurationSeconds = record.DurationSeconds;
+        activity.Direction = record.Direction;
+        activity.ConnectionStatus = record.ConnectionStatus;
+        activity.ConversationClass = record.ConversationClass;
+        activity.CountsAsConversation = record.CountsAsConversation;
+        activity.Result = record.Result;
+        activity.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
+        activity.SourceCreatedAt = record.CreatedAt;
+        activity.SourceModifiedAt = record.ModifiedAt;
+        activity.LastSeenAt = DateTimeOffset.UtcNow;
+        SetLinkSeen(link, record);
+
+        foreach (var relation in record.Relations)
+        {
+            var target = await ResolveRelationAsync(record, relation, cancellationToken);
+            if (!target.HasValue) continue;
+            var exists = await db.SalesActivityRelations.AnyAsync(item => item.ActivityId == activity.Id
+                && item.TargetType == target.Value.Type
+                && item.TargetId == target.Value.Id, cancellationToken);
+            if (!exists)
+            {
+                db.SalesActivityRelations.Add(new SalesActivityRelation
+                {
+                    Id = Guid.NewGuid(),
+                    ActivityId = activity.Id,
+                    TargetType = target.Value.Type,
+                    TargetId = target.Value.Id,
+                    RelationRole = relation.Role
+                });
+            }
+            await TouchTargetAsync(
+                target.Value.Type,
+                target.Value.Id,
+                activity.OccurredAt,
+                record.ActivityType == "call",
+                cancellationToken);
+        }
+    }
+
+    private async Task UpsertAppointmentAsync(CrmCanonicalAppointment record, CancellationToken cancellationToken)
+    {
+        var link = await FindLinkAsync(record, cancellationToken);
+        var appointment = link is null
+            ? new SalesAppointment { Id = Guid.NewGuid(), StartsAt = record.StartsAt, EndsAt = record.EndsAt, Status = record.Status }
+            : await db.SalesAppointments.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Termin", link.InternalEntityId);
+        if (link is null)
+        {
+            db.SalesAppointments.Add(appointment);
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.Appointment, appointment.Id));
+        }
+        appointment.Subject = record.Subject;
+        appointment.StartsAt = record.StartsAt;
+        appointment.EndsAt = record.EndsAt;
+        appointment.Status = record.Status;
+        appointment.AppointmentType = record.AppointmentType;
+        appointment.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
+        appointment.OriginalStartsAt = record.OriginalStartsAt;
+        appointment.RescheduleCount = record.RescheduleCount;
+        appointment.SourceCreatedAt = record.CreatedAt;
+        appointment.SourceModifiedAt = record.ModifiedAt;
+        appointment.LastSeenAt = DateTimeOffset.UtcNow;
+        SetLinkSeen(link, record);
+
+        foreach (var relation in record.Relations)
+        {
+            var target = await ResolveRelationAsync(record, relation, cancellationToken);
+            if (!target.HasValue) continue;
+            if (!await db.SalesAppointmentRelations.AnyAsync(item => item.AppointmentId == appointment.Id
+                && item.TargetType == target.Value.Type
+                && item.TargetId == target.Value.Id, cancellationToken))
+            {
+                db.SalesAppointmentRelations.Add(new SalesAppointmentRelation
+                {
+                    Id = Guid.NewGuid(),
+                    AppointmentId = appointment.Id,
+                    TargetType = target.Value.Type,
+                    TargetId = target.Value.Id,
+                    RelationRole = relation.Role
+                });
+            }
+        }
+        var changedAt = record.ModifiedAt ?? record.StartsAt;
+        if (!await db.SalesAppointmentStatusHistories.AnyAsync(item => item.AppointmentId == appointment.Id
+            && item.Status == record.Status
+            && item.ChangedAt == changedAt, cancellationToken))
+        {
+            db.SalesAppointmentStatusHistories.Add(new SalesAppointmentStatusHistory
+            {
+                Id = Guid.NewGuid(),
+                AppointmentId = appointment.Id,
+                Status = record.Status,
+                ChangedAt = changedAt,
+                OriginalStartsAt = record.OriginalStartsAt,
+                Source = CrmProviders.Zoho
+            });
+        }
+    }
+
+    private async Task<Guid?> ResolvePipelineIdAsync(CrmCanonicalRecord record, string? externalId, string? name, CancellationToken cancellationToken)
+    {
+        var byLink = await FindInternalIdAsync(record, CrmEntityTypes.Pipeline, externalId, cancellationToken);
+        if (byLink.HasValue) return byLink;
+        if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(externalId)) return null;
+        return await db.SalesPipelines
+            .Where(item => item.Key == name || item.Name == name || item.Key == externalId || item.Name == externalId)
+            .Select(item => (Guid?)item.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task<Guid?> ResolveStageIdAsync(CrmCanonicalRecord record, Guid? pipelineId, string? externalId, string? name, CancellationToken cancellationToken)
+    {
+        var byLink = await FindInternalIdAsync(record, CrmEntityTypes.PipelineStage, externalId, cancellationToken);
+        if (byLink.HasValue) return byLink;
+        if (!pipelineId.HasValue) return null;
+        return await db.SalesPipelineStages
+            .Where(item => item.PipelineId == pipelineId.Value
+                && (item.Key == name || item.Name == name || item.Key == externalId || item.Name == externalId))
+            .Select(item => (Guid?)item.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task<Guid?> ResolveProductIdAsync(CrmCanonicalRecord record, string? externalId, string? name, CancellationToken cancellationToken)
+    {
+        var byLink = await FindInternalIdAsync(record, CrmEntityTypes.Product, externalId, cancellationToken);
+        if (byLink.HasValue) return byLink;
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        return await db.SalesProducts
+            .Where(item => item.Key == name || item.Name == name)
+            .Select(item => (Guid?)item.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task<(string Type, Guid Id)?> ResolveRelationAsync(
+        CrmCanonicalRecord record,
+        CrmRecordRelation relation,
+        CancellationToken cancellationToken)
+    {
+        var candidates = new[]
+        {
+            relation.EntityType,
+            CrmEntityTypes.Customer,
+            CrmEntityTypes.Contact,
+            CrmEntityTypes.Lead,
+            CrmEntityTypes.Deal
+        }.Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (var candidate in candidates)
+        {
+            var id = await FindInternalIdAsync(record, candidate, relation.ExternalId, cancellationToken);
+            if (id.HasValue) return (candidate, id.Value);
+        }
+        return null;
+    }
+
+    private async Task TouchTargetAsync(
+        string targetType,
+        Guid targetId,
+        DateTimeOffset occurredAt,
+        bool isPhoneCall,
+        CancellationToken cancellationToken)
+    {
+        switch (targetType)
+        {
+            case CrmEntityTypes.Customer:
+                var customer = await db.SalesCustomers.SingleOrDefaultAsync(item => item.Id == targetId, cancellationToken);
+                if (customer is not null)
+                {
+                    customer.LastContactAt = customer.LastContactAt is null || customer.LastContactAt < occurredAt ? occurredAt : customer.LastContactAt;
+                    if (isPhoneCall)
+                        customer.LastPhoneCallAt = customer.LastPhoneCallAt is null || customer.LastPhoneCallAt < occurredAt
+                            ? occurredAt
+                            : customer.LastPhoneCallAt;
+                }
+                break;
+            case CrmEntityTypes.Deal:
+                var deal = await db.SalesDeals.SingleOrDefaultAsync(item => item.Id == targetId, cancellationToken);
+                if (deal is not null && (deal.LastActivityAt is null || deal.LastActivityAt < occurredAt)) deal.LastActivityAt = occurredAt;
+                break;
+            case CrmEntityTypes.Lead:
+                var lead = await db.SalesLeads.SingleOrDefaultAsync(item => item.Id == targetId, cancellationToken);
+                if (lead is not null)
+                {
+                    if (lead.LastContactAt is null || lead.LastContactAt < occurredAt) lead.LastContactAt = occurredAt;
+                    if (isPhoneCall && (lead.LastPhoneCallAt is null || lead.LastPhoneCallAt < occurredAt)) lead.LastPhoneCallAt = occurredAt;
+                }
+                break;
+        }
+    }
 
     private async Task<Guid?> FindInternalIdAsync(
         CrmCanonicalRecord record,
         string entityType,
-        string externalId,
+        string? externalId,
         CancellationToken cancellationToken)
-        => await db.IntegrationEntityLinks
-            .Where(item => item.ProviderKey == record.ProviderKey
-                && item.ConnectionKey == record.ConnectionKey
-                && item.EntityType == entityType
-                && item.ExternalId == externalId)
-            .Select(item => (Guid?)item.InternalEntityId)
-            .SingleOrDefaultAsync(cancellationToken);
+        => string.IsNullOrWhiteSpace(externalId)
+            ? null
+            : await db.IntegrationEntityLinks
+                .Where(item => item.ProviderKey == record.ProviderKey
+                    && item.ConnectionKey == record.ConnectionKey
+                    && item.EntityType == entityType
+                    && item.ExternalId == externalId)
+                .Select(item => (Guid?)item.InternalEntityId)
+                .SingleOrDefaultAsync(cancellationToken);
 
-    private static IntegrationEntityLink NewLink(
-        CrmCanonicalRecord record,
-        string entityType,
-        Guid internalEntityId)
+    private Task<IntegrationEntityLink?> FindLinkAsync(CrmCanonicalRecord record, CancellationToken cancellationToken)
+        => db.IntegrationEntityLinks.SingleOrDefaultAsync(item => item.ProviderKey == record.ProviderKey
+            && item.ConnectionKey == record.ConnectionKey
+            && item.EntityType == record.EntityType
+            && item.ExternalId == record.ExternalId, cancellationToken);
+
+    private static IntegrationEntityLink NewLink(CrmCanonicalRecord record, string entityType, Guid internalEntityId)
         => new()
         {
             Id = Guid.NewGuid(),
@@ -346,6 +978,30 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
             EntityType = entityType,
             ExternalId = record.ExternalId,
             InternalEntityType = entityType,
-            InternalEntityId = internalEntityId
+            InternalEntityId = internalEntityId,
+            LastSeenAt = DateTimeOffset.UtcNow
         };
+
+    private static void SetLinkSeen(IntegrationEntityLink? link, CrmCanonicalRecord record)
+    {
+        if (link is not null) link.LastSeenAt = DateTimeOffset.UtcNow;
+    }
+
+    private static InvalidOperationException MissingEntity(string type, Guid id)
+        => new($"Die interne {type}-Entität {id} fehlt.");
+
+    private static string NormalizeDealStatus(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "open";
+        var normalized = value.Trim().ToLowerInvariant();
+        if (normalized.Contains("won") || normalized.Contains("gewonnen")) return "won";
+        if (normalized.Contains("lost") || normalized.Contains("verloren")) return "lost";
+        return "open";
+    }
+
+    private static string? NormalizeEmail(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
+
+    private static string? NormalizePhone(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : new string(value.Where(char.IsDigit).ToArray());
 }

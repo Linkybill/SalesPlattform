@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@hammer2fall/identity-platform-react": "0.1.42",
+    "@hammer2fall/identity-platform-react": "0.1.43",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
