@@ -131,6 +131,9 @@ Menüpunkt `Einstellungen`. Die Zuordnung wird tenantbezogen in der Einstellung
 `crm.ownerMappings` gespeichert; die Oberfläche verwendet die stabile
 Plattform-Subject-ID und validiert den ausgewählten aktiven CRM-Besitzer.
 
+Die App-Rolle `sales-manager` / „Vertriebsleitung“ erhält eine tenantweite
+Arbeitslistenansicht und benötigt dafür kein persönliches CRM-Owner-Mapping.
+
 ## Datenbank
 
 Die Datenbank wird nicht als eigene Infrastruktur in der Sales-Plattform

@@ -9,16 +9,16 @@ Das Pflichtenheft unterscheidet fachlich:
 - Management bzw. Geschäftsführung,
 - Backoffice für die Bereinigung.
 
-Im technischen Startgerüst existiert zunächst nur die Identity-Platform-App-
-Rolle `sales-user`. Die fachliche Differenzierung der Rechte ist Zielumfang
-und darf nicht durch das Vorhandensein dieser einen Startrolle als erledigt
-gelten.
+Technisch gibt es die Identity-Platform-App-Rollen `sales-user` für den
+Vertrieb und `sales-manager` für die Vertriebsleitung. Die fachliche
+Differenzierung weiterer Rechte ist Zielumfang und darf nicht durch das
+Vorhandensein dieser Startrollen als erledigt gelten.
 
 ## Ansichtsmatrix
 
 | Ansicht | Vertrieb | Vertriebsleitung | Management/GF | Backoffice |
 |---|---|---|---|---|
-| Meine Arbeitsliste | eigene, Team umschaltbar | Team und eigene | nach Freigabe | nach Aufgabe |
+| Meine Arbeitsliste | eigene, Team umschaltbar | alle Vorgänge des Tenants sowie eigene | nach Freigabe | nach Aufgabe |
 | Cockpit | nicht standardmäßig | ja | ja | nein |
 | Team-Steuerung | Lesesicht nach Entscheidung | ja | ja | nein |
 | Meeting Report | nach Entscheidung | ja | ja | nein |
@@ -27,10 +27,9 @@ gelten.
 | Ziele und Pace | teamweit sichtbar | ja | ja | nein |
 | Aufräumen | nein | ja | ja | ja |
 
-Die exakte technische Rollenmatrix ist vor der Umsetzung der Fachansichten zu
-bestätigen. „Teamweit sichtbar“ bedeutet, dass alle Mitarbeiter Ziele und
-Zielerreichungen sehen dürfen; die Arbeitsliste bleibt standardmäßig auf den
-jeweiligen Besitzer gefiltert.
+Die Vertriebsleitung erhält für die erste Arbeitsliste eine serverseitig
+erzwungene tenantweite Ansicht. Normale Vertriebsbenutzer bleiben auf ihren
+CRM-Besitzer und nicht zugeordnete Vorgänge begrenzt.
 
 Die erste Arbeitslisten-API setzt diesen Grundsatz serverseitig um. Ein CRM-
 Besitzer wird über die E-Mail des authentifizierten Plattform-Benutzers gesucht;
@@ -40,7 +39,8 @@ Vorgänge auch über eine direkt bekannte ID nicht erledigen oder zurückstellen
 Eine explizite tenantbezogene Zuordnung in der Sales-App hat Vorrang vor dem
 E-Mail-Fallback. Sie wird ausschließlich durch Tenant-Administratoren gepflegt
 und verbindet die stabile Plattform-Subject-ID mit einer synchronisierten
-`SalesOwner`-ID.
+`SalesOwner`-ID. Die Vertriebsleitung benötigt für die tenantweite Ansicht kein
+persönliches Mapping.
 
 ## Schreib- und Freigabegrenzen
 

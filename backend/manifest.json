@@ -136,6 +136,13 @@
       "description": "Darf die SalesPlattform verwenden.",
       "deprecated": false,
       "replacedBy": []
+    },
+    {
+      "key": "sales-manager",
+      "name": "Vertriebsleitung",
+      "description": "Sieht tenantweit alle Arbeitslistenvorgänge und kann Teamvorgänge bearbeiten.",
+      "deprecated": false,
+      "replacedBy": []
     }
   ]
 }

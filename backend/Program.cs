@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using SalesPlattform.Backend.Data;
 using SalesPlattform.Backend.Services;
+using IdentityPlatform.Shared.Authorization;
 using IdentityPlatform.Shared.Database;
 using IdentityPlatform.Shared.ApplicationSettings;
 using IdentityPlatform.Shared.Hosting;
@@ -16,6 +17,14 @@ using SalesPlattform.Backend.Integrations.Jobs;
 var builder = WebApplication.CreateBuilder(args);
 builder.AddIdentityPlatform();
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddAuthorization(authorization =>
+{
+    authorization.AddPolicy("sales-access", policy => policy
+        .RequireAuthenticatedUser()
+        .RequireAssertion(context =>
+            TenantApplicationRole.IsInRole(context.User, "sales-user")
+            || TenantApplicationRole.IsInRole(context.User, "sales-manager")));
+});
 
 builder.Services.AddPlatformTenantDatabase<SalesPlattformDbContext>();
 builder.Services.AddHttpClient<PlatformJobLivenessClient>(client =>
@@ -92,7 +101,7 @@ app.MapGet("/api/owner-mappings", async (
     {
         return Results.BadRequest(new { message = exception.Message });
     }
-}).RequireAuthorization("sales-user");
+}).RequireAuthorization("sales-access");
 
 app.MapPut("/api/owner-mappings", async (
     SaveOwnerMappingRequest request,
@@ -112,7 +121,7 @@ app.MapPut("/api/owner-mappings", async (
     {
         return Results.BadRequest(new { message = exception.Message });
     }
-}).RequireAuthorization("sales-user");
+}).RequireAuthorization("sales-access");
 
 app.MapDelete("/api/owner-mappings/{platformUserEmail}", async (
     string platformUserEmail,
@@ -132,7 +141,7 @@ app.MapDelete("/api/owner-mappings/{platformUserEmail}", async (
     {
         return Results.BadRequest(new { message = exception.Message });
     }
-}).RequireAuthorization("sales-user");
+}).RequireAuthorization("sales-access");
 
 app.MapGet("/api/worklist", async (
     ClaimsPrincipal user,
@@ -147,7 +156,7 @@ app.MapGet("/api/worklist", async (
 
     var result = await worklist.GetAsync(user, refresh ?? false, cancellationToken);
     return Results.Ok(result);
-}).RequireAuthorization("sales-user");
+}).RequireAuthorization("sales-access");
 
 app.MapPost("/api/worklist/{workItemId:guid}/complete", async (
     Guid workItemId,
@@ -160,7 +169,7 @@ app.MapPost("/api/worklist/{workItemId:guid}/complete", async (
 
     var result = await worklist.CompleteAsync(workItemId, user, cancellationToken);
     return result is null ? Results.NotFound() : Results.Ok(result);
-}).RequireAuthorization("sales-user");
+}).RequireAuthorization("sales-access");
 
 app.MapPost("/api/worklist/{workItemId:guid}/snooze", async (
     Guid workItemId,
@@ -181,7 +190,7 @@ app.MapPost("/api/worklist/{workItemId:guid}/snooze", async (
     {
         return Results.BadRequest(new { message = exception.Message });
     }
-}).RequireAuthorization("sales-user");
+}).RequireAuthorization("sales-access");
 
 app.MapGet("/api/hello-world", async (
     ClaimsPrincipal user,

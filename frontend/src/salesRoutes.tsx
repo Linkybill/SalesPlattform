@@ -9,14 +9,14 @@ export const salesRoutes: readonly UserAuthorisationRoute[] = [
     route: applicationRouteBase,
     title: 'Arbeitsliste',
     icon: <HomeIcon />,
-    visibleForRoles: ['sales-user'],
+    visibleForRoles: ['sales-user', 'sales-manager'],
   },
   {
     id: 'import',
     route: `${applicationRouteBase === '/' ? '' : applicationRouteBase}/import`,
     title: 'Import',
     icon: <ImportIcon />,
-    visibleForRoles: ['sales-user'],
+    visibleForRoles: ['sales-user', 'sales-manager'],
     tenantAdminOnly: true,
   },
   {
@@ -24,7 +24,7 @@ export const salesRoutes: readonly UserAuthorisationRoute[] = [
     route: `${applicationRouteBase === '/' ? '' : applicationRouteBase}/settings`,
     title: 'Einstellungen',
     icon: <SettingsIcon />,
-    visibleForRoles: ['sales-user'],
+    visibleForRoles: ['sales-user', 'sales-manager'],
     tenantAdminOnly: true,
   },
 ]

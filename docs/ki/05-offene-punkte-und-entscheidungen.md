@@ -108,7 +108,7 @@ keine stillschweigend getroffenen Anforderungen:
 | React-Frontend-Grundgerüst | vorhanden |
 | Geschützter HelloWorld-Endpunkt | vorhanden |
 | Tenant-Datenbank-Grundgerüst | vorhanden |
-| App-Manifest und `sales-user`-Rolle | vorhanden |
+| App-Manifest und `sales-user`-/`sales-manager`-Rollen | vorhanden |
 | Native Windows-Rebuilds | vorhanden |
 | Pflichtenheft und KI-Kontext | vorhanden |
 | Zoho-Authentifizierung, Adapter und vollständiger fachlicher Hintergrundimport | vorhanden |
@@ -116,7 +116,7 @@ keine stillschweigend getroffenen Anforderungen:
 | Vollständiges Zieldatenmodell vor dem Vollimport | EF-Entitäten und additive Migration umgesetzt; Zoho-Mappings für den fachlichen Initialimport umgesetzt |
 | Start-Arbeitsliste | umgesetzt; weitere Wiedervorlagen-, Team- und KPI-Sichten offen |
 | Fachansichten und KPI-Cockpit | offen / nicht implementiert |
-| Fachliche Rollenmatrix | offen |
+| Fachliche Rollenmatrix | erste Rollenabgrenzung für Vertrieb und Vertriebsleitung umgesetzt; weitere Fachrollen offen |
 
 Jede neue Implementierung soll diese Tabelle und die betroffenen Infodateien
 mitpflegen. Ein Eintrag „vorhanden“ im Startgerüst bedeutet nicht, dass der

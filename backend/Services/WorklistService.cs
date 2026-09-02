@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using IdentityPlatform.Shared.Authorization;
 using IdentityPlatform.Shared.Database;
 using Microsoft.EntityFrameworkCore;
 using SalesPlattform.Backend.Data;
@@ -36,11 +37,16 @@ public sealed class WorklistService(
             if (refresh)
                 await RefreshAsync(user, cancellationToken);
 
-            var ownerId = await ResolveOwnerIdAsync(user, cancellationToken);
-            var ownerMatched = ownerId.HasValue;
-            var query = OpenItemsQuery().Where(item => ownerId.HasValue
-                ? item.OwnerId == ownerId || item.OwnerId == null
-                : item.OwnerId == null);
+            var teamView = IsSalesManager(user);
+            var ownerId = teamView ? null : await ResolveOwnerIdAsync(user, cancellationToken);
+            var ownerMatched = teamView || ownerId.HasValue;
+            var query = OpenItemsQuery();
+            if (!teamView)
+            {
+                query = query.Where(item => ownerId.HasValue
+                    ? item.OwnerId == ownerId || item.OwnerId == null
+                    : item.OwnerId == null);
+            }
 
             var items = await query
                 .OrderByDescending(item => item.PriorityScore)
@@ -60,6 +66,7 @@ public sealed class WorklistService(
                 DateTimeOffset.UtcNow,
                 latestRefresh,
                 ownerMatched,
+                teamView,
                 items.Select(ToDto).ToArray());
         }
         finally
@@ -510,9 +517,15 @@ public sealed class WorklistService(
         ClaimsPrincipal user,
         CancellationToken cancellationToken)
     {
+        if (IsSalesManager(user))
+            return true;
+
         var ownerId = await ResolveOwnerIdAsync(user, cancellationToken);
         return !item.OwnerId.HasValue || (ownerId.HasValue && item.OwnerId == ownerId);
     }
+
+    private static bool IsSalesManager(ClaimsPrincipal user)
+        => TenantApplicationRole.IsInRole(user, "sales-manager");
 
     private static decimal CalculatePriority(WorklistCandidate candidate)
     {
@@ -698,6 +711,7 @@ public sealed record WorklistResponse(
     DateTimeOffset GeneratedAt,
     DateTimeOffset? LastRefreshAt,
     bool OwnerMatched,
+    bool TeamView,
     IReadOnlyCollection<WorklistItemDto> Items);
 
 public sealed record WorklistItemDto(

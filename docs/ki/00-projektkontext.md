@@ -18,7 +18,8 @@ Stand: 2026-09-02.
   technischen `GET /api/hello-world`.
 - EF-Core-Datenmodell und tenant-isolierte Plattform-Datenbank.
 - Registrierung über `backend/manifest.json` in der Identity Platform.
-- Vorhandene App-Rolle: `sales-user` / „SalesPlattform Benutzer“.
+- App-Rollen: `sales-user` / „SalesPlattform Benutzer“ für den Vertrieb sowie
+  `sales-manager` / „Vertriebsleitung“ für die tenantweite Arbeitslistenansicht.
 - Native Windows-PowerShell- und Docker-Rebuilds über `rebuild-all.ps1` bzw.
   `rebuild-all.cmd`.
 - Zoho-OAuth, die Zoho-Token-Erneuerung in der SalesPlattform, verschlüsselte
@@ -76,9 +77,10 @@ Stand: 2026-09-02.
 
 ## Erste fachliche Umsetzung: Arbeitsliste
 
-Die Startansicht ist jetzt eine persönliche, backendseitig gefilterte
-Arbeitsliste. `GET /api/worklist?refresh=true` projiziert die aktuellen CRM-Daten
-in die vorhandenen `sales_work_items` und sortiert sie nach dem dokumentierten
+Die Startansicht ist für `sales-user` eine persönliche und für
+`sales-manager` eine tenantweite, jeweils backendseitig gefilterte
+Arbeitsliste. `GET /api/worklist?refresh=true` projiziert die aktuellen
+CRM-Daten in die vorhandenen `sales_work_items` und sortiert sie nach dem dokumentierten
 Prioritätsscore. Umgesetzt sind zunächst R-05 (hängender Deal), R-06
 (Vertragsverlängerung), R-07 (fehlender/alter Kundenkontakt), R-08
 (Zuständigkeitswechsel), R-09 (neuer Lead ohne Erstreaktion), R-10

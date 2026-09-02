@@ -21,6 +21,7 @@ type WorklistResponse = {
   generatedAt: string
   lastRefreshAt: string | null
   ownerMatched: boolean
+  teamView: boolean
   items: WorklistItem[]
 }
 
@@ -88,11 +89,12 @@ export function DashboardPage() {
     <main className="sales-page">
       <section className="sales-hero">
         <div>
-          <p className="sales-eyebrow">SALESPLATTFORM · MEINE ARBEITSLISTE</p>
-          <h1>Arbeitsliste</h1>
+          <p className="sales-eyebrow">SALESPLATTFORM · {response?.teamView ? 'TEAM-ARBEITSLISTE' : 'MEINE ARBEITSLISTE'}</p>
+          <h1>{response?.teamView ? 'Team-Arbeitsliste' : 'Arbeitsliste'}</h1>
           <p className="sales-lead">
-            Die wichtigsten offenen Vorgänge werden aus den CRM-Daten priorisiert und
-            direkt als nächste Arbeitsschritte angezeigt.
+            {response?.teamView
+              ? 'Alle offenen Vorgänge des Tenants werden priorisiert und als nächste Team-Arbeitsschritte angezeigt.'
+              : 'Die wichtigsten offenen Vorgänge werden aus den CRM-Daten priorisiert und direkt als nächste Arbeitsschritte angezeigt.'}
           </p>
         </div>
         <button className="secondary-button" type="button" onClick={() => void loadWorklist(true)} disabled={loading}>
@@ -113,7 +115,7 @@ export function DashboardPage() {
           </span>
         </div>
 
-        {response && !response.ownerMatched && (
+        {response && !response.teamView && !response.ownerMatched && (
           <div className="message info-message">
             Für deinen Plattform-Benutzer ist noch kein CRM-Besitzer hinterlegt. Es werden deshalb nur nicht zugeordnete Vorgänge angezeigt.
           </div>
