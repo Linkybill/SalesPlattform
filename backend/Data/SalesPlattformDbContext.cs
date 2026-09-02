@@ -45,6 +45,10 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
     public DbSet<SalesAppointment> SalesAppointments => Set<SalesAppointment>();
     public DbSet<SalesAppointmentRelation> SalesAppointmentRelations => Set<SalesAppointmentRelation>();
     public DbSet<SalesAppointmentStatusHistory> SalesAppointmentStatusHistories => Set<SalesAppointmentStatusHistory>();
+    public DbSet<SalesServiceCase> SalesServiceCases => Set<SalesServiceCase>();
+    public DbSet<SalesOffer> SalesOffers => Set<SalesOffer>();
+    public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
+    public DbSet<SalesInvoice> SalesInvoices => Set<SalesInvoice>();
 
     public DbSet<SalesWorkItem> SalesWorkItems => Set<SalesWorkItem>();
     public DbSet<SalesWorkItemRelation> SalesWorkItemRelations => Set<SalesWorkItemRelation>();
@@ -114,9 +118,15 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         link.Property(item => item.ConnectionKey).HasMaxLength(100).IsRequired();
         link.Property(item => item.EntityType).HasMaxLength(80).IsRequired();
         link.Property(item => item.ExternalId).HasMaxLength(200).IsRequired();
+        link.Property(item => item.ExternalUrl).HasMaxLength(2000);
         link.Property(item => item.InternalEntityType).HasMaxLength(80).IsRequired();
         link.HasIndex(item => new { item.TenantId, item.ProviderKey, item.ConnectionKey, item.EntityType, item.ExternalId }).IsUnique();
         link.HasIndex(item => new { item.TenantId, item.InternalEntityType, item.InternalEntityId });
+        link.HasIndex(item => new { item.TenantId, item.WorkItemId });
+        link.HasOne<SalesWorkItem>()
+            .WithMany()
+            .HasForeignKey(item => item.WorkItemId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         var raw = Table<IntegrationRawRecord>(modelBuilder, "integration_raw_records");
         raw.Property(item => item.ProviderKey).HasMaxLength(50).IsRequired();
@@ -278,6 +288,7 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         customer.Property(item => item.CountryCode).HasMaxLength(10);
         customer.Property(item => item.AddressLine1).HasMaxLength(300);
         customer.Property(item => item.HouseNumber).HasMaxLength(50);
+        customer.Property(item => item.OwnerAssignedAt);
         customer.Property(item => item.Status).HasMaxLength(100).IsRequired();
         customer.Property(item => item.GeocodingStatus).HasMaxLength(40);
         customer.Property(item => item.LifetimeRevenue).HasPrecision(18, 2);
@@ -285,6 +296,7 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         customer.Property(item => item.Longitude).HasPrecision(9, 6);
         customer.HasIndex(item => new { item.TenantId, item.Name });
         customer.HasIndex(item => new { item.TenantId, item.TaxNumber });
+        customer.HasIndex(item => new { item.TenantId, item.OwnerAssignedAt });
         customer.HasOne(item => item.Owner).WithMany(item => item.Customers).HasForeignKey(item => item.OwnerId).OnDelete(DeleteBehavior.SetNull);
 
         var customerRelationship = Table<SalesCustomerRelationship>(modelBuilder, "sales_customer_relationships");
@@ -312,6 +324,7 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         contact.Property(item => item.NormalizedPhone).HasMaxLength(100);
         contact.Property(item => item.MobilePhone).HasMaxLength(100);
         contact.Property(item => item.JobTitle).HasMaxLength(200);
+        contact.Property(item => item.RoleType).HasMaxLength(100);
         contact.HasIndex(item => new { item.TenantId, item.NormalizedEmail });
         contact.HasIndex(item => new { item.TenantId, item.NormalizedPhone });
         contact.HasOne(item => item.Customer).WithMany(item => item.Contacts).HasForeignKey(item => item.CustomerId).OnDelete(DeleteBehavior.SetNull);
@@ -439,6 +452,60 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         appointmentStatus.Property(item => item.Notes).HasMaxLength(1000);
         appointmentStatus.HasIndex(item => new { item.TenantId, item.AppointmentId, item.ChangedAt });
         appointmentStatus.HasOne(item => item.Appointment).WithMany(item => item.StatusHistory).HasForeignKey(item => item.AppointmentId).OnDelete(DeleteBehavior.Restrict);
+
+        var serviceCase = Table<SalesServiceCase>(modelBuilder, "sales_service_cases");
+        serviceCase.Property(item => item.Subject).HasMaxLength(500).IsRequired();
+        serviceCase.Property(item => item.Description).HasColumnType("text");
+        serviceCase.Property(item => item.Status).HasMaxLength(100).IsRequired();
+        serviceCase.Property(item => item.Priority).HasMaxLength(50).IsRequired();
+        serviceCase.Property(item => item.Origin).HasMaxLength(100);
+        serviceCase.Property(item => item.Reason).HasMaxLength(200);
+        serviceCase.HasIndex(item => new { item.TenantId, item.IsActive, item.Status, item.DueAt });
+        serviceCase.HasIndex(item => new { item.TenantId, item.CustomerId, item.OpenedAt });
+        serviceCase.HasOne(item => item.Customer).WithMany().HasForeignKey(item => item.CustomerId).OnDelete(DeleteBehavior.SetNull);
+        serviceCase.HasOne(item => item.Contact).WithMany().HasForeignKey(item => item.ContactId).OnDelete(DeleteBehavior.SetNull);
+        serviceCase.HasOne(item => item.Deal).WithMany().HasForeignKey(item => item.DealId).OnDelete(DeleteBehavior.SetNull);
+        serviceCase.HasOne(item => item.Owner).WithMany().HasForeignKey(item => item.OwnerId).OnDelete(DeleteBehavior.SetNull);
+
+        var offer = Table<SalesOffer>(modelBuilder, "sales_offers");
+        offer.Property(item => item.Name).HasMaxLength(500).IsRequired();
+        offer.Property(item => item.OfferNumber).HasMaxLength(150);
+        offer.Property(item => item.Status).HasMaxLength(100).IsRequired();
+        offer.Property(item => item.Amount).HasPrecision(18, 2);
+        offer.Property(item => item.Currency).HasMaxLength(10);
+        offer.HasIndex(item => new { item.TenantId, item.Status, item.ValidUntil });
+        offer.HasIndex(item => new { item.TenantId, item.CustomerId, item.IssuedAt });
+        offer.HasOne(item => item.Customer).WithMany().HasForeignKey(item => item.CustomerId).OnDelete(DeleteBehavior.SetNull);
+        offer.HasOne(item => item.Contact).WithMany().HasForeignKey(item => item.ContactId).OnDelete(DeleteBehavior.SetNull);
+        offer.HasOne(item => item.Deal).WithMany().HasForeignKey(item => item.DealId).OnDelete(DeleteBehavior.SetNull);
+        offer.HasOne(item => item.Owner).WithMany().HasForeignKey(item => item.OwnerId).OnDelete(DeleteBehavior.SetNull);
+
+        var order = Table<SalesOrder>(modelBuilder, "sales_orders");
+        order.Property(item => item.Name).HasMaxLength(500).IsRequired();
+        order.Property(item => item.OrderNumber).HasMaxLength(150);
+        order.Property(item => item.Status).HasMaxLength(100).IsRequired();
+        order.Property(item => item.Amount).HasPrecision(18, 2);
+        order.Property(item => item.Currency).HasMaxLength(10);
+        order.HasIndex(item => new { item.TenantId, item.Status, item.PromisedAt });
+        order.HasIndex(item => new { item.TenantId, item.CustomerId, item.OrderedAt });
+        order.HasOne(item => item.Customer).WithMany().HasForeignKey(item => item.CustomerId).OnDelete(DeleteBehavior.SetNull);
+        order.HasOne(item => item.Offer).WithMany(item => item.Orders).HasForeignKey(item => item.OfferId).OnDelete(DeleteBehavior.SetNull);
+        order.HasOne(item => item.Deal).WithMany().HasForeignKey(item => item.DealId).OnDelete(DeleteBehavior.SetNull);
+        order.HasOne(item => item.Owner).WithMany().HasForeignKey(item => item.OwnerId).OnDelete(DeleteBehavior.SetNull);
+
+        var invoice = Table<SalesInvoice>(modelBuilder, "sales_invoices");
+        invoice.Property(item => item.Name).HasMaxLength(500).IsRequired();
+        invoice.Property(item => item.InvoiceNumber).HasMaxLength(150);
+        invoice.Property(item => item.Status).HasMaxLength(100).IsRequired();
+        invoice.Property(item => item.Amount).HasPrecision(18, 2);
+        invoice.Property(item => item.OpenAmount).HasPrecision(18, 2);
+        invoice.Property(item => item.Currency).HasMaxLength(10);
+        invoice.HasIndex(item => new { item.TenantId, item.Status, item.DueAt });
+        invoice.HasIndex(item => new { item.TenantId, item.CustomerId, item.IssuedAt });
+        invoice.HasOne(item => item.Customer).WithMany().HasForeignKey(item => item.CustomerId).OnDelete(DeleteBehavior.SetNull);
+        invoice.HasOne(item => item.Order).WithMany(item => item.Invoices).HasForeignKey(item => item.OrderId).OnDelete(DeleteBehavior.SetNull);
+        invoice.HasOne(item => item.Deal).WithMany().HasForeignKey(item => item.DealId).OnDelete(DeleteBehavior.SetNull);
+        invoice.HasOne(item => item.Owner).WithMany().HasForeignKey(item => item.OwnerId).OnDelete(DeleteBehavior.SetNull);
     }
 
     private static void ConfigureWorkflowModel(ModelBuilder modelBuilder)
@@ -448,10 +515,14 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         workItem.Property(item => item.Status).HasMaxLength(40).IsRequired();
         workItem.Property(item => item.Title).HasMaxLength(500).IsRequired();
         workItem.Property(item => item.Reason).HasColumnType("text");
+        workItem.Property(item => item.ClosureReason).HasMaxLength(60);
         workItem.Property(item => item.PriorityScore).HasPrecision(10, 2);
         workItem.Property(item => item.SourceRuleCode).HasMaxLength(50);
         workItem.Property(item => item.CompletedBy).HasMaxLength(256);
         workItem.HasIndex(item => new { item.TenantId, item.Status, item.DueAt });
+        workItem.HasIndex(item => new { item.TenantId, item.Status, item.AvailableFrom });
+        workItem.HasIndex(item => new { item.TenantId, item.WorkItemChainId, item.CreatedAt });
+        workItem.HasIndex(item => new { item.TenantId, item.PreviousWorkItemId });
         workItem.HasIndex(item => new { item.TenantId, item.OwnerId, item.Status });
         workItem.HasIndex(item => new { item.TenantId, item.PriorityScore });
         workItem.HasOne(item => item.Owner).WithMany(item => item.WorkItems).HasForeignKey(item => item.OwnerId).OnDelete(DeleteBehavior.SetNull);
@@ -571,11 +642,19 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         template.HasIndex(item => new { item.TenantId, item.Key, item.Version }).IsUnique();
 
         var notification = Table<SalesNotification>(modelBuilder, "sales_notifications");
+        notification.Property(item => item.NotificationKey).HasMaxLength(500).IsRequired();
         notification.Property(item => item.RecipientSubject).HasMaxLength(256).IsRequired();
+        notification.Property(item => item.RecipientEmail).HasMaxLength(320);
+        notification.Property(item => item.Channel).HasMaxLength(40).IsRequired();
         notification.Property(item => item.Title).HasMaxLength(500);
+        notification.Property(item => item.Subject).HasMaxLength(998);
+        notification.Property(item => item.BodyHtml).HasColumnType("text");
         notification.Property(item => item.PayloadJson).HasColumnType("jsonb");
         notification.Property(item => item.DeliveryStatus).HasMaxLength(30).IsRequired();
-        notification.HasIndex(item => new { item.TenantId, item.RecipientSubject, item.DeliveryStatus, item.DueAt });
+        notification.Property(item => item.LastError).HasMaxLength(4000);
+        notification.HasIndex(item => new { item.TenantId, item.NotificationKey }).IsUnique();
+        notification.HasIndex(item => new { item.TenantId, item.RecipientSubject, item.DeliveryStatus, item.NextAttemptAt });
+        notification.HasIndex(item => new { item.TenantId, item.DeliveryStatus, item.LockedUntil });
         notification.HasOne(item => item.WorkItem).WithMany(item => item.Notifications).HasForeignKey(item => item.WorkItemId).OnDelete(DeleteBehavior.SetNull);
     }
 

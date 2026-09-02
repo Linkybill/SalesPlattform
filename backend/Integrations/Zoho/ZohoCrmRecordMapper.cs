@@ -1,4 +1,5 @@
 using System.Text.Json;
+using SalesPlattform.Backend.Integrations;
 using SalesPlattform.Backend.Integrations.Abstractions;
 
 namespace SalesPlattform.Backend.Integrations.Zoho;
@@ -22,7 +23,7 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             ["Contacts"] =
             [
                 "id", "Full_Name", "First_Name", "Last_Name", "Account_Name", "Email", "Phone",
-                "Mobile", "Mobile_Phone", "Title", "Contact_Status", "Owner", "Created_Time", "Modified_Time"
+                "Mobile", "Mobile_Phone", "Title", "Contact_Role", "Role", "Contact_Status", "Owner", "Created_Time", "Modified_Time"
             ],
             ["Leads"] =
             [
@@ -57,6 +58,30 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
                 "id", "Event_Title", "Subject", "What_Id", "Who_Id", "Owner", "Start_DateTime",
                 "End_DateTime", "Event_Status", "Type", "$event_cancelled", "Created_Time", "Modified_Time"
             ],
+            ["Cases"] =
+            [
+                "id", "Case_Number", "Subject", "Description", "Status", "Priority", "Case_Origin",
+                "Case_Reason", "Account_Name", "Contact_Name", "Deal_Name", "Owner", "Created_Time",
+                "Modified_Time", "Due_Date", "Closed_Time", "Resolution"
+            ],
+            ["Quotes"] =
+            [
+                "id", "Quote_Number", "Subject", "Account_Name", "Contact_Name", "Deal_Name", "Grand_Total",
+                "Sub_Total", "Amount", "Currency", "Quote_Stage", "Status", "Quote_Date", "Sent_Time",
+                "Valid_Till", "Owner", "Created_Time", "Modified_Time"
+            ],
+            ["Sales_Orders"] =
+            [
+                "id", "SO_Number", "Subject", "Account_Name", "Contact_Name", "Deal_Name", "Grand_Total",
+                "Sub_Total", "Amount", "Currency", "Status", "Order_Date", "Due_Date", "Delivered_Date",
+                "Quote_Name", "Owner", "Created_Time", "Modified_Time"
+            ],
+            ["Invoices"] =
+            [
+                "id", "Invoice_Number", "Subject", "Account_Name", "Contact_Name", "Deal_Name", "Sales_Order",
+                "Grand_Total", "Balance", "Amount", "Currency", "Status", "Invoice_Date", "Due_Date",
+                "Paid_Date", "Owner", "Created_Time", "Modified_Time"
+            ],
             ["Pipelines"] = ["id", "display_value", "pipeline_name", "name", "sequence_number"],
             ["PipelineStages"] = ["id", "pipeline_id", "pipeline_name", "pick_list_value", "display_value", "probability", "sequence_number"],
             ["Emails"] =
@@ -87,11 +112,16 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             "dealstagehistory" => CrmEntityTypes.DealStageHistory,
             "calls" or "tasks" or "emails" => CrmEntityTypes.Activity,
             "events" or "meetings" or "appointments" => CrmEntityTypes.Appointment,
+            "cases" => CrmEntityTypes.ServiceCase,
+            "quotes" => CrmEntityTypes.Offer,
+            "sales_orders" or "salesorders" => CrmEntityTypes.Order,
+            "invoices" => CrmEntityTypes.Invoice,
             _ => module.ToLowerInvariant()
         };
 
     public CrmCanonicalRecord Map(CrmExternalRecord record)
-        => record.Module.ToLowerInvariant() switch
+    {
+        CrmCanonicalRecord canonical = record.Module.ToLowerInvariant() switch
         {
             "users" => MapOwner(record),
             "accounts" => MapCustomer(record),
@@ -104,9 +134,16 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             "dealstagehistory" => MapDealStageHistory(record),
             "calls" or "tasks" or "emails" => MapActivity(record),
             "events" or "meetings" or "appointments" => MapAppointment(record),
+            "cases" => MapServiceCase(record),
+            "quotes" => MapOffer(record),
+            "sales_orders" or "salesorders" => MapOrder(record),
+            "invoices" => MapInvoice(record),
             _ => throw new InvalidOperationException(
                 $"Das Zoho-Modul '{record.Module}' besitzt noch kein kanonisches Mapping.")
         };
+
+        return canonical with { ExternalUrl = record.ExternalUrl };
+    }
 
     private static CrmCanonicalOwner MapOwner(CrmExternalRecord record)
     {
@@ -173,6 +210,7 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             ZohoFieldReader.String(record.Payload, "Phone"),
             ZohoFieldReader.String(record.Payload, "Mobile", "Mobile_Phone"),
             ZohoFieldReader.String(record.Payload, "Title", "Job_Title"),
+            ZohoFieldReader.String(record.Payload, "Contact_Role", "Role"),
             ZohoFieldReader.Bool(record.Payload, "Is_Primary", "Primary_Contact"));
     }
 
@@ -328,10 +366,18 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             .DistinctBy(item => $"{item.EntityType}:{item.ExternalId}")
             .ToArray();
         var duration = ZohoFieldReader.Int32(record.Payload, "Call_Duration", "Duration", "Duration_Seconds");
+        var connectionStatus = ZohoFieldReader.String(record.Payload, "Call_Status", "Connection_Status");
+        var result = ZohoFieldReader.String(record.Payload, "Call_Result", "Status", "Result");
+        var countsAsConversation = type == "call"
+            && CallQualification.IsConversation(
+                duration,
+                connectionStatus,
+                result,
+                CallQualification.DefaultConversationThresholdSeconds);
         return new(
             CrmProviders.Zoho,
             record.ConnectionKey(),
-            $"{record.Module}:{record.ExternalId}",
+            record.ExternalId,
             record.Payload,
             ZohoFieldReader.DateTimeOffset(record.Payload, "Created_Time", "created_time"),
             record.ModifiedAt,
@@ -340,10 +386,15 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             occurredAt,
             duration,
             ZohoFieldReader.String(record.Payload, "Call_Type", "Direction"),
-            ZohoFieldReader.String(record.Payload, "Call_Status", "Connection_Status"),
-            duration is >= 20 ? "conversation" : duration is not null ? "attempt" : null,
-            duration is not null ? duration >= 20 : null,
-            ZohoFieldReader.String(record.Payload, "Call_Result", "Status", "Result"),
+            connectionStatus,
+            CallQualification.ConversationClass(
+                type == "call",
+                duration,
+                connectionStatus,
+                result,
+                CallQualification.DefaultConversationThresholdSeconds),
+            type == "call" && duration is not null ? countsAsConversation : null,
+            result,
             ZohoFieldReader.LookupId(record.Payload, "Owner", "owner"),
             relations);
     }
@@ -364,7 +415,7 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
         return new(
             CrmProviders.Zoho,
             record.ConnectionKey(),
-            $"{record.Module}:{record.ExternalId}",
+            record.ExternalId,
             record.Payload,
             ZohoFieldReader.DateTimeOffset(record.Payload, "Created_Time", "created_time"),
             record.ModifiedAt,
@@ -378,6 +429,92 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             ZohoFieldReader.Int32(record.Payload, "Reschedule_Count") ?? 0,
             relations);
     }
+
+    private static CrmCanonicalServiceCase MapServiceCase(CrmExternalRecord record)
+        => new(
+            CrmProviders.Zoho,
+            record.ConnectionKey(),
+            record.ExternalId,
+            record.Payload,
+            ZohoFieldReader.DateTimeOffset(record.Payload, "Created_Time", "created_time"),
+            record.ModifiedAt,
+            ZohoFieldReader.String(record.Payload, "Subject", "Case_Title", "Case_Name") ?? record.ExternalId,
+            ZohoFieldReader.String(record.Payload, "Description", "Resolution"),
+            ZohoFieldReader.String(record.Payload, "Status") ?? "open",
+            ZohoFieldReader.String(record.Payload, "Priority") ?? "normal",
+            ZohoFieldReader.String(record.Payload, "Case_Origin", "Origin"),
+            ZohoFieldReader.String(record.Payload, "Case_Reason", "Reason"),
+            ZohoFieldReader.LookupId(record.Payload, "Account_Name", "Account"),
+            ZohoFieldReader.LookupId(record.Payload, "Contact_Name", "Contact"),
+            ZohoFieldReader.LookupId(record.Payload, "Deal_Name", "Deal"),
+            ZohoFieldReader.LookupId(record.Payload, "Owner", "owner"),
+            ZohoFieldReader.DateTimeOffset(record.Payload, "Opened_Time", "Created_Time"),
+            ZohoFieldReader.Date(record.Payload, "Due_Date", "Due_Time"),
+            ZohoFieldReader.DateTimeOffset(record.Payload, "Closed_Time", "Resolved_Time"));
+
+    private static CrmCanonicalOffer MapOffer(CrmExternalRecord record)
+        => new(
+            CrmProviders.Zoho,
+            record.ConnectionKey(),
+            record.ExternalId,
+            record.Payload,
+            ZohoFieldReader.DateTimeOffset(record.Payload, "Created_Time", "created_time"),
+            record.ModifiedAt,
+            ZohoFieldReader.String(record.Payload, "Subject", "Quote_Name", "Name") ?? record.ExternalId,
+            ZohoFieldReader.String(record.Payload, "Quote_Number"),
+            ZohoFieldReader.String(record.Payload, "Quote_Stage", "Status") ?? "draft",
+            ZohoFieldReader.Decimal(record.Payload, "Grand_Total", "Sub_Total", "Amount"),
+            ZohoFieldReader.String(record.Payload, "Currency", "Currency_Code"),
+            ZohoFieldReader.LookupId(record.Payload, "Account_Name", "Account"),
+            ZohoFieldReader.LookupId(record.Payload, "Contact_Name", "Contact"),
+            ZohoFieldReader.LookupId(record.Payload, "Deal_Name", "Deal"),
+            ZohoFieldReader.LookupId(record.Payload, "Owner", "owner"),
+            ZohoFieldReader.Date(record.Payload, "Quote_Date", "Created_Time"),
+            ZohoFieldReader.DateTimeOffset(record.Payload, "Sent_Time", "Sent_Date"),
+            ZohoFieldReader.Date(record.Payload, "Valid_Till", "Valid_Until"));
+
+    private static CrmCanonicalOrder MapOrder(CrmExternalRecord record)
+        => new(
+            CrmProviders.Zoho,
+            record.ConnectionKey(),
+            record.ExternalId,
+            record.Payload,
+            ZohoFieldReader.DateTimeOffset(record.Payload, "Created_Time", "created_time"),
+            record.ModifiedAt,
+            ZohoFieldReader.String(record.Payload, "Subject", "SO_Name", "Name") ?? record.ExternalId,
+            ZohoFieldReader.String(record.Payload, "SO_Number", "Order_Number"),
+            ZohoFieldReader.String(record.Payload, "Status") ?? "open",
+            ZohoFieldReader.Decimal(record.Payload, "Grand_Total", "Sub_Total", "Amount"),
+            ZohoFieldReader.String(record.Payload, "Currency", "Currency_Code"),
+            ZohoFieldReader.LookupId(record.Payload, "Account_Name", "Account"),
+            ZohoFieldReader.LookupId(record.Payload, "Quote_Name", "Quote"),
+            ZohoFieldReader.LookupId(record.Payload, "Deal_Name", "Deal"),
+            ZohoFieldReader.LookupId(record.Payload, "Owner", "owner"),
+            ZohoFieldReader.Date(record.Payload, "Order_Date", "Created_Time"),
+            ZohoFieldReader.Date(record.Payload, "Due_Date", "Delivery_Date"),
+            ZohoFieldReader.Date(record.Payload, "Delivered_Date", "Delivery_Date"));
+
+    private static CrmCanonicalInvoice MapInvoice(CrmExternalRecord record)
+        => new(
+            CrmProviders.Zoho,
+            record.ConnectionKey(),
+            record.ExternalId,
+            record.Payload,
+            ZohoFieldReader.DateTimeOffset(record.Payload, "Created_Time", "created_time"),
+            record.ModifiedAt,
+            ZohoFieldReader.String(record.Payload, "Subject", "Invoice_Name", "Name") ?? record.ExternalId,
+            ZohoFieldReader.String(record.Payload, "Invoice_Number"),
+            ZohoFieldReader.String(record.Payload, "Status") ?? "open",
+            ZohoFieldReader.Decimal(record.Payload, "Grand_Total", "Amount"),
+            ZohoFieldReader.Decimal(record.Payload, "Balance", "Open_Amount"),
+            ZohoFieldReader.String(record.Payload, "Currency", "Currency_Code"),
+            ZohoFieldReader.LookupId(record.Payload, "Account_Name", "Account"),
+            ZohoFieldReader.LookupId(record.Payload, "Sales_Order", "Sales_Order_Name", "Order"),
+            ZohoFieldReader.LookupId(record.Payload, "Deal_Name", "Deal"),
+            ZohoFieldReader.LookupId(record.Payload, "Owner", "owner"),
+            ZohoFieldReader.Date(record.Payload, "Invoice_Date", "Created_Time"),
+            ZohoFieldReader.Date(record.Payload, "Due_Date"),
+            ZohoFieldReader.Date(record.Payload, "Paid_Date", "Payment_Date"));
 
     private static IEnumerable<CrmRecordRelation> LookupRelations(JsonElement payload, params string[] fieldNames)
     {

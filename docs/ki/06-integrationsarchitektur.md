@@ -22,6 +22,15 @@ weiteres CRM ───┘                              │
                               Regeln, KPIs, Snapshots, Ansichten
 ```
 
+Die Reports werden im Frontend als unabhängige Komponenten in einem direkt
+bearbeitbaren Seitenbaum komponiert. Das Dashboard lädt eine tenantisolierte
+Report-Projektion und rendert den gespeicherten Baum mit Grid, Tabs, Akkordeon,
+Überschriften, Texten und Reports. Der Baum wird intern als JSON über die
+Sales-API gespeichert, aber nicht als rohe Mandantenportal-Einstellung
+angeboten. Er ist keine CRM-Integration und wird nicht in
+`IdentityPlatform.Shared` als CRM-Fachlichkeit modelliert. `Shared` liefert
+dafür nur die generische Tenant-, Settings- und Autorisierungsinfrastruktur.
+
 ## Schichten
 
 ```text
@@ -72,9 +81,11 @@ Integrations/
     └── PipedriveAdapter.cs
 ```
 
-Lesen und Schreiben werden getrennt modelliert. Der Zoho-Adapter startet
-read-only. Ein Anbieter darf nur die Fähigkeiten anbieten, die seine
-Verbindung und die Freigabe des Mandanten erlauben.
+Lesen und Schreiben werden getrennt modelliert. Die CRM-Stammdaten bleiben
+read-only führend in Zoho; der Zoho-Adapter bietet zusätzlich ausschließlich
+die explizite Anlage der spiegelnden CRM-Tasks für lokale Arbeitsvorgänge an.
+Weitere Schreibfähigkeiten dürfen nur als eigene, freigegebene Capability
+hinzukommen.
 
 ### Normalisierung und Mapping
 
@@ -132,8 +143,12 @@ integration_errors
 
 - `integration_connections`: Anbieter und Mandantenverbindung, niemals rohe
   Secrets im Klartext.
-- `integration_entity_links`: Zuordnung `(Provider, ExternalId)` zu einer
-  kanonischen Entität; dadurch können Zoho- und Pipedrive-IDs koexistieren.
+- `integration_entity_links`: Zuordnung `(Provider, Connection, EntityType,
+  ExternalId)` zu einer kanonischen Entität; dadurch können Zoho- und
+  Pipedrive-IDs koexistieren. `SourceDeletedAt` hält ein Quell-Delete
+  historisch fest. Eine optionale `WorkItemId` verknüpft eine von der
+  SalesPlattform erzeugte CRM-Task mit genau einer lokalen
+  Arbeitsvorgangsinstanz.
 - `integration_sync_cursors`: letzter erfolgreicher Änderungsstand je Anbieter,
   Mandant und Entitätstyp.
 - `integration_raw_records`: optionales `jsonb`-Original für Debugging,
@@ -170,7 +185,29 @@ aus Zoho- oder Pipedrive-JSON befüllt.
 9. Stage-Historie und Änderungen speichern
 10. Sync-Cursor und Ergebnis protokollieren
 11. Regeln/KPIs für betroffene Daten neu berechnen
+12. aktive lokale Arbeitsvorgänge als CRM-Tasks spiegeln und ihre Remote-IDs
+    verknüpfen
 ```
+
+### Remote-IDs und Löschabgleich
+
+Der Remote-Key bleibt über den gesamten Lebenszyklus erhalten. Normale
+Upserts suchen zuerst den bestehenden Integrationslink und aktualisieren dann
+die vorhandene kanonische Entität; ein Full-Crawl ist kein physischer
+Neuaufbau. Zoho liefert inkrementelle Löschungen über den jeweiligen
+`/<module>/deleted`-Endpunkt. Zusätzlich prüft ein erfolgreicher Full-Crawl
+fehlende aktive IDs, damit auch bereits aus dem Delete-Fenster entfernte
+Datensätze erkannt werden.
+
+Lokale CRM-Stammdaten werden bei einem Quell-Delete historisch behalten, aber
+inaktiv markiert. Offene Arbeitsvorgänge, die auf einen gelöschten Lead,
+Kunden, Kontakt, Deal oder Termin zeigen, werden mit dem Grund
+`target-deleted-in-crm` geschlossen und nicht automatisch ohne Ziel ersetzt.
+Eine gelöschte CRM-Task ist ein anderer Fall: Der verknüpfte lokale
+Arbeitsvorgang wird geschlossen und als neue Instanz derselben
+`WorkItemChainId` angelegt. Die neue Instanz wird über den Zoho-Adapter wieder
+als CRM-Task angelegt und erhält deren neue Remote-ID. Alte Links bleiben mit
+`SourceDeletedAt` für die Historie erhalten.
 
 ### Hintergrundjobs und Fortschritt
 
@@ -225,8 +262,15 @@ CRM-Sync-Jobs. E-Mails werden beim Iterieren der geänderten bzw. vollständigen
 Elternobjekte Accounts, Kontakte, Leads und Deals gelesen. Für die Related
 Lists gelten vier parallele Leseoperationen und batchweise Writes; diese
 Begrenzung schützt die Provider-API und die Tenant-Datenbank, während die
-Elternbeziehungen erhalten bleiben. Ein separater E-Mail-Job ist fachlich
-nicht vorgesehen.
+Elternbeziehungen erhalten bleiben. Ein separater E-Mail-Sync- oder
+E-Mail-Versandjob ist fachlich nicht vorgesehen. Regelbenachrichtigungen werden
+unmittelbar nach der Regelbewertung im selben Full- bzw. Incremental-Lauf
+versendet; die Outbox dient nur der idempotenten Zustellung und dem Retry.
+
+Auch die belastbaren Kennzahlen werden in diesem Lauf aktualisiert: Nach
+Synchronisation und Regelbewertung wird der Tages-Snapshot für den aktuellen
+Tenant neu berechnet. Dadurch gibt es für Mailversand und Kennzahlen keine
+separaten Zeitpläne und keine unabhängigen Sales-Jobs.
 
 ### Exklusive Prozessgruppen
 

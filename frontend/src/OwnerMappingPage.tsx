@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useApplicationContext } from '@hammer2fall/identity-platform-react'
+import {
+  useApplicationContext,
+} from '@hammer2fall/identity-platform-react'
 
 type CurrentUser = {
   subject: string | null
@@ -79,13 +81,13 @@ export function OwnerMappingPage() {
     setLoading(true)
     setError(null)
     try {
-      const apiResponse = await authorizedFetch('/api/owner-mappings')
-      const payload = await readPayload<OwnerMappingResponse & ApiError>(apiResponse)
-      if (!apiResponse.ok || !payload) {
-        throw new Error(getApiError(payload, `Benutzerzuordnungen antworteten mit HTTP ${apiResponse.status}.`))
+      const mappingResponse = await authorizedFetch('/api/owner-mappings')
+      const mappingPayload = await readPayload<OwnerMappingResponse & ApiError>(mappingResponse)
+      if (!mappingResponse.ok || !mappingPayload) {
+        throw new Error(getApiError(mappingPayload, `Benutzerzuordnungen antworteten mit HTTP ${mappingResponse.status}.`))
       }
-      setResponse(payload)
-      selectCurrentUser(payload)
+      setResponse(mappingPayload)
+      selectCurrentUser(mappingPayload)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Benutzerzuordnungen konnten nicht geladen werden.')
     } finally {

@@ -18,8 +18,9 @@ Stand: 2026-09-02.
   technischen `GET /api/hello-world`.
 - EF-Core-Datenmodell und tenant-isolierte Plattform-Datenbank.
 - Registrierung über `backend/manifest.json` in der Identity Platform.
-- App-Rollen: `sales-user` / „SalesPlattform Benutzer“ für den Vertrieb sowie
-  `sales-manager` / „Vertriebsleitung“ für die tenantweite Arbeitslistenansicht.
+- App-Rollen: `sales-user` / „SalesPlattform Benutzer“, `sales-manager` /
+  „Vertriebsleitung“, `sales-management` / „Management/Geschäftsführung“ und
+  `sales-backoffice` / „Sales Backoffice“.
 - Native Windows-PowerShell- und Docker-Rebuilds über `rebuild-all.ps1` bzw.
   `rebuild-all.cmd`.
 - Zoho-OAuth, die Zoho-Token-Erneuerung in der SalesPlattform, verschlüsselte
@@ -47,6 +48,11 @@ Stand: 2026-09-02.
 - E-Mails bleiben Bestandteil desselben CRM-Sync-Laufs. Sie werden als
   Related-List der Elternobjekte Accounts, Kontakte, Leads und Deals gelesen;
   es gibt keinen separaten E-Mail-Sync-Job.
+- Nach dem CRM-Sync wird die Arbeitsliste automatisch neu bewertet. Ein
+  Vollimport bewertet alle Ziele; ein Incremental-Crawl übergibt nur die
+  geänderten kanonischen Datensätze und folgt deren Integration-Links sowie
+  Aktivitäts-, Kontakt-, Kunden- und Deal-Beziehungen zu den betroffenen
+  Regelzielen.
 - Vollimport und inkrementeller Crawl sind über die zentrale, mandantenbezogene
   Exklusivgruppe `crm-synchronization` gekoppelt und können nicht gleichzeitig
   laufen.
@@ -60,8 +66,22 @@ Stand: 2026-09-02.
   komfortablen Editor; gespeichert wird die Zuordnung über die stabile
   Plattform-Subject-ID und die `SalesOwner`-ID, mit E-Mail als Anzeige- und
   Fallback-Wert.
+- Die Mindestdauer eines qualifizierten Gesprächs wird als
+  `sales.callConversationThresholdSeconds` auf der Scope-Ebene `tenantApp`
+  gespeichert. Der Standardwert beträgt 20 Sekunden; der Tenant-Admin kann ihn
+  appweit zwischen 1 und 3600 Sekunden konfigurieren.
+- Die Zeit- und Versuchsschwellen der Arbeitslistenregeln liegen als
+  tenantbezogene `sales.rules.*`-App-Einstellungen vor. Die Arbeitsliste lädt
+  sie bei jeder Bewertung; die Defaults entsprechen dem Pflichtenheft, unter
+  anderem 14 Tage Anruf-Wiedervorlage, 6–10 Versuche für Langläufer, 30 Tage
+  Deal-Inaktivität, 90 Tage Renewal-Horizont, 90 Tage Kontakt-Inaktivität und
+  1/4 Arbeitsstunden für Lead-Erstreaktion und Eskalation.
+- Die Regel- und Timeout-Konfiguration wird nicht in der Sales-App dupliziert.
+  Sie ist ausschließlich auf `tenantApp` definiert und wird im Tenant Portal
+  über „AppSettings“ der SalesPlattform gepflegt. Die Sales-App liest die
+  effektiven Werte nur noch serverseitig für die Regelbewertung.
 - Die aktuell integrierten Paketstände sind `@hammer2fall/identity-platform-react`
-  `0.1.43` im Frontend und `IdentityPlatform.Shared` `0.1.37` im Backend.
+  `0.1.43` im Frontend und `IdentityPlatform.Shared` `0.1.40` im Backend.
   Die Jobdefinition enthält neben Zeitplan und Aktivierung auch
   `ConcurrencyGroup` und `ConcurrencyScope`; Vollimport und Crawl verwenden
   gemeinsam `crm-synchronization`.
@@ -70,10 +90,23 @@ Stand: 2026-09-02.
   sind jeweils `1/1` bereit. Die laufenden Anwendungstags sind Aufmaß `1.0.0`
   und Sales `0.1.0`. Die Plattformdatenbank enthält die Migration
   `20260902090000_AddApplicationJobConcurrency`.
-- Die erste fachliche Arbeitslisten-Projektion für R-05, R-06, R-07, R-08, R-09,
-  R-10 und R-12 ist umgesetzt. Cockpit, Team- und weitere Fachansichten bleiben
-  weiterer Zielumfang; die importierten Entitäten und Historien stehen dafür
-  vollständig zur Verfügung.
+- Die fachliche Arbeitslisten-Projektion für R-01 bis R-18 ist umgesetzt. Die
+  CRM-geführte Auflösung entfernt den lokalen „Erledigt“-Schritt. Neue
+  Servicefälle, Angebote, Aufträge und Rechnungen werden im Full- und
+  Incremental-Crawl synchronisiert und regelbezogen bewertet.
+- Das Report-Dashboard ist als direkt bearbeitbarer Seitenbaum umgesetzt.
+  Arbeitsliste, Cockpit, Team-Steuerung, Meeting Report, Analyse,
+  Kundenstamm/Karte, Ziele/Pace, Aufräumen, Servicefälle sowie die
+  kommerzielle Kette sind eigenständige Report-Komponenten. Tenant-Admins
+  können auf der Reportseite Grids, Tabs, Akkordeons, Überschriften und
+  Textblöcke hinzufügen, benennen, verschachteln und Reports dazwischen
+  platzieren. Das Standardmodell enthält alle Reports; der JSON-Seitenbaum
+  bleibt eine interne Implementierungsform.
+- Die Report-API liefert eine tenantisolierte, read-only Auswertung aus dem
+  kanonischen Sales-Modell. Unmittelbar in jedem Full- und Incremental-Sync
+  werden die täglichen KPI-, Pipeline-, Aktivitäts- und Kundenstatus-Snapshots
+  aktualisiert und Regelbenachrichtigungen direkt versendet. Dafür gibt es
+  keine separaten Sales-Jobs oder eigenen Zeitpläne.
 
 ## Erste fachliche Umsetzung: Arbeitsliste
 
@@ -81,17 +114,28 @@ Die Startansicht ist für `sales-user` eine persönliche und für
 `sales-manager` eine tenantweite, jeweils backendseitig gefilterte
 Arbeitsliste. `GET /api/worklist?refresh=true` projiziert die aktuellen
 CRM-Daten in die vorhandenen `sales_work_items` und sortiert sie nach dem dokumentierten
-Prioritätsscore. Umgesetzt sind zunächst R-05 (hängender Deal), R-06
-(Vertragsverlängerung), R-07 (fehlender/alter Kundenkontakt), R-08
-(Zuständigkeitswechsel), R-09 (neuer Lead ohne Erstreaktion), R-10
-(Cross-Selling) und R-12 (mehrfach verschobener Termin).
+Prioritätsscore. Umgesetzt sind zunächst R-01 bis R-04 für Anruf-Follow-ups,
+R-05 (hängender Deal), R-06 (Vertragsverlängerung), R-07 (fehlender/alter
+Kundenkontakt), R-08 (Zuständigkeitswechsel), R-09 (neuer Lead ohne
+Erstreaktion), R-10 (Cross-Selling), R-12 (mehrfach verschobener Termin),
+R-13/R-14 (Account Care und Deal-Reaktivierung) sowie R-15 bis R-18 für
+Servicefälle, Angebote, Aufträge und Rechnungen.
 
 Die Einträge verwenden eine stabile Identität aus Mandant, Regel und Zielobjekt.
-Dadurch bleiben `POST /api/worklist/{id}/complete` und
-`POST /api/worklist/{id}/snooze` über weitere Refreshes wirksam. Aktionen erzeugen
-ein WorkItem-Ereignis und einen Audit-Eintrag. Besitzer werden über die
+`POST /api/worklist/{id}/snooze` schließt die aktuelle Vorgangsinstanz mit dem
+Grund `deferred` und erzeugt einen Nachfolger in derselben Vorgangskette. Der
+Nachfolger besitzt ein `AvailableFrom` („Bearbeitung beginnen ab“); vor diesem
+Zeitpunkt wird er von der Arbeitslisten-API nicht ausgeliefert. Einen
+fachlichen Abschluss gibt es nur durch die CRM-Änderung und den folgenden Sync.
+Lokale Aktionen erzeugen ein WorkItem-Ereignis und einen Audit-Eintrag. Besitzer werden über die
 Benutzer-E-Mail dem CRM-Besitzer zugeordnet; bis zur Zuordnung werden nur
-unzugeordnete Vorgänge gezeigt. Die erste R-09-Variante misst eine verstrichene
+unzugeordnete Vorgänge gezeigt. Bei Anrufen zählen Nichterreichen, Mailbox und
+falscher Ansprechpartner als Versuch, aber nicht als echter Kontakt. Eine echte
+Gesprächsverbindung (standardmäßig mindestens 20 Sekunden, appweit
+konfigurierbar) setzt den Zähler „seit letztem Gespräch“ zurück. Die
+Regelbewertung läuft nach jedem Sync; beim
+Incremental-Sync werden nur die betroffenen Datensätze und die abhängige
+Beziehungskette ausgewertet. Die erste R-09-Variante misst eine verstrichene
 Stunde; die vorhandenen Arbeitszeitkalender werden für die Arbeitszeitrechnung
 der nächsten Regelengine-Stufe verwendet.
 
@@ -128,13 +172,15 @@ Details stehen in [`06-integrationsarchitektur.md`](./06-integrationsarchitektur
 6. Kundenstamm – Karte, Abdeckung und weiße Flecken.
 7. Ziele und Pace – Zielverfolgung gegen Zeitanteil.
 8. Aufräumen – Dublettenprüfung mit manueller Zusammenführung.
+9. Servicefälle – Beschwerden, Supportfälle, Prioritäten und Fristen.
+10. Kommerzielle Kette – Angebote, Aufträge und Rechnungs-/Zahlungsstatus.
 
 ## Begriffe und Leitregeln
 
 - Ein Deal entspricht genau einem Produkt; dadurch sind Umsätze direkt
   summierbar. Kombinierte Produktangaben gelten als Datenqualitätsauffälligkeit.
-- Ein Gespräch zählt standardmäßig ab mindestens 20 Sekunden. Nicht erreichte
-  Anrufe bleiben Versuche.
+- Ein Gespräch zählt ab der appweit konfigurierten Mindestdauer, standardmäßig
+  mindestens 20 Sekunden. Nicht erreichte Anrufe bleiben Versuche.
 - Wiedervorlagen werden von der SalesPlattform selbst erzeugt und verwaltet;
   sie sind nicht bloß eine Anzeige vorhandener CRM-Aufgaben.
 - Besitzerwechsel, Dubletten-Merges und automatische Statusänderungen brauchen

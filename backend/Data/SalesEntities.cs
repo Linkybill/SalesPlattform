@@ -64,6 +64,12 @@ public sealed class SalesCustomer : SalesEntity
     public string? AddressLine1 { get; set; }
     public string? HouseNumber { get; set; }
     public Guid? OwnerId { get; set; }
+    /// <summary>
+    /// Platform-side history anchor for the current CRM owner. It is updated
+    /// when the synchronized owner changes and is used by the owner-change
+    /// rule; the CRM remains the source of the owner itself.
+    /// </summary>
+    public DateTimeOffset? OwnerAssignedAt { get; set; }
     public string Status { get; set; } = "unknown";
     public DateTimeOffset? LastContactAt { get; set; }
     public DateTimeOffset? LastPhoneCallAt { get; set; }
@@ -137,6 +143,7 @@ public sealed class SalesContact : SalesEntity
     public string? NormalizedPhone { get; set; }
     public string? MobilePhone { get; set; }
     public string? JobTitle { get; set; }
+    public string? RoleType { get; set; }
     public bool IsPrimary { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTimeOffset? SourceCreatedAt { get; set; }
@@ -444,4 +451,112 @@ public sealed class SalesAppointmentStatusHistory : SalesEntity
     public string? Notes { get; set; }
 
     public SalesAppointment? Appointment { get; set; }
+}
+
+public sealed class SalesServiceCase : SalesEntity
+{
+    public Guid? CustomerId { get; set; }
+    public Guid? ContactId { get; set; }
+    public Guid? DealId { get; set; }
+    public Guid? OwnerId { get; set; }
+    public required string Subject { get; set; }
+    public string? Description { get; set; }
+    public required string Status { get; set; }
+    public required string Priority { get; set; }
+    public string? Origin { get; set; }
+    public string? Reason { get; set; }
+    public DateTimeOffset? OpenedAt { get; set; }
+    public DateTimeOffset? DueAt { get; set; }
+    public DateTimeOffset? ResolvedAt { get; set; }
+    public DateTimeOffset? SourceCreatedAt { get; set; }
+    public DateTimeOffset? SourceModifiedAt { get; set; }
+    public DateTimeOffset? LastSeenAt { get; set; }
+    public DateTimeOffset? SourceDeletedAt { get; set; }
+    public bool IsActive { get; set; } = true;
+
+    public SalesCustomer? Customer { get; set; }
+    public SalesContact? Contact { get; set; }
+    public SalesDeal? Deal { get; set; }
+    public SalesOwner? Owner { get; set; }
+}
+
+public sealed class SalesOffer : SalesEntity
+{
+    public Guid? CustomerId { get; set; }
+    public Guid? ContactId { get; set; }
+    public Guid? DealId { get; set; }
+    public Guid? OwnerId { get; set; }
+    public required string Name { get; set; }
+    public string? OfferNumber { get; set; }
+    public required string Status { get; set; }
+    public decimal? Amount { get; set; }
+    public string? Currency { get; set; }
+    public DateTimeOffset? IssuedAt { get; set; }
+    public DateTimeOffset? SentAt { get; set; }
+    public DateTimeOffset? ValidUntil { get; set; }
+    public DateTimeOffset? SourceCreatedAt { get; set; }
+    public DateTimeOffset? SourceModifiedAt { get; set; }
+    public DateTimeOffset? LastSeenAt { get; set; }
+    public DateTimeOffset? SourceDeletedAt { get; set; }
+    public bool IsActive { get; set; } = true;
+
+    public SalesCustomer? Customer { get; set; }
+    public SalesContact? Contact { get; set; }
+    public SalesDeal? Deal { get; set; }
+    public SalesOwner? Owner { get; set; }
+    public ICollection<SalesOrder> Orders { get; set; } = [];
+}
+
+public sealed class SalesOrder : SalesEntity
+{
+    public Guid? CustomerId { get; set; }
+    public Guid? OfferId { get; set; }
+    public Guid? DealId { get; set; }
+    public Guid? OwnerId { get; set; }
+    public required string Name { get; set; }
+    public string? OrderNumber { get; set; }
+    public required string Status { get; set; }
+    public decimal? Amount { get; set; }
+    public string? Currency { get; set; }
+    public DateTimeOffset? OrderedAt { get; set; }
+    public DateTimeOffset? PromisedAt { get; set; }
+    public DateTimeOffset? DeliveredAt { get; set; }
+    public DateTimeOffset? SourceCreatedAt { get; set; }
+    public DateTimeOffset? SourceModifiedAt { get; set; }
+    public DateTimeOffset? LastSeenAt { get; set; }
+    public DateTimeOffset? SourceDeletedAt { get; set; }
+    public bool IsActive { get; set; } = true;
+
+    public SalesCustomer? Customer { get; set; }
+    public SalesOffer? Offer { get; set; }
+    public SalesDeal? Deal { get; set; }
+    public SalesOwner? Owner { get; set; }
+    public ICollection<SalesInvoice> Invoices { get; set; } = [];
+}
+
+public sealed class SalesInvoice : SalesEntity
+{
+    public Guid? CustomerId { get; set; }
+    public Guid? OrderId { get; set; }
+    public Guid? DealId { get; set; }
+    public Guid? OwnerId { get; set; }
+    public required string Name { get; set; }
+    public string? InvoiceNumber { get; set; }
+    public required string Status { get; set; }
+    public decimal? Amount { get; set; }
+    public decimal? OpenAmount { get; set; }
+    public string? Currency { get; set; }
+    public DateTimeOffset? IssuedAt { get; set; }
+    public DateTimeOffset? DueAt { get; set; }
+    public DateTimeOffset? PaidAt { get; set; }
+    public DateTimeOffset? SourceCreatedAt { get; set; }
+    public DateTimeOffset? SourceModifiedAt { get; set; }
+    public DateTimeOffset? LastSeenAt { get; set; }
+    public DateTimeOffset? SourceDeletedAt { get; set; }
+    public bool IsActive { get; set; } = true;
+
+    public SalesCustomer? Customer { get; set; }
+    public SalesOrder? Order { get; set; }
+    public SalesDeal? Deal { get; set; }
+    public SalesOwner? Owner { get; set; }
 }

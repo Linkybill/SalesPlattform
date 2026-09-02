@@ -13,20 +13,26 @@ using SalesPlattform.Backend.Integrations.Zoho;
 using SalesPlattform.Backend.Authorization;
 using SalesPlattform.Backend.Integrations.Repositories;
 using SalesPlattform.Backend.Integrations.Jobs;
+using SalesPlattform.Backend.Services.Mail;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddIdentityPlatform();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddAuthorization(authorization =>
 {
-    authorization.AddPolicy("sales-access", policy => policy
-        .RequireAuthenticatedUser()
-        .RequireAssertion(context =>
+        authorization.AddPolicy("sales-access", policy => policy
+            .RequireAuthenticatedUser()
+            .RequireAssertion(context =>
             TenantApplicationRole.IsInRole(context.User, "sales-user")
-            || TenantApplicationRole.IsInRole(context.User, "sales-manager")));
+            || TenantApplicationRole.IsInRole(context.User, "sales-manager")
+            || TenantApplicationRole.IsInRole(context.User, "sales-management")
+            || TenantApplicationRole.IsInRole(context.User, "sales-backoffice")));
+        authorization.AddPolicy("sales-layout-access", policy => policy
+            .RequireAuthenticatedUser());
 });
 
-builder.Services.AddPlatformTenantDatabase<SalesPlattformDbContext>();
+builder.Services.AddPlatformTenantDatabase<SalesPlattformDbContext>(
+    "20260902170000_AddCrmServiceAndCommercialRecords");
 builder.Services.AddHttpClient<PlatformJobLivenessClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddApplicationSettings<SalesPlattformDbContext>(builder.Configuration, options =>
@@ -36,7 +42,17 @@ builder.Services.AddApplicationSettings<SalesPlattformDbContext>(builder.Configu
 builder.Services.AddScoped<TenantAdminAccessService>();
 builder.Services.AddScoped<HelloWorldService>();
 builder.Services.AddScoped<OwnerMappingService>();
+builder.Services.AddScoped<SalesApplicationSettingsService>();
 builder.Services.AddScoped<WorklistService>();
+builder.Services.AddScoped<SalesMailSettingsService>();
+builder.Services.AddScoped<SalesMailDeliveryProviderRegistry>();
+builder.Services.AddScoped<ISalesMailDeliveryProvider, SmtpSalesMailDeliveryProvider>();
+builder.Services.AddScoped<SalesNotificationOutboxService>();
+builder.Services.AddScoped<SalesNotificationDeliveryService>();
+builder.Services.AddScoped<CrmTaskMirrorService>();
+builder.Services.AddScoped<SalesDashboardLayoutService>();
+builder.Services.AddScoped<SalesReportService>();
+builder.Services.AddScoped<SalesSnapshotService>();
 builder.Services.AddOptions<ZohoOptions>()
     .Bind(builder.Configuration.GetSection("Zoho"));
 builder.Services.AddScoped<ZohoConfigurationService>();
@@ -83,6 +99,70 @@ app.UseIdentityPlatform();
 app.MapIdentityPlatformEndpoints();
 app.MapApplicationSettingsEndpoints();
 app.MapZohoIntegrationEndpoints();
+
+app.MapGet("/api/reports/dashboard", async (
+    ClaimsPrincipal user,
+    SalesReportService reports,
+    string? timeframe,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await reports.GetDashboardAsync(user, timeframe, cancellationToken));
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Forbid();
+    }
+}).RequireAuthorization("sales-access");
+
+app.MapGet("/api/reports/layout", async (
+    ClaimsPrincipal user,
+    SalesReportService reports,
+    TenantAdminAccessService tenantAdminAccess,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        if (!SalesDashboardLayoutService.HasAnyRole(
+                user,
+                "sales-user",
+                "sales-manager",
+                "sales-management",
+                "sales-backoffice"
+            )
+            && !await tenantAdminAccess.IsCurrentTenantAdminAsync(user, cancellationToken))
+        {
+            return Results.Forbid();
+        }
+
+        return Results.Ok(await reports.GetLayoutAsync(user, cancellationToken));
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Forbid();
+    }
+}).RequireAuthorization("sales-layout-access");
+
+app.MapPut("/api/reports/layout", async (
+    SaveSalesDashboardLayoutRequest request,
+    ClaimsPrincipal user,
+    SalesReportService reports,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await reports.SaveLayoutAsync(request, user, cancellationToken));
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Forbid();
+    }
+    catch (ArgumentException exception)
+    {
+        return Results.BadRequest(new { message = exception.Message });
+    }
+}).RequireAuthorization("sales-layout-access");
 
 app.MapGet("/api/owner-mappings", async (
     ClaimsPrincipal user,
@@ -158,19 +238,6 @@ app.MapGet("/api/worklist", async (
     return Results.Ok(result);
 }).RequireAuthorization("sales-access");
 
-app.MapPost("/api/worklist/{workItemId:guid}/complete", async (
-    Guid workItemId,
-    ClaimsPrincipal user,
-    WorklistService worklist,
-    CancellationToken cancellationToken) =>
-{
-    if (!Guid.TryParse(user.FindFirstValue("tenant_id"), out _))
-        return Results.BadRequest(new { message = "The access token does not contain a valid tenant_id claim." });
-
-    var result = await worklist.CompleteAsync(workItemId, user, cancellationToken);
-    return result is null ? Results.NotFound() : Results.Ok(result);
-}).RequireAuthorization("sales-access");
-
 app.MapPost("/api/worklist/{workItemId:guid}/snooze", async (
     Guid workItemId,
     SnoozeWorklistItemRequest request,
@@ -183,10 +250,10 @@ app.MapPost("/api/worklist/{workItemId:guid}/snooze", async (
 
     try
     {
-        var result = await worklist.SnoozeAsync(workItemId, request.Until, user, cancellationToken);
+        var result = await worklist.SnoozeAsync(workItemId, request, user, cancellationToken);
         return result is null ? Results.NotFound() : Results.Ok(result);
     }
-    catch (ArgumentOutOfRangeException exception)
+    catch (ArgumentException exception)
     {
         return Results.BadRequest(new { message = exception.Message });
     }

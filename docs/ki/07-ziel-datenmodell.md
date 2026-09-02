@@ -142,6 +142,24 @@ Die bereits vorhandenen Tabellen `integration_connections`,
 `integration_sync_cursors` bleiben Bestandteil dieses Zielbereichs. Ihre
 aktuellen Klassen bilden aber noch nicht alle Felder des Zielmodells ab.
 
+### Remote-ID- und Löschsemantik
+
+`integration_entity_links` ist der dauerhafte technische Schlüssel zwischen
+CRM und SalesPlattform. Ein Link wird über Provider, Verbindung, kanonischen
+Entitätstyp und `ExternalId` eindeutig aufgelöst. Die lokale Entität bleibt bei
+einem CRM-Delete bestehen und erhält `SourceDeletedAt` bzw. `IsActive = false`;
+der Link wird nicht entfernt. Ein erneuter Upsert derselben Remote-ID kann die
+Entität dadurch wieder aktivieren, ohne Beziehungen oder Historie zu verlieren.
+
+Für von der SalesPlattform erzeugte CRM-Tasks enthält der Link zusätzlich
+`WorkItemId`. Damit kann ein Delete des CRM-Tasks eindeutig dem konkreten
+Arbeitsvorgang zugeordnet werden. Der Vorgänger wird geschlossen, ein
+Nachfolger in derselben `WorkItemChainId` angelegt und anschließend mit einer
+neuen CRM-Task-Remote-ID verknüpft. Bei der Löschung des fachlichen Zielobjekts
+(z. B. Lead oder Kunde) wird der betroffene Vorgang dagegen nur mit
+`target-deleted-in-crm` geschlossen; ein Nachfolger ohne gültiges Ziel wird
+nicht erstellt.
+
 ## Kanonische Entitäten
 
 ### Owner, Teams und Kundenorganisationen
@@ -448,8 +466,9 @@ LastSeenAt             timestamptz NULL
 SourceDeletedAt        timestamptz NULL
 ```
 
-Ein Gespräch zählt standardmäßig ab 20 Sekunden. Liefert das Telefonsystem
-einen Verbindungsstatus, hat dieser Vorrang. Die Korrekturmöglichkeit für
+Ein Gespräch zählt ab der appweit konfigurierten Mindestdauer, standardmäßig
+ab 20 Sekunden. Liefert das Telefonsystem einen Verbindungsstatus, hat dieser
+Vorrang. Die Korrekturmöglichkeit für
 Mailbox/Telefonanlage bleibt durch `IsCorrected` und die Klassifikation
 erhalten.
 
@@ -464,7 +483,8 @@ Id, ActivityId, TargetType, TargetId, RelationRole
 ```
 
 `TargetType` ist eine kontrollierte interne Menge (`customer`, `contact`,
-`lead`, `deal`, `contract`), keine Zoho-Modulbezeichnung.
+`lead`, `deal`, `contract`, `service-case`, `offer`, `order`, `invoice`), keine
+Zoho-Modulbezeichnung.
 
 #### `SalesAppointment` → `sales_appointments`
 
@@ -494,6 +514,40 @@ R-12.
 Statuswechsel, Verschiebungszeitpunkte und die Herkunft, damit der Meeting
 Report nicht nur den aktuellen Status kennt.
 
+### Servicefälle und kommerzielle Kette
+
+Die CRM-Module `Cases`, `Quotes`, `Sales_Orders` und `Invoices` werden in
+eigenen kanonischen Tabellen abgelegt. Dadurch bleiben Beschwerden,
+Verkaufschance, Auftrag und Zahlung fachlich verknüpft, ohne dass die
+Reportseite Zoho direkt abfragen muss.
+
+```text
+SalesServiceCase → sales_service_cases
+Id, TenantId, CustomerId, ContactId, DealId, OwnerId, Subject, Description,
+Status, Priority, Origin, Reason, OpenedAt, DueAt, ResolvedAt,
+SourceCreatedAt, SourceModifiedAt, LastSeenAt, SourceDeletedAt, IsActive
+
+SalesOffer → sales_offers
+Id, TenantId, CustomerId, ContactId, DealId, OwnerId, Name, OfferNumber,
+Status, Amount, Currency, IssuedAt, SentAt, ValidUntil,
+SourceCreatedAt, SourceModifiedAt, LastSeenAt, SourceDeletedAt, IsActive
+
+SalesOrder → sales_orders
+Id, TenantId, CustomerId, OfferId, DealId, OwnerId, Name, OrderNumber,
+Status, Amount, Currency, OrderedAt, PromisedAt, DeliveredAt,
+SourceCreatedAt, SourceModifiedAt, LastSeenAt, SourceDeletedAt, IsActive
+
+SalesInvoice → sales_invoices
+Id, TenantId, CustomerId, OrderId, DealId, OwnerId, Name, InvoiceNumber,
+Status, Amount, OpenAmount, Currency, IssuedAt, DueAt, PaidAt,
+SourceCreatedAt, SourceModifiedAt, LastSeenAt, SourceDeletedAt, IsActive
+```
+
+Die Beziehungen sind nullable, weil CRM-Daten unvollständig sein können. Ein
+fehlender Parent erzeugt einen Datenqualitätsfall, löscht aber weder die
+Historie noch den Datensatz. `SalesContact.RoleType` hält zusätzlich die
+fachliche Kontaktrolle wie Entscheider, Einkauf oder Rechnungswesen fest.
+
 ## Regelwerk, Arbeitsliste und Ziele
 
 ### `SalesWorkItem` → `sales_work_items`
@@ -509,6 +563,7 @@ Title                  varchar(500) NOT NULL
 Reason                text NULL
 OwnerId                uuid NULL FK sales_owners
 DueAt                  timestamptz NULL
+AvailableFrom          timestamptz NULL -- frühester Bearbeitungszeitpunkt
 PriorityScore          numeric(10,2) NULL
 PriorityCalculatedAt   timestamptz NULL
 SourceRuleCode         varchar(50) NULL
@@ -518,16 +573,23 @@ CompletedAt            timestamptz NULL
 CompletedBy            varchar(256) NULL
 DismissedAt            timestamptz NULL
 SnoozedUntil           timestamptz NULL
+WorkItemChainId        uuid NOT NULL
+PreviousWorkItemId     uuid NULL
+ClosureReason          varchar(60) NULL
 CreatedAt              timestamptz NOT NULL
 UpdatedAt              timestamptz NOT NULL
 ```
 
 `sales_work_item_relations` verknüpft einen Vorgang mit Kunde, Lead, Deal,
-Vertrag, Aktivität oder Termin. Damit gibt es eine gemeinsame Arbeitsliste,
-ohne R-01 bis R-14 in getrennten Tabellen zu duplizieren.
+Vertrag, Aktivität, Termin, Servicefall, Angebot, Auftrag oder Rechnung. Damit
+gibt es eine gemeinsame Arbeitsliste, ohne R-01 bis R-18 in getrennten Tabellen
+zu duplizieren.
 
 `sales_work_item_events` protokolliert Erzeugung, Regel-Neuberechnung,
-Verschiebung, Erledigung, Verwerfung und Wiedereröffnung.
+Verschiebung, Erledigung, Verwerfung und Wiedereröffnung. Beim Zurückstellen
+wird die aktuelle Instanz mit `ClosureReason = deferred` geschlossen und eine
+Nachfolgeinstanz mit `AvailableFrom` angelegt. `WorkItemChainId` und
+`PreviousWorkItemId` halten die historische Kette zusammen.
 
 Der Score wird aus konfigurierbaren Basiswerten, Altersbonus und Wertbonus
 berechnet. Die vorgeschlagenen Startwerte aus dem Pflichtenheft gehören in
@@ -542,7 +604,7 @@ Id, Code, Name, Description, IsEnabled, AutomationMode,
 Version, ParametersJson, ValidFrom, ValidTo, UpdatedBy, UpdatedAt
 ```
 
-Enthält R-01 bis R-14 einschließlich Schwellwerten, Intervallen,
+Enthält R-01 bis R-18 einschließlich Schwellwerten, Intervallen,
 Automatisierungsgrad und Besitzerlogik. `AutomationMode` unterscheidet zum
 Beispiel Vorschlag, automatische Wiedervorlage und menschliche Freigabe.
 
@@ -607,8 +669,11 @@ Lead-Response-Zeit verwendet. Arbeitszeiten dürfen nicht als feste
 `DateTime`-Logik im Code stehen.
 
 `sales_communication_templates` speichert die E-Mail-Vorlage aus R-02 und
-spätere Benachrichtigungstexte. `sales_notifications` hält Empfänger,
-Vorgang, Fälligkeit, Eskalationsstufe, Zustellstatus und Gelesen-Zeitpunkt.
+spätere Benachrichtigungstexte. `sales_notifications` ist die idempotente
+E-Mail-Outbox und hält Empfänger, Zustellschlüssel, Vorgang, Betreff/Inhalt,
+Fälligkeit, Eskalationsstufe, Zustellstatus, Versuchs-/Retry-Informationen und
+Gelesen-Zeitpunkt. Der Transport ist über einen Providervertrag entkoppelt;
+lokal wird SMTP/Mailpit verwendet.
 
 ## Snapshots und KPI-Fakten
 
@@ -735,7 +800,7 @@ unterschieden, zum Beispiel Zoho Production und Zoho Sandbox.
 `ConnectionKey`:
 
 ```text
-ProviderKey, ConnectionKey, EntityType, ExternalId
+ProviderKey, ConnectionKey, EntityType, ExternalId, ExternalUrl?
   -> InternalEntityType, InternalEntityId, LastSeenAt, SourceDeletedAt
 ```
 
@@ -872,8 +937,11 @@ raw record -> external link -> normalisierte DTO -> kanonische Entität
            -> History/Status -> Datenqualitätsbefund -> Cursor
 ```
 
-Der Adapter darf keine fachlichen Regeln ausführen. Nach einem erfolgreichen
-Import werden Regel- und Snapshot-Läufe separat und nachvollziehbar gestartet.
+Der Adapter darf keine fachlichen Regeln ausführen. Nach dem Import führt
+derselbe CRM-Lauf unmittelbar die Regelbewertung, die Aktualisierung des
+Tages-Snapshots und den direkten Versand der Regelbenachrichtigungen aus. Die
+Outbox ist dabei nur die idempotente Zustell- und Retry-Sicherung; sie ist kein
+separater Plattformjob.
 
 ## Reihenfolge der Umsetzung
 

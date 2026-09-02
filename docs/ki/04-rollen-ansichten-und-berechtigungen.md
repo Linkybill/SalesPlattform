@@ -10,9 +10,8 @@ Das Pflichtenheft unterscheidet fachlich:
 - Backoffice für die Bereinigung.
 
 Technisch gibt es die Identity-Platform-App-Rollen `sales-user` für den
-Vertrieb und `sales-manager` für die Vertriebsleitung. Die fachliche
-Differenzierung weiterer Rechte ist Zielumfang und darf nicht durch das
-Vorhandensein dieser Startrollen als erledigt gelten.
+Vertrieb, `sales-manager` für die Vertriebsleitung, `sales-management` für
+Management/Geschäftsführung und `sales-backoffice` für das Backoffice.
 
 ## Ansichtsmatrix
 
@@ -41,6 +40,21 @@ E-Mail-Fallback. Sie wird ausschließlich durch Tenant-Administratoren gepflegt
 und verbindet die stabile Plattform-Subject-ID mit einer synchronisierten
 `SalesOwner`-ID. Die Vertriebsleitung benötigt für die tenantweite Ansicht kein
 persönliches Mapping.
+
+## Direkt bearbeitbare Reportseite
+
+Die fachlichen Reports sind eigenständige Komponenten in einem gemeinsamen
+Seitenbaum. Tenant-Admins bearbeiten die Seite direkt über den Button
+„Reportseite bearbeiten“: Sie können Grid, Tabs, Akkordeon, Überschrift und
+Text hinzufügen, bei Tabs/Akkordeons Abschnitte anlegen und benennen und jeden
+Report an beliebiger Stelle platzieren. Die Sales-App speichert den Baum als
+internes JSON über `PUT /api/reports/layout`; es gibt dafür keine rohe
+Webpart- oder Layout-Einstellung im Mandantenportal. Das Defaultmodell enthält
+alle Reports, einschließlich Servicefälle sowie Angebote/Aufträge/Rechnungen.
+
+Die Serverantwort enthält für jeden Report die effektive Rollenfreigabe. Ein
+nicht freigegebener Report wird nicht gerendert. Die UI-Komposition ersetzt
+keine Backend-Autorisierung.
 
 ## Schreib- und Freigabegrenzen
 

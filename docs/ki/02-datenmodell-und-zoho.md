@@ -88,10 +88,27 @@ folgende Datenbereiche gelesen und in das kanonische Modell übernommen:
 - vollständige Deal-Stage-Historie über die Zoho-Related-List,
 - Calls, Tasks und Termine/Events,
 - E-Mails über die Related-Lists der Accounts, Kontakte, Leads und Deals.
+- Servicefälle/Beschwerden aus `Cases`, Angebote aus `Quotes`, Aufträge aus
+  `Sales_Orders` und Rechnungen aus `Invoices`. Diese Module sind optional:
+  fehlt ein Modul im Zoho-Tenant, wird es übersprungen und der übrige Lauf
+  bleibt erfolgreich.
 
 Jeder Import schreibt zusätzlich den unveränderten Anbieter-Datensatz in
 `integration_raw_records` und ordnet ihn über
 `integration_entity_links` genau einmal einer kanonischen Entität zu.
+Die Zuordnung erfolgt immer über `(ProviderKey, ConnectionKey, EntityType,
+ExternalId)`. Für Zoho-Aktivitäten ist die Remote-ID kanonisch präfixiert, zum
+Beispiel `Tasks:<id>`, `Calls:<id>` oder `Emails:<id>`; normale Stammdaten
+verwenden weiterhin die Zoho-ID selbst. Ein Full-Crawl löscht keine lokalen
+Datensätze und legt bei jedem Lauf keine neuen internen IDs an.
+Der Zoho-Adapter ergänzt für alle direkt adressierbaren CRM-Entitäten außerdem
+die optionale provider-spezifische `ExternalUrl` in
+`integration_entity_links`. Das gilt für Benutzer, Accounts, Kontakte, Leads,
+Produkte, Deals, Calls, Tasks, Termine, E-Mails, Servicefälle, Angebote,
+Aufträge und Rechnungen. Arbeitsliste und Reports können damit direkt zum
+Ursprungsdatensatz springen. Abgeleitete interne Entitäten wie Pipeline-
+Metadaten und Deal-Stage-Historie besitzen keine eigene Zoho-Datensatzseite;
+ihre Zuordnung bleibt trotzdem erhalten.
 Wiederholungen sind dadurch idempotent. Fehlende optionale Zoho-Module oder
 einzelne fehlerhafte Datensätze beenden nicht den gesamten Lauf; sie werden
 pro Modul bzw. Datensatz als Fehler protokolliert.
@@ -109,6 +126,17 @@ Der feste Job `crm-incremental-crawl` läuft im Modus `incremental`:
   Modulverarbeitung als `LastSuccessfulRunId` fortgeschrieben;
 - gelöschte Zoho-Datensätze werden über `/deleted` erkannt und in der Sales-
   Datenbank als `SourceDeletedAt`/inaktiv markiert, nicht physisch entfernt;
+- ein vollständiger Crawl gleicht nach einem fehlerfreien Modulabschluss die
+  gelesenen Remote-IDs mit den noch aktiven Links ab. Eine fehlende ID wird
+  ebenfalls als Source-Delete markiert; bei einem abgebrochenen oder fehler-
+  haften Modul findet kein solcher Abgleich statt;
+- wird eine CRM-Aufgabe gelöscht, wird der aktuelle lokale Arbeitsvorgang
+  geschlossen, historisch begründet und als neue Vorgangsinstanz derselben
+  Kette erneut angelegt. Die neue Instanz erhält eine neue CRM-Task und damit
+  eine neue Remote-ID. Wird dagegen ein Lead, Kunde, Deal oder Kontakt
+  gelöscht, werden betroffene offene Arbeitsvorgänge mit
+  `target-deleted-in-crm` geschlossen; es wird kein fachlich sinnloser
+  Nachfolger ohne Ziel erzeugt;
 - E-Mails und Stage-Historie werden als Related-Lists nach den Elternobjekten
   synchronisiert. Der Incremental-Crawl fragt sie nur für im Überlappungsfenster
   geänderte Elternobjekte ab; der Vollimport gleicht weiterhin alle Eltern ab.
@@ -143,6 +171,10 @@ Elternobjekte im Änderungsfenster. Die Related-List-Anfragen laufen mit begrenz
 und die Writes batchweise; bei einem fehlerhaften Batch greift die bestehende
 Einzelrecord-Isolation. So bleiben die CRM-Daten verknüpft, ohne eine zweite
 E-Mail-Synchronisation oder unkontrollierte API-Parallelität einzuführen.
+Regelbenachrichtigungen werden unmittelbar nach der Regelbewertung im selben
+Full- bzw. Incremental-Lauf versendet. Die Outbox dient nur der idempotenten
+Zustellung, dem Tageslimit von höchstens einer Mail pro Item und Empfänger
+sowie dem Retry bei Fehlern.
 
 Ein Abbruch wird in der zentralen Job-UI ausgelöst und über den Plattform-Worker
 als CancellationToken an Adapter, Provider- und Datenbankoperationen
@@ -175,11 +207,18 @@ die konkrete Entitäten-, Tabellen- und Constraint-Planung steht in
 
 ## Rückschreiben
 
-Rückschreiben ist optional, explizit und abschaltbar. Im Pflichtenheft genannt
-sind erledigte Wiedervorlagen, protokollierte Anrufe und Besitzerwechsel. Ein
-Besitzerwechsel wird nicht automatisch ausgeführt; die Leitung entscheidet.
-Ein Dubletten-Merge wird bei aktiviertem Rückschreiben im CRM vorgenommen, die
-SalesPlattform übernimmt danach den neuen Stand per Sync.
+Die von der SalesPlattform erzeugten Arbeitsvorgänge werden als CRM-Tasks
+gespiegelt, damit der Benutzer die Bearbeitung im CRM durchführen kann. Jede
+Vorgangsinstanz besitzt dabei höchstens eine aktive CRM-Task-Remote-ID. Wird
+die Task im CRM gelöscht, entsteht für dieselbe Vorgangskette eine neue
+Vorgangsinstanz mit neuer Remote-ID. Ein erledigter CRM-Task wird dagegen beim
+Sync als erledigte Aktivität übernommen; die fachliche Regelbewertung
+entscheidet, ob daraus ein neuer Vorgang entsteht.
+
+Weitere Rückschreibefunktionen bleiben optional, explizit und abschaltbar. Im
+Pflichtenheft genannt sind protokollierte Anrufe, Besitzerwechsel und
+Dubletten-Merges. Ein Besitzerwechsel wird nicht automatisch ausgeführt; die
+Leitung entscheidet.
 
 ## Datenqualität
 

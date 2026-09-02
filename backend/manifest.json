@@ -114,6 +114,443 @@
       "defaultValue": "[]",
       "scopes": ["tenantApp"],
       "validation": { "maxLength": 50000 }
+    },
+    {
+      "key": "sales.callConversationThresholdSeconds",
+      "name": "Mindestdauer für ein Gespräch (Sekunden)",
+      "description": "Wert in Sekunden eintragen. Ein CRM-Anruf zählt ab dieser Dauer als qualifiziertes Gespräch. Mailbox, Nichterreichen und falscher Ansprechpartner bleiben unabhängig von der Dauer ein Versuch.",
+      "category": "Arbeitsliste · Anrufe",
+      "type": "integer",
+      "defaultValue": 20,
+      "scopes": ["tenantApp"],
+      "validation": {
+        "minimum": 1,
+        "maximum": 3600,
+        "step": 1,
+        "unit": "Sekunden"
+      }
+    },
+    {
+      "key": "sales.rules.callFollowUpIntervalDays",
+      "name": "Anruf-Wiedervorlage (Tage)",
+      "description": "R-01: Abstand bis zur nächsten Wiedervorlage nach einem erfolglosen Anrufversuch.",
+      "category": "Arbeitsliste · Anrufe",
+      "type": "integer",
+      "defaultValue": 14,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.rules.callEmailFollowUpIntervalDays",
+      "name": "E-Mail-Wiedervorlage (Tage)",
+      "description": "R-02: Abstand bis zur Wiedervorlage nach dem letzten Versuch vor der E-Mail-Aktion.",
+      "category": "Arbeitsliste · Anrufe",
+      "type": "integer",
+      "defaultValue": 14,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.rules.callEmailFollowUpAttempts",
+      "name": "E-Mail-Aktion ab Versuchen (Versuche)",
+      "description": "R-02: Nach dieser Anzahl erfolgloser Versuche wird die E-Mail-Folgeaktion vorgeschlagen.",
+      "category": "Arbeitsliste · Anrufe",
+      "type": "integer",
+      "defaultValue": 5,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 1000, "step": 1, "unit": "Versuche" }
+    },
+    {
+      "key": "sales.rules.callLongRunnerMinAttempts",
+      "name": "Langläufer ab Versuchen (Versuche)",
+      "description": "R-03: Ab dieser Anzahl erfolgloser Versuche wird ein Lead als Langläufer behandelt.",
+      "category": "Arbeitsliste · Anrufe",
+      "type": "integer",
+      "defaultValue": 6,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 1000, "step": 1, "unit": "Versuche" }
+    },
+    {
+      "key": "sales.rules.callLongRunnerMaxAttempts",
+      "name": "Langläufer bis Versuchen (Versuche)",
+      "description": "R-03: Bis zu dieser Anzahl erfolgloser Versuche gilt die Langläufer-Regel.",
+      "category": "Arbeitsliste · Anrufe",
+      "type": "integer",
+      "defaultValue": 10,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 1000, "step": 1, "unit": "Versuche" }
+    },
+    {
+      "key": "sales.rules.callLongRunnerIntervalDays",
+      "name": "Langläufer-Wiedervorlage (Tage)",
+      "description": "R-03: Abstand bis zur nächsten Wiedervorlage eines Langläufers.",
+      "category": "Arbeitsliste · Anrufe",
+      "type": "integer",
+      "defaultValue": 30,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.rules.callNotReachableAfterAttempts",
+      "name": "Nicht erreichbar ab Versuchen (Versuche)",
+      "description": "R-04: Nach mehr als dieser Anzahl erfolgloser Versuche wird „Nicht erreichbar“ vorgeschlagen.",
+      "category": "Arbeitsliste · Anrufe",
+      "type": "integer",
+      "defaultValue": 10,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 1000, "step": 1, "unit": "Versuche" }
+    },
+    {
+      "key": "sales.rules.dealInactiveDays",
+      "name": "Deal ohne Aktivität (Tage)",
+      "description": "R-05: Nach dieser Zeit ohne Aktivität wird ein offener Deal als hängend geführt.",
+      "category": "Arbeitsliste · Deals und Verträge",
+      "type": "integer",
+      "defaultValue": 30,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.rules.dealCockpitEscalationDays",
+      "name": "Deal-Cockpit-Eskalation (Tage)",
+      "description": "R-05: Ab dieser Inaktivitätsdauer wird der hängende Deal zusätzlich als Cockpit-Handlungspunkt geführt.",
+      "category": "Arbeitsliste · Deals und Verträge",
+      "type": "integer",
+      "defaultValue": 60,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.rules.contractRenewalHorizonDays",
+      "name": "Vertragsverlängerung innerhalb (Tage)",
+      "description": "R-06: Verträge innerhalb dieses Zeitraums erzeugen einen Renewal-Vorgang.",
+      "category": "Arbeitsliste · Deals und Verträge",
+      "type": "integer",
+      "defaultValue": 90,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.rules.contractCriticalDays",
+      "name": "Vertrag kritisch ab (Tage)",
+      "description": "R-06: Innerhalb dieses Zeitraums erhält der Renewal-Vorgang die kritische Priorität.",
+      "category": "Arbeitsliste · Deals und Verträge",
+      "type": "integer",
+      "defaultValue": 30,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.rules.contactInactiveDays",
+      "name": "Kontakt überfällig nach (Tage)",
+      "description": "R-07: Nach dieser Anzahl Tage ohne dokumentierten Kontakt wird ein Reaktivierungsvorgang erzeugt.",
+      "category": "Arbeitsliste · Kundenpflege",
+      "type": "integer",
+      "defaultValue": 90,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.rules.ownerChangeAfterDays",
+      "name": "Besitzerwechsel nach (Tage)",
+      "description": "R-08: Nach dieser Anzahl Tage beim aktuellen Besitzer wird die Zuständigkeit zur Prüfung vorgeschlagen.",
+      "category": "Arbeitsliste · Besitzerwechsel",
+      "type": "integer",
+      "defaultValue": 180,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.rules.ownerChangeNoContactDays",
+      "name": "Besitzerwechsel ohne Kontakt (Tage)",
+      "description": "R-08: Nach dieser Anzahl Tage ohne Kontakt wird die Zuständigkeit zur Prüfung vorgeschlagen.",
+      "category": "Arbeitsliste · Besitzerwechsel",
+      "type": "integer",
+      "defaultValue": 90,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.rules.ownerChangeFollowUpDays",
+      "name": "Besitzerwechsel-Wiedervorlage (Tage)",
+      "description": "R-08: Frist für die Wiedervorlage beim neu zugeordneten Besitzer.",
+      "category": "Arbeitsliste · Besitzerwechsel",
+      "type": "integer",
+      "defaultValue": 7,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.rules.leadFirstResponseWorkingHours",
+      "name": "Lead-Erstreaktion nach (Arbeitsstunden)",
+      "description": "R-09: Nach dieser Arbeitszeit ohne Aktivität wird die Erstreaktion fällig.",
+      "category": "Arbeitsliste · Leads",
+      "type": "integer",
+      "defaultValue": 1,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 720, "step": 1, "unit": "Arbeitsstunden" }
+    },
+    {
+      "key": "sales.rules.leadEscalationWorkingHours",
+      "name": "Lead-Eskalation nach (Arbeitsstunden)",
+      "description": "R-09: Nach dieser Arbeitszeit wird die offene Erstreaktion an die Leitung eskaliert.",
+      "category": "Arbeitsliste · Leads",
+      "type": "integer",
+      "defaultValue": 4,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 720, "step": 1, "unit": "Arbeitsstunden" }
+    },
+    {
+      "key": "sales.rules.crossSellingMinimumCustomerValue",
+      "name": "Mindestkundenwert Cross-Selling (EUR)",
+      "description": "R-10: Mindestwert eines aktiven Kunden für die Cross-Selling-Liste. 0 bedeutet kein Mindestwert.",
+      "category": "Arbeitsliste · Kundenpflege",
+      "type": "integer",
+      "defaultValue": 0,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 0, "maximum": 1000000000, "step": 1, "unit": "EUR" }
+    },
+    {
+      "key": "sales.rules.targetPaceGapPoints",
+      "name": "Pace-Abweichung (Punkte)",
+      "description": "R-11: Ab dieser negativen Abweichung zwischen Zielerreichung und Zeitanteil wird ein Team-Flag erzeugt.",
+      "category": "Arbeitsliste · Team",
+      "type": "integer",
+      "defaultValue": 15,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 0, "maximum": 100, "step": 1, "unit": "Punkte" }
+    },
+    {
+      "key": "sales.rules.appointmentRescheduleCount",
+      "name": "Termin-Verschiebungen ab (Verschiebungen)",
+      "description": "R-12: Ab dieser Anzahl Verschiebungen wird ein Termin als Verdachtsfall geführt.",
+      "category": "Arbeitsliste · Termine",
+      "type": "integer",
+      "defaultValue": 3,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 1000, "step": 1, "unit": "Verschiebungen" }
+    },
+    {
+      "key": "sales.rules.accountCareInactiveDays",
+      "name": "Account-Care ohne Telefon (Tage)",
+      "description": "R-13: Nach dieser Anzahl Tage ohne Telefonaktivität wird ein Account-Care-Vorgang fällig.",
+      "category": "Arbeitsliste · Kundenpflege",
+      "type": "integer",
+      "defaultValue": 90,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.rules.accountCareMinimumRevenue",
+      "name": "Mindestumsatz Account-Care (EUR)",
+      "description": "R-13: Mindestumsatz eines Kunden für Account-Care. 0 bedeutet jeder Kunde mit Umsatzhistorie.",
+      "category": "Arbeitsliste · Kundenpflege",
+      "type": "integer",
+      "defaultValue": 0,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 0, "maximum": 1000000000, "step": 1, "unit": "EUR" }
+    },
+    {
+      "key": "sales.rules.lostDealReactivationAgeDays",
+      "name": "Verlorene Deals reaktivieren nach (Tage)",
+      "description": "R-14: Alter eines verlorenen Deals in Tagen, ab dem ein Reaktivierungsvorschlag möglich wird.",
+      "category": "Arbeitsliste · Reaktivierung",
+      "type": "integer",
+      "defaultValue": 90,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.rules.serviceCaseResponseDays",
+      "name": "Servicefall-Reaktion nach (Tage)",
+      "description": "R-15: Offene oder dringende Servicefälle ohne dokumentierte Bearbeitung erzeugen nach dieser Frist einen Vorgang.",
+      "category": "Arbeitsliste · Servicefälle",
+      "type": "integer",
+      "defaultValue": 2,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 0, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.rules.offerFollowUpDays",
+      "name": "Angebots-Folgeaktion nach (Tage)",
+      "description": "R-16: Gesendete Angebote ohne Entscheidung erzeugen nach dieser Frist einen Folgekontakt.",
+      "category": "Arbeitsliste · Angebote",
+      "type": "integer",
+      "defaultValue": 7,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.rules.orderDeliveryEscalationDays",
+      "name": "Lieferverzug eskalieren nach (Tage)",
+      "description": "R-17: Offene Aufträge werden nach Überschreitung des zugesagten Liefertermins um diese Toleranz als Vorgang geführt.",
+      "category": "Arbeitsliste · Aufträge",
+      "type": "integer",
+      "defaultValue": 1,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 0, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.rules.invoiceOverdueGraceDays",
+      "name": "Rechnung überfällig ab (Tage)",
+      "description": "R-18: Offene Rechnungen werden nach dem Fälligkeitsdatum plus dieser Toleranz als Vorgang geführt.",
+      "category": "Arbeitsliste · Rechnungen",
+      "type": "integer",
+      "defaultValue": 0,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 0, "maximum": 3650, "step": 1, "unit": "Tage" }
+    },
+    {
+      "key": "sales.notifications.mail.provider",
+      "name": "E-Mail-Provider",
+      "description": "Technischer Versandprovider für Sales-Benachrichtigungen. Aktuell ist SMTP mit Mailpit als lokale Standardumgebung verfügbar; weitere Provider können später ergänzt werden.",
+      "category": "Benachrichtigungen · E-Mail",
+      "type": "enum",
+      "defaultValue": "smtp",
+      "scopes": ["tenantApp"],
+      "options": [
+        { "value": "smtp", "label": "SMTP / Mailpit" }
+      ]
+    },
+    {
+      "key": "sales.notifications.mail.enabled",
+      "name": "E-Mail-Benachrichtigungen aktiv",
+      "description": "Steuert, ob fällige Regelbenachrichtigungen in den E-Mail-Outbox-Versand gelangen.",
+      "category": "Benachrichtigungen · E-Mail",
+      "type": "boolean",
+      "defaultValue": true,
+      "scopes": ["tenantApp"]
+    },
+    {
+      "key": "sales.notifications.mail.host",
+      "name": "SMTP-Host",
+      "description": "SMTP-Server des Mandanten. Für die lokale Umgebung lautet der Docker-Service-Name mailpit.",
+      "category": "Benachrichtigungen · E-Mail",
+      "type": "string",
+      "defaultValue": "mailpit",
+      "scopes": ["tenantApp"],
+      "validation": { "minLength": 1, "maxLength": 300 }
+    },
+    {
+      "key": "sales.notifications.mail.port",
+      "name": "SMTP-Port (TCP-Port)",
+      "description": "TCP-Port des SMTP-Servers. Mailpit verwendet standardmäßig Port 1025.",
+      "category": "Benachrichtigungen · E-Mail",
+      "type": "integer",
+      "defaultValue": 1025,
+      "scopes": ["tenantApp"],
+      "validation": { "minimum": 1, "maximum": 65535, "step": 1, "unit": "TCP-Port" }
+    },
+    {
+      "key": "sales.notifications.mail.security",
+      "name": "SMTP-Transport-Sicherheit",
+      "description": "Für Mailpit bleibt die Einstellung auf none. Für externe SMTP-Server kann starttls oder ssl verwendet werden.",
+      "category": "Benachrichtigungen · E-Mail",
+      "type": "enum",
+      "defaultValue": "none",
+      "scopes": ["tenantApp"],
+      "options": [
+        { "value": "none", "label": "Keine (Mailpit)" },
+        { "value": "starttls", "label": "STARTTLS" },
+        { "value": "ssl", "label": "SSL/TLS beim Verbinden" }
+      ]
+    },
+    {
+      "key": "sales.notifications.mail.authentication",
+      "name": "SMTP-Authentifizierung",
+      "description": "Mailpit benötigt keine Anmeldung. Basic und OAuth2 sind für spätere externe SMTP-/Office-365-Konfigurationen vorgesehen.",
+      "category": "Benachrichtigungen · E-Mail",
+      "type": "enum",
+      "defaultValue": "none",
+      "scopes": ["tenantApp"],
+      "options": [
+        { "value": "none", "label": "Keine (Mailpit)" },
+        { "value": "basic", "label": "Benutzername und Passwort" },
+        { "value": "oauth2", "label": "OAuth2 (Office 365 SMTP)" }
+      ]
+    },
+    {
+      "key": "sales.notifications.mail.username",
+      "name": "SMTP-Benutzername / Mailbox",
+      "description": "Für Basic der SMTP-Benutzername; für OAuth2 die Office-365-Mailbox-Adresse. Bei Mailpit leer lassen.",
+      "category": "Benachrichtigungen · E-Mail",
+      "type": "string",
+      "defaultValue": "",
+      "scopes": ["tenantApp"],
+      "validation": { "maxLength": 320 }
+    },
+    {
+      "key": "sales.notifications.mail.password",
+      "name": "SMTP-Passwort",
+      "description": "Passwort für Basic SMTP. Wird als geheimes Tenant-App-Setting verschlüsselt gespeichert und nicht wieder angezeigt.",
+      "category": "Benachrichtigungen · E-Mail",
+      "type": "string",
+      "defaultValue": "",
+      "secret": true,
+      "scopes": ["tenantApp"],
+      "validation": { "maxLength": 1000 }
+    },
+    {
+      "key": "sales.notifications.mail.from",
+      "name": "Absenderadresse",
+      "description": "Absenderadresse für Regelbenachrichtigungen. Lokal wird sales-plattform@local.test verwendet.",
+      "category": "Benachrichtigungen · E-Mail",
+      "type": "string",
+      "defaultValue": "sales-plattform@local.test",
+      "scopes": ["tenantApp"],
+      "validation": { "minLength": 3, "maxLength": 320 }
+    },
+    {
+      "key": "sales.notifications.mail.fromName",
+      "name": "Absendername",
+      "description": "Anzeigename des Absenders.",
+      "category": "Benachrichtigungen · E-Mail",
+      "type": "string",
+      "defaultValue": "SalesPlattform",
+      "scopes": ["tenantApp"],
+      "validation": { "minLength": 1, "maxLength": 200 }
+    },
+    {
+      "key": "sales.notifications.mail.oauthTenantId",
+      "name": "OAuth2-Tenant-ID",
+      "description": "Microsoft-Entra-Tenant-ID für den späteren Office-365-SMTP-OAuth2-Versand.",
+      "category": "Benachrichtigungen · E-Mail",
+      "type": "string",
+      "defaultValue": "",
+      "scopes": ["tenantApp"],
+      "validation": { "maxLength": 200 }
+    },
+    {
+      "key": "sales.notifications.mail.oauthClientId",
+      "name": "OAuth2-Client-ID",
+      "description": "Microsoft-Entra-Client-ID für den späteren Office-365-SMTP-OAuth2-Versand.",
+      "category": "Benachrichtigungen · E-Mail",
+      "type": "string",
+      "defaultValue": "",
+      "scopes": ["tenantApp"],
+      "validation": { "maxLength": 200 }
+    },
+    {
+      "key": "sales.notifications.mail.oauthClientSecret",
+      "name": "OAuth2-Client-Secret",
+      "description": "Microsoft-Entra-Client-Secret. Wird als geheimes Tenant-App-Setting verschlüsselt gespeichert.",
+      "category": "Benachrichtigungen · E-Mail",
+      "type": "string",
+      "defaultValue": "",
+      "secret": true,
+      "scopes": ["tenantApp"],
+      "validation": { "maxLength": 1000 }
+    },
+    {
+      "key": "sales.notifications.managementRecipients",
+      "name": "Empfänger der Vertriebsleitung",
+      "description": "E-Mail-Adressen für eskalierte R-09-Benachrichtigungen und R-11-Zielabweichungen. Mehrere Adressen mit Komma, Semikolon oder Zeilenumbruch trennen.",
+      "category": "Benachrichtigungen · E-Mail",
+      "type": "string",
+      "defaultValue": "",
+      "secret": true,
+      "scopes": ["tenantApp"],
+      "validation": { "maxLength": 5000 }
     }
   ],
   "client": {
@@ -141,6 +578,20 @@
       "key": "sales-manager",
       "name": "Vertriebsleitung",
       "description": "Sieht tenantweit alle Arbeitslistenvorgänge und kann Teamvorgänge bearbeiten.",
+      "deprecated": false,
+      "replacedBy": []
+    },
+    {
+      "key": "sales-management",
+      "name": "Management / Geschäftsführung",
+      "description": "Darf Cockpit, Reports, Ziele und Kundenstamm tenantweit sehen.",
+      "deprecated": false,
+      "replacedBy": []
+    },
+    {
+      "key": "sales-backoffice",
+      "name": "Sales Backoffice",
+      "description": "Darf die Datenqualität und mögliche Dubletten bearbeiten.",
       "deprecated": false,
       "replacedBy": []
     }

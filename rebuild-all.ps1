@@ -112,7 +112,7 @@ $zohoFrontendCallbackUrl = if ([string]::IsNullOrWhiteSpace($env:ZOHO_FRONTEND_C
     'http://localhost:3101/apps/sales-plattform/import'
 } else { $env:ZOHO_FRONTEND_CALLBACK_URL }
 $zohoScopes = if ([string]::IsNullOrWhiteSpace($env:ZOHO_SCOPES)) {
-    'ZohoCRM.modules.READ,ZohoCRM.users.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ,ZohoCRM.settings.layouts.READ,ZohoCRM.settings.pipeline.READ,ZohoCRM.settings.related_lists.READ,ZohoCRM.modules.emails.READ'
+    'ZohoCRM.modules.READ,ZohoCRM.users.READ,ZohoCRM.org.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ,ZohoCRM.settings.layouts.READ,ZohoCRM.settings.pipeline.READ,ZohoCRM.settings.related_lists.READ,ZohoCRM.modules.emails.READ'
 } else { $env:ZOHO_SCOPES }
 
 function Get-SalesDeployments {
@@ -370,6 +370,8 @@ foreach ($deployment in $deployments) {
             Authentication__Authority="http://${keycloakServiceHost}:8080/realms/identity-platform" `
             Authentication__BackchannelHost=$keycloakServiceHost `
             RabbitMq__Host=$rabbitMqServiceHost `
+            SalesNotifications__Mail__Host="$databaseClusterName-mailpit" `
+            SalesNotifications__Mail__Port=1025 `
             Zoho__AccountsUrl=https://accounts.zoho.eu `
             Zoho__ApiUrl=https://www.zohoapis.eu `
             Zoho__RedirectUri=$zohoRedirectUri `

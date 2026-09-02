@@ -40,6 +40,7 @@ public interface ISalesCrmRepository
     Task UpsertAsync(
         CrmCanonicalRecord record,
         Guid syncRunId,
+        int callConversationThresholdSeconds,
         CancellationToken cancellationToken);
 
     Task<IntegrationSyncCursor> GetOrCreateCursorAsync(
@@ -54,12 +55,17 @@ public interface ISalesCrmRepository
         string entityType,
         CancellationToken cancellationToken);
 
-    Task MarkDeletedAsync(
+    Task<bool> MarkDeletedAsync(
         CrmDeletedRecord record,
         Guid syncRunId,
         CancellationToken cancellationToken);
 
     Task BackfillLeadActivityMarkersAsync(
+        CancellationToken cancellationToken);
+
+    Task RecalculateLeadCallCountersAsync(
+        IReadOnlyCollection<CrmSynchronizationChange> changes,
+        int callConversationThresholdSeconds,
         CancellationToken cancellationToken);
 
     void AddSyncError(

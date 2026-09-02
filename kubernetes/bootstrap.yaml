@@ -83,6 +83,10 @@ spec:
               value: sales-plattform
             - name: Trust__ComponentKey
               value: backend
+            - name: SalesNotifications__Mail__Host
+              value: identity-platform-mailpit
+            - name: SalesNotifications__Mail__Port
+              value: "1025"
             - name: Zoho__AccountsUrl
               value: https://accounts.zoho.eu
             - name: Zoho__ApiUrl
@@ -92,7 +96,7 @@ spec:
             - name: Zoho__FrontendCallbackUrl
               value: http://localhost:3101/apps/sales-plattform/import
             - name: Zoho__Scopes
-              value: ZohoCRM.modules.READ,ZohoCRM.users.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ,ZohoCRM.settings.layouts.READ,ZohoCRM.settings.pipeline.READ,ZohoCRM.settings.related_lists.READ,ZohoCRM.modules.emails.READ
+              value: ZohoCRM.modules.READ,ZohoCRM.users.READ,ZohoCRM.org.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ,ZohoCRM.settings.layouts.READ,ZohoCRM.settings.pipeline.READ,ZohoCRM.settings.related_lists.READ,ZohoCRM.modules.emails.READ
           ports:
             - name: http
               containerPort: 8080

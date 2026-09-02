@@ -9,7 +9,15 @@ public abstract record CrmCanonicalRecord(
     string ExternalId,
     JsonElement Payload,
     DateTimeOffset? CreatedAt,
-    DateTimeOffset? ModifiedAt);
+    DateTimeOffset? ModifiedAt)
+{
+    /// <summary>
+    /// Provider-owned web URL for opening the source record. The canonical
+    /// domain only carries it as optional integration metadata; business
+    /// rules remain provider-neutral.
+    /// </summary>
+    public string? ExternalUrl { get; init; }
+}
 
 public sealed record CrmCanonicalOwner(
     string ProviderKey,
@@ -60,6 +68,7 @@ public sealed record CrmCanonicalContact(
     string? Phone,
     string? MobilePhone,
     string? JobTitle,
+    string? RoleType,
     bool IsPrimary)
     : CrmCanonicalRecord(ProviderKey, ConnectionKey, CrmEntityTypes.Contact, ExternalId, Payload, CreatedAt, ModifiedAt);
 
@@ -239,3 +248,89 @@ public sealed record CrmCanonicalAppointment(
     int RescheduleCount,
     IReadOnlyCollection<CrmRecordRelation> Relations)
     : CrmCanonicalRecord(ProviderKey, ConnectionKey, CrmEntityTypes.Appointment, ExternalId, Payload, CreatedAt, ModifiedAt);
+
+public sealed record CrmCanonicalServiceCase(
+    string ProviderKey,
+    string ConnectionKey,
+    string ExternalId,
+    JsonElement Payload,
+    DateTimeOffset? CreatedAt,
+    DateTimeOffset? ModifiedAt,
+    string Subject,
+    string? Description,
+    string Status,
+    string Priority,
+    string? Origin,
+    string? Reason,
+    string? CustomerExternalId,
+    string? ContactExternalId,
+    string? DealExternalId,
+    string? OwnerExternalId,
+    DateTimeOffset? OpenedAt,
+    DateTimeOffset? DueAt,
+    DateTimeOffset? ResolvedAt)
+    : CrmCanonicalRecord(ProviderKey, ConnectionKey, CrmEntityTypes.ServiceCase, ExternalId, Payload, CreatedAt, ModifiedAt);
+
+public sealed record CrmCanonicalOffer(
+    string ProviderKey,
+    string ConnectionKey,
+    string ExternalId,
+    JsonElement Payload,
+    DateTimeOffset? CreatedAt,
+    DateTimeOffset? ModifiedAt,
+    string Name,
+    string? OfferNumber,
+    string Status,
+    decimal? Amount,
+    string? Currency,
+    string? CustomerExternalId,
+    string? ContactExternalId,
+    string? DealExternalId,
+    string? OwnerExternalId,
+    DateTimeOffset? IssuedAt,
+    DateTimeOffset? SentAt,
+    DateTimeOffset? ValidUntil)
+    : CrmCanonicalRecord(ProviderKey, ConnectionKey, CrmEntityTypes.Offer, ExternalId, Payload, CreatedAt, ModifiedAt);
+
+public sealed record CrmCanonicalOrder(
+    string ProviderKey,
+    string ConnectionKey,
+    string ExternalId,
+    JsonElement Payload,
+    DateTimeOffset? CreatedAt,
+    DateTimeOffset? ModifiedAt,
+    string Name,
+    string? OrderNumber,
+    string Status,
+    decimal? Amount,
+    string? Currency,
+    string? CustomerExternalId,
+    string? OfferExternalId,
+    string? DealExternalId,
+    string? OwnerExternalId,
+    DateTimeOffset? OrderedAt,
+    DateTimeOffset? PromisedAt,
+    DateTimeOffset? DeliveredAt)
+    : CrmCanonicalRecord(ProviderKey, ConnectionKey, CrmEntityTypes.Order, ExternalId, Payload, CreatedAt, ModifiedAt);
+
+public sealed record CrmCanonicalInvoice(
+    string ProviderKey,
+    string ConnectionKey,
+    string ExternalId,
+    JsonElement Payload,
+    DateTimeOffset? CreatedAt,
+    DateTimeOffset? ModifiedAt,
+    string Name,
+    string? InvoiceNumber,
+    string Status,
+    decimal? Amount,
+    decimal? OpenAmount,
+    string? Currency,
+    string? CustomerExternalId,
+    string? OrderExternalId,
+    string? DealExternalId,
+    string? OwnerExternalId,
+    DateTimeOffset? IssuedAt,
+    DateTimeOffset? DueAt,
+    DateTimeOffset? PaidAt)
+    : CrmCanonicalRecord(ProviderKey, ConnectionKey, CrmEntityTypes.Invoice, ExternalId, Payload, CreatedAt, ModifiedAt);

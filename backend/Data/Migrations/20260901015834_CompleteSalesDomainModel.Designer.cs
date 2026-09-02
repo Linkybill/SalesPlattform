@@ -172,6 +172,10 @@ namespace SalesPlattform.Backend.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<string>("ExternalUrl")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
                     b.Property<Guid>("InternalEntityId")
                         .HasColumnType("uuid");
 
@@ -1496,6 +1500,9 @@ namespace SalesPlattform.Backend.Data.Migrations
                     b.Property<Guid?>("OwnerId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("OwnerAssignedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("PostalCode")
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)");
@@ -1532,6 +1539,8 @@ namespace SalesPlattform.Backend.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("OwnerId");
+
+                    b.HasIndex("TenantId", "OwnerAssignedAt");
 
                     b.HasIndex("TenantId", "Name");
 

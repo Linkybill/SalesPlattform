@@ -28,6 +28,10 @@ public static class CrmEntityTypes
     public const string Contract = "contract";
     public const string Activity = "activity";
     public const string Appointment = "appointment";
+    public const string ServiceCase = "service-case";
+    public const string Offer = "offer";
+    public const string Order = "order";
+    public const string Invoice = "invoice";
 }
 
 public sealed record CrmConnectionTestResult(
@@ -49,7 +53,8 @@ public sealed record CrmExternalRecord(
     JsonElement Payload,
     DateTimeOffset? ModifiedAt,
     IReadOnlyCollection<CrmRecordRelation>? Relations = null,
-    string ConnectionKey = "default");
+    string ConnectionKey = "default",
+    string? ExternalUrl = null);
 
 public sealed record CrmDeletedRecord(
     string Provider,
@@ -63,6 +68,21 @@ public sealed record CrmRecordRelation(
     string EntityType,
     string ExternalId,
     string? Role = null);
+
+public sealed record CrmTaskWriteRequest(
+    string Subject,
+    DateTimeOffset? DueAt,
+    string? Description,
+    string? OwnerExternalId,
+    string? TargetEntityType,
+    string? TargetExternalId);
+
+public sealed record CrmTaskWriteResult(
+    string Provider,
+    string ConnectionKey,
+    string ExternalId,
+    JsonElement Payload,
+    string? ExternalUrl = null);
 
 public interface ICrmAdapter
 {
@@ -87,6 +107,10 @@ public interface ICrmAdapter
     Task<IReadOnlyCollection<CrmDeletedRecord>> GetDeletedRecordsAsync(
         string module,
         DateTimeOffset? deletedSince = null,
+        CancellationToken cancellationToken = default);
+
+    Task<CrmTaskWriteResult> CreateTaskAsync(
+        CrmTaskWriteRequest request,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyCollection<CrmExternalRecord>> GetRelatedRecordsAsync(

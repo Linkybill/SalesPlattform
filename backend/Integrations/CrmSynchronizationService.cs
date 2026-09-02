@@ -1,11 +1,16 @@
 using System.Text.Json;
 using IdentityPlatform.Shared.Jobs;
 using SalesPlattform.Backend.Integrations.Abstractions;
+using SalesPlattform.Backend.Services;
 
 namespace SalesPlattform.Backend.Integrations;
 
 public sealed class CrmSynchronizationService(
-    CrmSynchronizationAdapterRegistry adapters)
+    CrmSynchronizationAdapterRegistry adapters,
+    WorklistService worklist,
+    CrmTaskMirrorService taskMirror,
+    SalesSnapshotService snapshots,
+    SalesNotificationDeliveryService notificationDelivery)
 {
     public async Task<PlatformJobResult> ExecuteAsync(
         string mode,
@@ -71,6 +76,51 @@ public sealed class CrmSynchronizationService(
             throw;
         }
 
+        var evaluation = await worklist.EvaluateAfterSyncAsync(
+            context.TenantId,
+            result.Mode,
+            result.ChangedRecords,
+            context.RequestedBy,
+            cancellationToken);
+        await taskMirror.EnsureActiveTasksAsync(context.TenantId, cancellationToken);
+        await context.Logger.InfoAsync(
+            evaluation.FullEvaluation
+                ? $"Arbeitsliste nach dem CRM-Vollimport vollständig bewertet: {evaluation.EvaluatedCount} Treffer."
+                : $"Arbeitsliste nach dem CRM-Incremental-Sync gezielt bewertet: {evaluation.EvaluatedCount} Treffer, {evaluation.ResolvedCount} Vorgänge automatisch aufgelöst.",
+            "Regelbewertung",
+            JsonSerializer.SerializeToElement(new
+            {
+                mode = result.Mode,
+                fullEvaluation = evaluation.FullEvaluation,
+                changedRecords = result.ChangedRecords.Count,
+                evaluation.EvaluatedCount,
+                evaluation.CreatedCount,
+                evaluation.ResolvedCount
+            }),
+            cancellationToken);
+
+        var snapshot = await snapshots.CreateDailyAsync(context, cancellationToken);
+        await context.Logger.InfoAsync(
+            $"Kennzahlen nach dem CRM-{(result.Mode.Equals("full", StringComparison.OrdinalIgnoreCase) ? "Vollimport" : "Incremental-Sync")} aktualisiert: {snapshot.DealCount} Deals, {snapshot.OpenDealCount} offene Deals, {snapshot.ActivityCount} Aktivitäten.",
+            "Kennzahlen",
+            JsonSerializer.SerializeToElement(new
+            {
+                mode = result.Mode,
+                snapshotDate = snapshot.SnapshotDate,
+                snapshot.DealCount,
+                snapshot.OpenDealCount,
+                snapshot.ActivityCount,
+                refreshed = snapshot.AlreadyPresent
+            }),
+            cancellationToken);
+
+        var notifications = await notificationDelivery.ProcessAsync(context, cancellationToken);
+        await context.Logger.InfoAsync(
+            $"Benachrichtigungen unmittelbar im CRM-Sync verarbeitet: {notifications.Sent} versendet, {notifications.Failed} fehlgeschlagen, {notifications.Skipped} übersprungen/unterdrückt.",
+            "Benachrichtigungen",
+            JsonSerializer.SerializeToElement(notifications),
+            cancellationToken);
+
         var completionMessage = result.Message
             ?? (result.HasWarnings
                 ? $"CRM-Synchronisation mit {result.RecordsFailed} Fehlern abgeschlossen."
@@ -92,7 +142,8 @@ public sealed class CrmSynchronizationService(
                 cancellationToken);
         }
 
-        return result.HasWarnings
+        var hasWarnings = result.HasWarnings || notifications.Failed > 0;
+        return hasWarnings
             ? PlatformJobResult.SuccessWithWarnings(result.Message, result.Details)
             : PlatformJobResult.Success(result.Message, result.Details);
     }

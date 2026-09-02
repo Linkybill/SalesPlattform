@@ -6,6 +6,7 @@ using IdentityPlatform.Shared.Authorization;
 using IdentityPlatform.Shared.Database;
 using Microsoft.EntityFrameworkCore;
 using SalesPlattform.Backend.Data;
+using SalesPlattform.Backend.Integrations.Abstractions;
 
 namespace SalesPlattform.Backend.Services;
 
@@ -15,15 +16,60 @@ namespace SalesPlattform.Backend.Services;
 /// </summary>
 public sealed class WorklistService(
     PlatformTenantDbContextFactory<SalesPlattformDbContext> dbFactory,
-    OwnerMappingService ownerMappings)
+    OwnerMappingService ownerMappings,
+    SalesApplicationSettingsService applicationSettings,
+    SalesNotificationOutboxService notificationOutbox)
 {
     // The platform factory opens the tenant-bound database session per request.
     // The service is scoped, so the active context only lives for one operation.
     private SalesPlattformDbContext? activeContext;
     private SalesPlattformDbContext db => activeContext
         ?? throw new InvalidOperationException("Für die Arbeitsliste ist keine Datenbank-Session geöffnet.");
-    private static readonly string[] RuleCodes = ["R-05", "R-06", "R-07", "R-08", "R-09", "R-10", "R-12"];
+    private static readonly string[] RuleCodes = [
+        "R-01", "R-02", "R-03", "R-04", "R-05", "R-06", "R-07", "R-08", "R-09", "R-10",
+        "R-11", "R-12", "R-13", "R-14", "R-15", "R-16", "R-17", "R-18"];
     private static readonly SemaphoreSlim RefreshGate = new(1, 1);
+
+    /// <summary>
+    /// Evaluates the worklist immediately after a CRM synchronization. A full
+    /// import evaluates the complete projection; an incremental import first
+    /// resolves the changed source links and follows only the affected
+    /// business relations.
+    /// </summary>
+    public async Task<WorklistEvaluationResult> EvaluateAfterSyncAsync(
+        Guid tenantId,
+        string mode,
+        IReadOnlyCollection<CrmSynchronizationChange> changes,
+        string? requestedBy,
+        CancellationToken cancellationToken = default)
+    {
+        await RefreshGate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var session = await dbFactory.OpenAsync(cancellationToken);
+            activeContext = session.Context;
+            var actor = new ActorInfo(requestedBy, requestedBy);
+            var full = string.Equals(mode, CrmSyncModes.Full, StringComparison.OrdinalIgnoreCase);
+            var scope = full
+                ? await BuildFullEvaluationScopeAsync(changes, cancellationToken)
+                : await BuildEvaluationScopeAsync(changes, cancellationToken);
+            await ReplaceDeletedCrmTaskOccurrencesAsync(changes, actor, cancellationToken);
+            if (scope.IsEmpty && !scope.IsFullEvaluation)
+                return new WorklistEvaluationResult(0, 0, 0, false);
+
+            return await RefreshCoreAsync(
+                tenantId,
+                actor,
+                scope,
+                full ? "crm-full-sync" : "crm-incremental-sync",
+                cancellationToken);
+        }
+        finally
+        {
+            activeContext = null;
+            RefreshGate.Release();
+        }
+    }
 
     public async Task<WorklistResponse> GetAsync(
         ClaimsPrincipal user,
@@ -55,6 +101,8 @@ public sealed class WorklistService(
                 .Take(250)
                 .ToArrayAsync(cancellationToken);
 
+            var externalUrls = await ResolveExternalUrlsAsync(items, cancellationToken);
+
             var latestRefresh = await db.SalesRuleRuns
                 .AsNoTracking()
                 .Where(run => run.Status == RuleRunStatuses.Succeeded)
@@ -67,46 +115,7 @@ public sealed class WorklistService(
                 latestRefresh,
                 ownerMatched,
                 teamView,
-                items.Select(ToDto).ToArray());
-        }
-        finally
-        {
-            activeContext = null;
-        }
-    }
-
-    public async Task<WorklistItemDto?> CompleteAsync(
-        Guid workItemId,
-        ClaimsPrincipal user,
-        CancellationToken cancellationToken = default)
-    {
-        await using var session = await dbFactory.OpenAsync(cancellationToken);
-        activeContext = session.Context;
-        try
-        {
-            var item = await db.SalesWorkItems
-                .Include(candidate => candidate.Owner)
-                .Include(candidate => candidate.Relations)
-                .SingleOrDefaultAsync(candidate => candidate.Id == workItemId, cancellationToken);
-            if (item is null || !await CanAccessAsync(item, user, cancellationToken))
-                return null;
-
-            if (item.Status != WorkItemStatuses.Completed)
-            {
-                var now = DateTimeOffset.UtcNow;
-                var actor = Actor(user);
-                var before = SerializeState(item);
-                item.Status = WorkItemStatuses.Completed;
-                item.CompletedAt = now;
-                item.CompletedBy = actor.Subject;
-                item.SnoozedUntil = null;
-                item.UpdatedAt = now;
-                AddEvent(item, "completed", new { action = "complete" }, actor.Subject, now);
-                AddAudit(actor, "work-item.completed", item, before, SerializeState(item), now);
-                await db.SaveChangesAsync(cancellationToken);
-            }
-
-            return ToDto(item);
+                items.Select(item => ToDto(item, externalUrls)).ToArray());
         }
         finally
         {
@@ -116,18 +125,22 @@ public sealed class WorklistService(
 
     public async Task<WorklistItemDto?> SnoozeAsync(
         Guid workItemId,
-        DateTimeOffset until,
+        SnoozeWorklistItemRequest request,
         ClaimsPrincipal user,
         CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.UtcNow;
-        if (until <= now || until > now.AddDays(90))
-            throw new ArgumentOutOfRangeException(nameof(until), "Ein Vorgang kann maximal 90 Tage zurückgestellt werden.");
-
         await using var session = await dbFactory.OpenAsync(cancellationToken);
         activeContext = session.Context;
         try
         {
+            var until = request.Tomorrow
+                ? await TomorrowAtStartAsync(cancellationToken)
+                : (request.Until
+                    ?? throw new ArgumentException("Für das Zurückstellen muss ein Zeitpunkt angegeben werden.", nameof(request)));
+            if (until <= now || until > now.AddDays(90))
+                throw new ArgumentOutOfRangeException(nameof(until), "Ein Vorgang kann maximal 90 Tage zurückgestellt werden.");
+
             var item = await db.SalesWorkItems
                 .Include(candidate => candidate.Owner)
                 .Include(candidate => candidate.Relations)
@@ -137,11 +150,54 @@ public sealed class WorklistService(
 
             var actor = Actor(user);
             var before = SerializeState(item);
-            item.Status = WorkItemStatuses.Snoozed;
-            item.SnoozedUntil = until;
+            var successorId = Guid.NewGuid();
+            var nowChainId = item.WorkItemChainId == Guid.Empty ? item.Id : item.WorkItemChainId;
+            item.Status = WorkItemStatuses.Closed;
+            item.ClosureReason = "deferred";
+            item.CompletedAt = now;
+            item.CompletedBy = actor.Subject;
+            item.AvailableFrom = null;
+            item.SnoozedUntil = null;
             item.UpdatedAt = now;
-            AddEvent(item, "snoozed", new { action = "snooze", until }, actor.Subject, now);
-            AddAudit(actor, "work-item.snoozed", item, before, SerializeState(item), now);
+
+            var successor = new SalesWorkItem
+            {
+                Id = successorId,
+                TenantId = item.TenantId,
+                WorkItemType = item.WorkItemType,
+                Status = WorkItemStatuses.Scheduled,
+                Title = item.Title,
+                Reason = item.Reason,
+                OwnerId = item.OwnerId,
+                DueAt = until,
+                AvailableFrom = until,
+                PriorityScore = item.PriorityScore,
+                PriorityCalculatedAt = item.PriorityCalculatedAt,
+                SourceRuleCode = item.SourceRuleCode,
+                SourceRuleRunId = item.SourceRuleRunId,
+                RequiresApproval = item.RequiresApproval,
+                WorkItemChainId = nowChainId,
+                PreviousWorkItemId = item.Id,
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+            foreach (var relation in item.Relations)
+            {
+                successor.Relations.Add(new SalesWorkItemRelation
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = item.TenantId,
+                    WorkItemId = successorId,
+                    TargetType = relation.TargetType,
+                    TargetId = relation.TargetId,
+                    RelationRole = relation.RelationRole
+                });
+            }
+
+            db.SalesWorkItems.Add(successor);
+            AddEvent(item, "deferred", new { action = "defer", until, successorWorkItemId = successorId }, actor.Subject, now);
+            AddEvent(successor, "scheduled", new { action = "successor-created", predecessorWorkItemId = item.Id, availableFrom = until }, actor.Subject, now);
+            AddAudit(actor, "work-item.deferred", item, before, SerializeState(item), now);
             await db.SaveChangesAsync(cancellationToken);
             return ToDto(item);
         }
@@ -157,8 +213,41 @@ public sealed class WorklistService(
             .Include(item => item.Owner)
             .Include(item => item.Relations)
             .Where(item => item.Status == WorkItemStatuses.Open
+                || (item.Status == WorkItemStatuses.Scheduled
+                    && (item.AvailableFrom ?? item.SnoozedUntil) <= DateTimeOffset.UtcNow)
                 || (item.Status == WorkItemStatuses.Snoozed
-                    && item.SnoozedUntil <= DateTimeOffset.UtcNow));
+                    && (item.AvailableFrom ?? item.SnoozedUntil) <= DateTimeOffset.UtcNow));
+
+    private async Task<DateTimeOffset> TomorrowAtStartAsync(CancellationToken cancellationToken)
+    {
+        var timeZoneId = await db.SalesWorkCalendars
+            .AsNoTracking()
+            .Where(calendar => calendar.IsDefault && calendar.IsActive)
+            .OrderBy(calendar => calendar.Name)
+            .Select(calendar => calendar.TimeZone)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? "Europe/Berlin";
+
+        TimeZoneInfo timeZone;
+        try
+        {
+            timeZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            timeZone = TimeZoneInfo.Utc;
+        }
+        catch (InvalidTimeZoneException)
+        {
+            timeZone = TimeZoneInfo.Utc;
+        }
+
+        var localNow = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, timeZone);
+        var tomorrowAtStart = DateTime.SpecifyKind(
+            localNow.Date.AddDays(1).AddHours(9),
+            DateTimeKind.Unspecified);
+        return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(tomorrowAtStart, timeZone));
+    }
 
     private async Task RefreshAsync(
         ClaimsPrincipal user,
@@ -167,7 +256,12 @@ public sealed class WorklistService(
         await RefreshGate.WaitAsync(cancellationToken);
         try
         {
-            await RefreshCoreAsync(user, cancellationToken);
+            await RefreshCoreAsync(
+                TenantId(user),
+                Actor(user),
+                scope: null,
+                "worklist-refresh",
+                cancellationToken);
         }
         finally
         {
@@ -175,26 +269,153 @@ public sealed class WorklistService(
         }
     }
 
-    private async Task RefreshCoreAsync(
-        ClaimsPrincipal user,
+    private async Task ReplaceDeletedCrmTaskOccurrencesAsync(
+        IReadOnlyCollection<CrmSynchronizationChange> changes,
+        ActorInfo actor,
         CancellationToken cancellationToken)
     {
-        var tenantId = TenantId(user);
+        var deletedActivityChanges = changes
+            .Where(change => change.EntityType == CrmEntityTypes.Activity
+                && string.Equals(change.ChangeKind, "deleted", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (deletedActivityChanges.Length == 0)
+            return;
+
+        var providerKeys = deletedActivityChanges.Select(change => change.ProviderKey).Distinct().ToArray();
+        var connectionKeys = deletedActivityChanges.Select(change => change.ConnectionKey).Distinct().ToArray();
+        var externalIds = deletedActivityChanges.Select(change => change.ExternalId).Distinct().ToArray();
+        var deletedKeys = deletedActivityChanges
+            .Select(change => (change.ProviderKey, change.ConnectionKey, change.EntityType, change.ExternalId))
+            .ToHashSet();
+
+        var deletedLinks = await db.IntegrationEntityLinks
+            .AsNoTracking()
+            .Where(link => providerKeys.Contains(link.ProviderKey)
+                && connectionKeys.Contains(link.ConnectionKey)
+                && link.EntityType == CrmEntityTypes.Activity
+                && link.SourceDeletedAt != null
+                && link.WorkItemId.HasValue
+                && externalIds.Contains(link.ExternalId))
+            .ToArrayAsync(cancellationToken);
+        var workItemIds = deletedLinks
+            .Where(link => deletedKeys.Contains((
+                link.ProviderKey,
+                link.ConnectionKey,
+                link.EntityType,
+                link.ExternalId)))
+            .Select(link => link.WorkItemId!.Value)
+            .Distinct()
+            .ToArray();
+        if (workItemIds.Length == 0)
+            return;
+
         var now = DateTimeOffset.UtcNow;
-        var actor = Actor(user);
+        var items = await db.SalesWorkItems
+            .Include(item => item.Relations)
+            .Where(item => workItemIds.Contains(item.Id))
+            .ToArrayAsync(cancellationToken);
+        foreach (var item in items)
+        {
+            if (!IsActiveStatus(item.Status))
+                continue;
+
+            var availableFrom = item.AvailableFrom ?? item.SnoozedUntil;
+            var successorId = Guid.NewGuid();
+            var chainId = item.WorkItemChainId == Guid.Empty ? item.Id : item.WorkItemChainId;
+            item.Status = WorkItemStatuses.Closed;
+            item.ClosureReason = "crm-task-deleted";
+            item.CompletedAt = now;
+            item.CompletedBy = actor.Subject;
+            item.AvailableFrom = null;
+            item.SnoozedUntil = null;
+            item.UpdatedAt = now;
+
+            var successor = new SalesWorkItem
+            {
+                Id = successorId,
+                TenantId = item.TenantId,
+                WorkItemType = item.WorkItemType,
+                Status = availableFrom > now ? WorkItemStatuses.Scheduled : WorkItemStatuses.Open,
+                Title = item.Title,
+                Reason = item.Reason,
+                OwnerId = item.OwnerId,
+                DueAt = item.DueAt,
+                AvailableFrom = availableFrom > now ? availableFrom : null,
+                PriorityScore = item.PriorityScore,
+                PriorityCalculatedAt = item.PriorityCalculatedAt,
+                SourceRuleCode = item.SourceRuleCode,
+                SourceRuleRunId = item.SourceRuleRunId,
+                RequiresApproval = item.RequiresApproval,
+                WorkItemChainId = chainId,
+                PreviousWorkItemId = item.Id,
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+            foreach (var relation in item.Relations)
+            {
+                successor.Relations.Add(new SalesWorkItemRelation
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = item.TenantId,
+                    WorkItemId = successorId,
+                    TargetType = relation.TargetType,
+                    TargetId = relation.TargetId,
+                    RelationRole = relation.RelationRole
+                });
+            }
+
+            db.SalesWorkItems.Add(successor);
+            AddEvent(
+                item,
+                "crm-task-deleted",
+                new { reason = "crm-task-deleted", successorWorkItemId = successorId },
+                actor.Subject,
+                now);
+            AddEvent(
+                successor,
+                "crm-task-replacement-pending",
+                new { predecessorWorkItemId = item.Id, availableFrom = successor.AvailableFrom },
+                actor.Subject,
+                now);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<WorklistEvaluationResult> RefreshCoreAsync(
+        Guid tenantId,
+        ActorInfo actor,
+        EvaluationScope? scope,
+        string triggerType,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var ruleConfiguration = await applicationSettings.GetRuleConfigurationAsync(
+            tenantId,
+            actor.Subject,
+            cancellationToken);
         var ruleDefinitions = await EnsureRuleDefinitionsAsync(tenantId, actor, now, cancellationToken);
-        var candidates = await FindCandidatesAsync(now, cancellationToken);
-        var candidateIds = candidates.Select(candidate => candidate.Id(tenantId)).ToHashSet();
+        var managementRecipients = await notificationOutbox.GetManagementRecipientsAsync(
+            tenantId,
+            actor.Subject,
+            cancellationToken);
+        var knownNotificationKeys = await db.SalesNotifications
+            .AsNoTracking()
+            .Select(notification => notification.NotificationKey)
+            .ToHashSetAsync(cancellationToken);
+        var candidates = await FindCandidatesAsync(now, scope, ruleConfiguration, cancellationToken);
         var existing = await db.SalesWorkItems
             .Include(item => item.Relations)
             .Where(item => item.SourceRuleCode != null && RuleCodes.Contains(item.SourceRuleCode))
             .ToArrayAsync(cancellationToken);
+        if (scope is not null && !scope.IsFullEvaluation)
+            existing = existing.Where(scope.Matches).ToArray();
 
         var ruleRun = new SalesRuleRun
         {
             Id = Guid.NewGuid(),
             TenantId = tenantId,
-            TriggerType = "worklist-refresh",
+            TriggerType = triggerType,
             Status = RuleRunStatuses.Running,
             StartedAt = now,
             RuleSetVersion = 1
@@ -202,13 +423,28 @@ public sealed class WorklistService(
         db.SalesRuleRuns.Add(ruleRun);
 
         var createdCount = 0;
-        var evaluationKeys = new HashSet<(string TargetType, Guid TargetId)>();
+        var resolvedCount = 0;
+        var candidateIds = new HashSet<Guid>();
+        var evaluationKeys = new HashSet<(string RuleCode, string TargetType, Guid TargetId)>();
+        var ownersById = await db.SalesOwners
+            .AsNoTracking()
+            .ToDictionaryAsync(owner => owner.Id, cancellationToken);
         foreach (var candidate in candidates)
         {
-            var id = candidate.Id(tenantId);
-            var item = existing.SingleOrDefault(existingItem => existingItem.Id == id);
+            var stableId = candidate.Id(tenantId);
+            var chainId = existing
+                .FirstOrDefault(existingItem => existingItem.Id == stableId)
+                ?.WorkItemChainId ?? stableId;
+            var item = existing
+                .Where(existingItem => existingItem.WorkItemChainId == chainId
+                    && IsActiveStatus(existingItem.Status))
+                .OrderByDescending(existingItem => existingItem.CreatedAt)
+                .FirstOrDefault();
             if (item is null)
             {
+                var id = existing.Any(existingItem => existingItem.Id == stableId)
+                    ? Guid.NewGuid()
+                    : stableId;
                 item = new SalesWorkItem
                 {
                     Id = id,
@@ -219,11 +455,13 @@ public sealed class WorklistService(
                     Reason = candidate.Reason,
                     OwnerId = candidate.OwnerId,
                     DueAt = candidate.DueAt,
+                    AvailableFrom = null,
                     PriorityScore = CalculatePriority(candidate),
                     PriorityCalculatedAt = now,
                     SourceRuleCode = candidate.RuleCode,
                     SourceRuleRunId = ruleRun.Id,
                     RequiresApproval = candidate.RequiresApproval,
+                    WorkItemChainId = chainId,
                     CreatedAt = now,
                     UpdatedAt = now
                 };
@@ -240,14 +478,17 @@ public sealed class WorklistService(
                 existing = [.. existing, item];
                 createdCount++;
             }
-            else if (item.Status is WorkItemStatuses.Open or WorkItemStatuses.Snoozed or WorkItemStatuses.Resolved)
+            else if (IsActiveStatus(item.Status))
             {
-                var keepSnooze = item.Status == WorkItemStatuses.Snoozed
-                    && item.SnoozedUntil.HasValue
-                    && item.SnoozedUntil > now;
-                if (!keepSnooze)
+                var keepScheduled = item.Status == WorkItemStatuses.Scheduled
+                    && item.AvailableFrom.HasValue
+                    && item.AvailableFrom > now;
+                var keepLegacySnooze = item.Status == WorkItemStatuses.Snoozed
+                    && (item.AvailableFrom ?? item.SnoozedUntil) > now;
+                if (!keepScheduled && !keepLegacySnooze)
                 {
                     item.Status = WorkItemStatuses.Open;
+                    item.AvailableFrom ??= item.SnoozedUntil;
                     item.SnoozedUntil = null;
                 }
 
@@ -255,7 +496,8 @@ public sealed class WorklistService(
                 item.Title = candidate.Title;
                 item.Reason = candidate.Reason;
                 item.OwnerId = candidate.OwnerId;
-                item.DueAt = candidate.DueAt;
+                if (item.PreviousWorkItemId is null)
+                    item.DueAt = candidate.DueAt;
                 item.PriorityScore = CalculatePriority(candidate);
                 item.PriorityCalculatedAt = now;
                 item.SourceRuleRunId = ruleRun.Id;
@@ -277,9 +519,26 @@ public sealed class WorklistService(
                 }
             }
 
+            candidateIds.Add(item.Id);
+
+            notificationOutbox.EnqueueRuleNotification(
+                db,
+                item,
+                new WorkItemNotification(
+                    candidate.RuleCode,
+                    candidate.TargetType,
+                    candidate.TargetId,
+                    candidate.RequiresApproval),
+                candidate.OwnerId is { } ownerId && ownersById.TryGetValue(ownerId, out var owner)
+                    ? owner
+                    : null,
+                managementRecipients,
+                knownNotificationKeys,
+                now);
+
             // The existing schema identifies an evaluation by target per run.
             // Avoid a duplicate when two rules point to the same CRM entity.
-            if (evaluationKeys.Add((candidate.TargetType, candidate.TargetId)))
+            if (evaluationKeys.Add((candidate.RuleCode, candidate.TargetType, candidate.TargetId)))
             {
                 db.SalesRuleEvaluations.Add(new SalesRuleEvaluation
                 {
@@ -290,7 +549,7 @@ public sealed class WorklistService(
                     TargetType = candidate.TargetType,
                     TargetId = candidate.TargetId,
                     Outcome = "matched",
-                    WorkItemId = id,
+                    WorkItemId = item.Id,
                     ExplanationJson = JsonSerializer.Serialize(new
                     {
                         candidate.WorkItemType,
@@ -303,13 +562,33 @@ public sealed class WorklistService(
             }
         }
 
-        foreach (var item in existing.Where(item => (item.Status is WorkItemStatuses.Open or WorkItemStatuses.Snoozed)
+        foreach (var item in existing.Where(item => (item.Status is WorkItemStatuses.Open
+                or WorkItemStatuses.Scheduled
+                or WorkItemStatuses.Snoozed
+                )
             && !candidateIds.Contains(item.Id)))
         {
             item.Status = WorkItemStatuses.Resolved;
+            item.CompletedAt = null;
+            item.CompletedBy = null;
+            var targetDeleted = scope?.IsDeletedTarget(item) == true;
+            item.ClosureReason = targetDeleted
+                ? "target-deleted-in-crm"
+                : "rule-no-longer-matches";
+            item.AvailableFrom = null;
             item.SnoozedUntil = null;
             item.UpdatedAt = now;
-            AddEvent(item, "resolved", new { reason = "rule-no-longer-matches" }, actor.Subject, now);
+            AddEvent(
+                item,
+                "resolved",
+                new
+                {
+                    reason = item.ClosureReason,
+                    targetDeleted
+                },
+                actor.Subject,
+                now);
+            resolvedCount++;
         }
 
         ruleRun.Status = RuleRunStatuses.Succeeded;
@@ -317,6 +596,11 @@ public sealed class WorklistService(
         ruleRun.EvaluatedCount = candidates.Count;
         ruleRun.CreatedCount = createdCount;
         await db.SaveChangesAsync(cancellationToken);
+        return new WorklistEvaluationResult(
+            candidates.Count,
+            createdCount,
+            resolvedCount,
+            scope is null || scope.IsFullEvaluation);
     }
 
     private async Task<Dictionary<string, SalesRuleDefinition>> EnsureRuleDefinitionsAsync(
@@ -357,60 +641,154 @@ public sealed class WorklistService(
 
     private async Task<IReadOnlyCollection<WorklistCandidate>> FindCandidatesAsync(
         DateTimeOffset now,
+        EvaluationScope? scope,
+        SalesRuleConfiguration ruleConfiguration,
         CancellationToken cancellationToken)
     {
-        var customers = await db.SalesCustomers.AsNoTracking().ToArrayAsync(cancellationToken);
-        var leads = await db.SalesLeads.AsNoTracking().ToArrayAsync(cancellationToken);
-        var deals = await db.SalesDeals
-            .AsNoTracking()
-            .Include(deal => deal.PipelineStage)
-            .ToArrayAsync(cancellationToken);
-        var contracts = await db.SalesContracts.AsNoTracking().ToArrayAsync(cancellationToken);
-        var products = await db.SalesProducts
-            .AsNoTracking()
-            .Include(product => product.Category)
-            .ToArrayAsync(cancellationToken);
-        var appointments = await db.SalesAppointments
-            .AsNoTracking()
-            .Include(appointment => appointment.Relations)
-            .ToArrayAsync(cancellationToken);
-        var ownerChanges = await db.SalesOwnerChangeRequests.AsNoTracking().ToArrayAsync(cancellationToken);
+        IQueryable<SalesCustomer> customersQuery = db.SalesCustomers.AsNoTracking();
+        IQueryable<SalesLead> leadsQuery = db.SalesLeads.AsNoTracking();
+        IQueryable<SalesDeal> dealsQuery = db.SalesDeals.AsNoTracking().Include(deal => deal.PipelineStage);
+        IQueryable<SalesContract> contractsQuery = db.SalesContracts.AsNoTracking();
+        IQueryable<SalesDeal> paceDealsQuery = db.SalesDeals.AsNoTracking();
+        IQueryable<SalesProduct> productsQuery = db.SalesProducts.AsNoTracking().Include(product => product.Category);
+        IQueryable<SalesAppointment> appointmentsQuery = db.SalesAppointments.AsNoTracking().Include(appointment => appointment.Relations);
+        IQueryable<SalesServiceCase> serviceCasesQuery = db.SalesServiceCases.AsNoTracking();
+        IQueryable<SalesOffer> offersQuery = db.SalesOffers.AsNoTracking();
+        IQueryable<SalesOrder> ordersQuery = db.SalesOrders.AsNoTracking();
+        IQueryable<SalesInvoice> invoicesQuery = db.SalesInvoices.AsNoTracking();
+        IQueryable<SalesOwnerChangeRequest> ownerChangesQuery = db.SalesOwnerChangeRequests.AsNoTracking();
+        IQueryable<SalesOwner> ownersQuery = db.SalesOwners.AsNoTracking();
+        IQueryable<SalesTarget> targetsQuery = db.SalesTargets.AsNoTracking();
+        if (scope is not null && !scope.IsFullEvaluation)
+        {
+            var customerIds = scope.Ids(CrmEntityTypes.Customer);
+            customersQuery = scope.AllCustomersForCrossSell
+                ? customersQuery
+                : customersQuery.Where(customer => customerIds.Contains(customer.Id));
+
+            var leadIds = scope.Ids(CrmEntityTypes.Lead);
+            leadsQuery = leadsQuery.Where(lead => leadIds.Contains(lead.Id));
+
+            var dealIds = scope.Ids(CrmEntityTypes.Deal);
+            dealsQuery = dealsQuery.Where(deal => dealIds.Contains(deal.Id));
+
+            var contractIds = scope.Ids(CrmEntityTypes.Contract);
+            contractsQuery = contractsQuery.Where(contract => contractIds.Contains(contract.Id));
+
+            if (!scope.AllowsRule("R-10"))
+                productsQuery = productsQuery.Where(_ => false);
+
+            var appointmentIds = scope.Ids(CrmEntityTypes.Appointment);
+            appointmentsQuery = appointmentsQuery.Where(appointment => appointmentIds.Contains(appointment.Id));
+
+            var serviceCaseIds = scope.Ids(CrmEntityTypes.ServiceCase);
+            serviceCasesQuery = serviceCasesQuery.Where(serviceCase => serviceCaseIds.Contains(serviceCase.Id));
+
+            var offerIds = scope.Ids(CrmEntityTypes.Offer);
+            offersQuery = offersQuery.Where(offer => offerIds.Contains(offer.Id));
+
+            var orderIds = scope.Ids(CrmEntityTypes.Order);
+            ordersQuery = ordersQuery.Where(order => orderIds.Contains(order.Id));
+
+            var invoiceIds = scope.Ids(CrmEntityTypes.Invoice);
+            invoicesQuery = invoicesQuery.Where(invoice => invoiceIds.Contains(invoice.Id));
+
+            // Owner-change requests are platform workflow records, not CRM
+            // source records. They are currently refreshed by a full/manual
+            // evaluation; an incremental CRM change must not scan them.
+            ownerChangesQuery = scope.AllowsRule("R-08")
+                ? ownerChangesQuery
+                : ownerChangesQuery.Where(_ => false);
+
+            var paceOwnerIds = scope.OwnerIds.ToArray();
+            targetsQuery = paceOwnerIds.Length == 0
+                ? targetsQuery.Where(_ => false)
+                : targetsQuery.Where(target => paceOwnerIds.Contains(target.OwnerId));
+            paceDealsQuery = paceOwnerIds.Length == 0
+                ? paceDealsQuery.Where(_ => false)
+                : paceDealsQuery.Where(deal => deal.OwnerId.HasValue && paceOwnerIds.Contains(deal.OwnerId.Value));
+        }
+
+        var customers = await customersQuery.ToArrayAsync(cancellationToken);
+        var leads = await leadsQuery.ToArrayAsync(cancellationToken);
+        var deals = await dealsQuery.ToArrayAsync(cancellationToken);
+        var paceDeals = (scope is null || scope.AllowsRule("R-11"))
+            ? await paceDealsQuery.ToArrayAsync(cancellationToken)
+            : Array.Empty<SalesDeal>();
+        var contracts = await contractsQuery.ToArrayAsync(cancellationToken);
+        var products = await productsQuery.ToArrayAsync(cancellationToken);
+        var appointments = await appointmentsQuery.ToArrayAsync(cancellationToken);
+        var serviceCases = await serviceCasesQuery.ToArrayAsync(cancellationToken);
+        var offers = await offersQuery.ToArrayAsync(cancellationToken);
+        var orders = await ordersQuery.ToArrayAsync(cancellationToken);
+        var invoices = await invoicesQuery.ToArrayAsync(cancellationToken);
+        var ownerChanges = await ownerChangesQuery.ToArrayAsync(cancellationToken);
+        var owners = await ownersQuery.ToArrayAsync(cancellationToken);
+        var targets = await targetsQuery.ToArrayAsync(cancellationToken);
+        var workingCalendar = (scope is null || scope.AllowsRule("R-09"))
+            ? await LoadWorkingCalendarAsync(cancellationToken)
+            : null;
 
         var customerNames = customers.ToDictionary(customer => customer.Id, customer => customer.Name);
         var dealNames = deals.ToDictionary(deal => deal.Id, deal => deal.Name);
         var leadNames = leads.ToDictionary(lead => lead.Id, lead => lead.Name);
+        var ownerNames = owners.ToDictionary(owner => owner.Id, owner => owner.DisplayName);
         var productCategories = products
             .Where(product => product.IsActive && product.CategoryId.HasValue && product.Category is { IsActive: true })
             .GroupBy(product => product.CategoryId!.Value)
             .ToDictionary(group => group.Key, group => group.First().Category!.Name);
         var candidates = new List<WorklistCandidate>();
 
+        if (scope is null || scope.AllowsRule("R-05"))
         foreach (var deal in deals.Where(deal => deal.IsActive
             && IsOpenStatus(deal.Status)
             && !(deal.PipelineStage?.IsTerminal ?? false)))
         {
             var lastActivity = deal.LastActivityAt ?? deal.SourceCreatedAt;
-            if (!lastActivity.HasValue || lastActivity > now.AddDays(-30))
+            if (!lastActivity.HasValue || lastActivity > now.AddDays(-ruleConfiguration.DealInactiveDays))
                 continue;
 
-            var dueAt = lastActivity.Value.AddDays(30);
+            var dueAt = lastActivity.Value.AddDays(ruleConfiguration.DealInactiveDays);
+            var cockpitEscalation = lastActivity.Value <= now.AddDays(-ruleConfiguration.DealCockpitEscalationDays);
             var title = deal.CustomerId is { } customerId && customerNames.TryGetValue(customerId, out var customerName)
                 ? $"{deal.Name} · {customerName}"
                 : deal.Name;
             candidates.Add(new WorklistCandidate(
                 "deal-stalled", "R-05", "deal", deal.Id, deal.OwnerId, title,
-                $"Offener Deal seit {FormatAge(lastActivity.Value, now)} ohne dokumentierte Aktivität.",
-                dueAt, deal.Amount));
+                cockpitEscalation
+                    ? $"Offener Deal seit {FormatAge(lastActivity.Value, now)} ohne dokumentierte Aktivität; Cockpit-Handlungspunkt ab {ruleConfiguration.DealCockpitEscalationDays} Tagen."
+                    : $"Offener Deal seit {FormatAge(lastActivity.Value, now)} ohne dokumentierte Aktivität (Grenzwert: {ruleConfiguration.DealInactiveDays} Tage).",
+                dueAt, deal.Amount, null, cockpitEscalation));
         }
 
+        if (scope is null || scope.AllowsRule("R-14"))
+        foreach (var deal in deals.Where(deal => deal.IsActive
+            && IsLostStatus(deal.Status)
+            && IsReactivationLossReason(deal.LossReason)))
+        {
+            var lostAt = deal.ClosingAt ?? deal.SourceModifiedAt ?? deal.SourceCreatedAt;
+            if (!lostAt.HasValue || lostAt > now.AddDays(-ruleConfiguration.LostDealReactivationAgeDays))
+                continue;
+
+            candidates.Add(new WorklistCandidate(
+                "deal-reactivation", "R-14", "deal", deal.Id, deal.OwnerId,
+                $"Verlorenen Deal reaktivieren · {deal.Name}",
+                $"Verlorener Deal seit {FormatAge(lostAt.Value, now)}; Verlustgrund „{deal.LossReason}“ (Timing/Budget). Reaktivierung beim früheren Besitzer prüfen.",
+                lostAt.Value.AddDays(ruleConfiguration.LostDealReactivationAgeDays),
+                deal.Amount,
+                null,
+                true));
+        }
+
+        if (scope is null || scope.AllowsRule("R-06"))
         foreach (var contract in contracts.Where(contract => contract.IsActive
             && contract.EndAt is { } endAt
             && endAt >= now
-            && endAt <= now.AddDays(90)
+            && endAt <= now.AddDays(ruleConfiguration.ContractRenewalHorizonDays)
             && IsOpenStatus(contract.Status)))
         {
             var daysRemaining = Math.Max(0, (contract.EndAt!.Value - now).TotalDays);
-            var critical = daysRemaining <= 30;
+            var critical = daysRemaining <= ruleConfiguration.ContractCriticalDays;
             var customerName = customerNames.GetValueOrDefault(contract.CustomerId) ?? "Unbekannter Kunde";
             candidates.Add(new WorklistCandidate(
                 critical ? "contract-renewal-critical" : "contract-renewal", "R-06", "contract", contract.Id,
@@ -419,10 +797,12 @@ public sealed class WorklistService(
                 contract.EndAt.Value, contract.RecurringAmount));
         }
 
+        if (scope is null || scope.AllowsRule("R-07"))
         foreach (var customer in customers.Where(customer => customer.IsActive
-            && (!customer.LastContactAt.HasValue || customer.LastContactAt <= now.AddMonths(-3))))
+            && (!customer.LastContactAt.HasValue || customer.LastContactAt <= now.AddDays(-ruleConfiguration.ContactInactiveDays))))
         {
-            var dueAt = customer.LastContactAt?.AddMonths(3) ?? (customer.SourceCreatedAt ?? now).AddMonths(3);
+            var dueAt = customer.LastContactAt?.AddDays(ruleConfiguration.ContactInactiveDays)
+                ?? (customer.SourceCreatedAt ?? now).AddDays(ruleConfiguration.ContactInactiveDays);
             candidates.Add(new WorklistCandidate(
                 "customer-stale", "R-07", "customer", customer.Id, customer.OwnerId,
                 $"Kontakt aufnehmen · {customer.Name}",
@@ -432,23 +812,101 @@ public sealed class WorklistService(
                 dueAt, customer.LifetimeRevenue));
         }
 
+        if (scope is null || scope.AllowsRule("R-07"))
         foreach (var lead in leads.Where(lead => lead.IsActive
             && IsOpenStatus(lead.Status)
-            && !lead.FirstActivityAt.HasValue
-            && !lead.LastContactAt.HasValue
-            && !lead.LastPhoneCallAt.HasValue
-            && lead.SourceCreatedAt is { } createdAt
-            && createdAt <= now.AddHours(-1)))
+            && (!lead.LastContactAt.HasValue
+                || lead.LastContactAt <= now.AddDays(-ruleConfiguration.ContactInactiveDays))))
         {
-            var dueAt = lead.SourceCreatedAt!.Value.AddHours(1);
+            var lastContact = lead.LastContactAt ?? lead.SourceCreatedAt ?? now;
             candidates.Add(new WorklistCandidate(
-                "lead-first-response", "R-09", "lead", lead.Id, lead.OwnerId,
-                $"Lead qualifizieren · {lead.Name}",
-                $"Neuer Lead seit {FormatAge(lead.SourceCreatedAt.Value, now)} ohne dokumentierte Aktivität.",
-                dueAt, null));
+                "lead-reactivation", "R-07", "lead", lead.Id, lead.OwnerId,
+                $"Lead reaktivieren · {lead.Name}",
+                lead.LastContactAt.HasValue
+                    ? $"Letzter Kontakt vor {FormatAge(lead.LastContactAt.Value, now)}; Reaktivierung erforderlich."
+                    : "Für den Lead ist noch kein Kontakt dokumentiert; Reaktivierung erforderlich.",
+                lastContact.AddDays(ruleConfiguration.ContactInactiveDays), null));
         }
 
-        foreach (var customer in customers.Where(customer => customer.IsActive && productCategories.Count > 0))
+        if (scope is null || scope.AllowsRule("R-01") || scope.AllowsRule("R-02")
+            || scope.AllowsRule("R-03") || scope.AllowsRule("R-04") || scope.AllowsRule("R-09"))
+        foreach (var lead in leads.Where(lead => lead.IsActive
+            && IsOpenStatus(lead.Status)
+            && (lead.CallsSinceConversation > 0
+                || (!lead.FirstActivityAt.HasValue
+                    && !lead.LastContactAt.HasValue
+                    && !lead.LastPhoneCallAt.HasValue
+                    && lead.SourceCreatedAt is not null
+                    && CalculateWorkingHours(lead.SourceCreatedAt.Value, now, workingCalendar)
+                        >= ruleConfiguration.LeadFirstResponseWorkingHours))))
+        {
+            if (lead.CallsSinceConversation > ruleConfiguration.CallNotReachableAfterAttempts
+                && (scope is null || scope.AllowsRule("R-04")))
+            {
+                candidates.Add(new WorklistCandidate(
+                    "call-not-reachable", "R-04", "lead", lead.Id, lead.OwnerId,
+                    $"Erreichbarkeit klären · {lead.Name}",
+                    $"{lead.CallsSinceConversation} Anrufversuche seit dem letzten Gespräch ohne qualifiziertes Gespräch. Nicht erreichbar nur vorschlagen; CRM-Status bleibt unverändert.",
+                    lead.LastPhoneCallAt ?? now, null, null, true));
+            }
+            else if (lead.CallsSinceConversation >= ruleConfiguration.CallLongRunnerMinAttempts
+                && lead.CallsSinceConversation <= ruleConfiguration.CallLongRunnerMaxAttempts
+                && (scope is null || scope.AllowsRule("R-03")))
+            {
+                candidates.Add(new WorklistCandidate(
+                    "call-long-runner", "R-03", "lead", lead.Id, lead.OwnerId,
+                    $"Langläufer bearbeiten · {lead.Name}",
+                    $"{lead.CallsSinceConversation} Anrufversuche seit dem letzten Gespräch ohne qualifiziertes Gespräch; Wiedervorlage im {ruleConfiguration.CallLongRunnerIntervalDays}-Tage-Intervall.",
+                    (lead.LastPhoneCallAt ?? now).AddDays(ruleConfiguration.CallLongRunnerIntervalDays), null));
+            }
+            else if (lead.CallsSinceConversation >= 1
+                && lead.CallsSinceConversation <= ruleConfiguration.CallEmailFollowUpAttempts)
+            {
+                var isEmailAttempt = lead.CallsSinceConversation == ruleConfiguration.CallEmailFollowUpAttempts;
+                var ruleCode = isEmailAttempt ? "R-02" : "R-01";
+                if (scope is null || scope.AllowsRule(ruleCode))
+                {
+                    candidates.Add(new WorklistCandidate(
+                        isEmailAttempt ? "call-email-follow-up" : "call-follow-up",
+                        ruleCode,
+                        "lead",
+                        lead.Id,
+                        lead.OwnerId,
+                        isEmailAttempt
+                            ? $"E-Mail-Folgeaktion prüfen · {lead.Name}"
+                            : $"Erneut anrufen · {lead.Name}",
+                        isEmailAttempt
+                            ? $"Der {ruleConfiguration.CallEmailFollowUpAttempts}. Anrufversuch blieb ohne qualifiziertes Gespräch. E-Mail-Vorlage prüfen und Wiedervorlage setzen."
+                            : $"Anrufversuch {lead.CallsSinceConversation} seit dem letzten Gespräch blieb ohne qualifiziertes Gespräch.",
+                        (lead.LastPhoneCallAt ?? now).AddDays(isEmailAttempt
+                            ? ruleConfiguration.CallEmailFollowUpIntervalDays
+                            : ruleConfiguration.CallFollowUpIntervalDays),
+                        null,
+                        null,
+                        isEmailAttempt));
+                }
+            }
+            else if (scope is null || scope.AllowsRule("R-09"))
+            {
+                var leadCreatedAt = lead.SourceCreatedAt!.Value;
+                var dueAt = lead.ResponseDueAt
+                    ?? AddWorkingHours(leadCreatedAt, ruleConfiguration.LeadFirstResponseWorkingHours, workingCalendar);
+                var escalated = CalculateWorkingHours(leadCreatedAt, now, workingCalendar)
+                    >= ruleConfiguration.LeadEscalationWorkingHours;
+                candidates.Add(new WorklistCandidate(
+                    "lead-first-response", "R-09", "lead", lead.Id, lead.OwnerId,
+                    $"Lead qualifizieren · {lead.Name}",
+                    escalated
+                        ? $"Neuer Lead seit {FormatAge(leadCreatedAt, now)} ohne dokumentierte Aktivität; nach {ruleConfiguration.LeadEscalationWorkingHours} Arbeitsstunden an die Vertriebsleitung eskalieren."
+                        : $"Neuer Lead seit {FormatAge(leadCreatedAt, now)} ohne dokumentierte Aktivität.",
+                    dueAt, null, null, escalated));
+            }
+        }
+
+        if ((scope is null || scope.AllowsRule("R-10")) && productCategories.Count > 0)
+        foreach (var customer in customers.Where(customer => customer.IsActive
+            && customer.LifetimeRevenue >= ruleConfiguration.CrossSellingMinimumCustomerValue
+            && productCategories.Count > 0))
         {
             var acquiredCategoryIds = deals
                 .Where(deal => deal.CustomerId == customer.Id && IsWonStatus(deal.Status))
@@ -470,8 +928,108 @@ public sealed class WorklistService(
             }
         }
 
+        if (scope is null || scope.AllowsRule("R-13"))
+        foreach (var customer in customers.Where(customer => customer.IsActive
+            && customer.LifetimeRevenue is > 0
+            && customer.LifetimeRevenue >= ruleConfiguration.AccountCareMinimumRevenue
+            && (!customer.LastPhoneCallAt.HasValue
+                || customer.LastPhoneCallAt <= now.AddDays(-ruleConfiguration.AccountCareInactiveDays))))
+        {
+            var lastPhoneCall = customer.LastPhoneCallAt ?? customer.SourceCreatedAt ?? now;
+            candidates.Add(new WorklistCandidate(
+                "account-care", "R-13", "customer", customer.Id, customer.OwnerId,
+                $"Account Care · {customer.Name}",
+                customer.LastPhoneCallAt.HasValue
+                    ? $"Letztes Telefonat vor {FormatAge(customer.LastPhoneCallAt.Value, now)}; Umsatzhistorie vorhanden ({customer.LifetimeRevenue:0.##})."
+                    : $"Noch kein Telefonat dokumentiert; Umsatzhistorie vorhanden ({customer.LifetimeRevenue:0.##}).",
+                lastPhoneCall.AddDays(ruleConfiguration.AccountCareInactiveDays), customer.LifetimeRevenue));
+        }
+
+        if (scope is null || scope.AllowsRule("R-08"))
+        foreach (var deal in deals.Where(deal => deal.IsActive
+            && IsOpenStatus(deal.Status)
+            && IsOwnerChangeStage(deal.PipelineStage)))
+        {
+            var hasPendingRequest = ownerChanges.Any(request => request.TargetType == CrmEntityTypes.Deal
+                && request.TargetId == deal.Id
+                && IsPendingOwnerChange(request.Status));
+            if (hasPendingRequest)
+                continue;
+
+            var title = deal.CustomerId is { } customerId && customerNames.TryGetValue(customerId, out var customerName)
+                ? $"Zuständigkeit klären · {customerName}"
+                : $"Zuständigkeit klären · {deal.Name}";
+            candidates.Add(new WorklistCandidate(
+                "ownership-change", "R-08", CrmEntityTypes.Deal, deal.Id, deal.OwnerId,
+                title,
+                $"Der Deal befindet sich in der Stufe „{deal.PipelineStage!.Name}“. Alten Besitzer, Kontakt und Wert prüfen; die Vertriebsleitung entscheidet.",
+                now,
+                deal.Amount,
+                null,
+                true));
+        }
+
+        if (scope is null || scope.AllowsRule("R-11"))
+        {
+            var today = DateOnly.FromDateTime(now.UtcDateTime.Date);
+            var fiscalYear = await db.SalesFiscalYears
+                .AsNoTracking()
+                .Where(year => !year.IsClosed && year.StartsAt <= today && year.EndsAt >= today)
+                .OrderByDescending(year => year.StartsAt)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (fiscalYear is not null)
+            {
+                var fiscalTargets = targets
+                    .Where(target => target.FiscalYearId == fiscalYear.Id
+                        && IsRevenueTargetType(target.TargetType)
+                        && target.ValidFrom <= today
+                        && (!target.ValidTo.HasValue || target.ValidTo >= today))
+                    .ToArray();
+                var targetByOwner = fiscalTargets
+                    .GroupBy(target => target.OwnerId)
+                    .ToDictionary(
+                        group => group.Key,
+                        group => group.Any(target => target.TargetPeriodId is null)
+                            ? group.Where(target => target.TargetPeriodId is null).Sum(target => target.TargetValue)
+                            : group.Sum(target => target.TargetValue));
+                var elapsedDays = Math.Clamp(today.DayNumber - fiscalYear.StartsAt.DayNumber, 0, fiscalYear.EndsAt.DayNumber - fiscalYear.StartsAt.DayNumber + 1);
+                var totalDays = Math.Max(1, fiscalYear.EndsAt.DayNumber - fiscalYear.StartsAt.DayNumber + 1);
+                var timeShare = elapsedDays * 100m / totalDays;
+                var achievedByOwner = paceDeals
+                    .Where(deal => deal.IsActive
+                        && deal.OwnerId.HasValue
+                        && IsWonStatus(deal.Status)
+                        && deal.Amount.HasValue
+                        && deal.ClosingAt is { } closingAt
+                        && DateOnly.FromDateTime(closingAt.UtcDateTime.Date) >= fiscalYear.StartsAt
+                        && DateOnly.FromDateTime(closingAt.UtcDateTime.Date) <= fiscalYear.EndsAt)
+                    .GroupBy(deal => deal.OwnerId!.Value)
+                    .ToDictionary(group => group.Key, group => group.Sum(deal => deal.Amount!.Value));
+
+                foreach (var (ownerId, annualTarget) in targetByOwner.Where(item => item.Value > 0))
+                {
+                    var achieved = achievedByOwner.GetValueOrDefault(ownerId);
+                    var attainment = achieved / annualTarget * 100m;
+                    var pace = attainment - timeShare;
+                    if (pace >= -ruleConfiguration.TargetPaceGapPoints)
+                        continue;
+
+                    var ownerName = ownerNames.GetValueOrDefault(ownerId) ?? "Unbekannter Mitarbeiter";
+                    candidates.Add(new WorklistCandidate(
+                        "target-pace-gap", "R-11", CrmEntityTypes.Owner, ownerId, ownerId,
+                        $"Ziel-Pace prüfen · {ownerName}",
+                        $"Zielerreichung {attainment:0.##}% liegt {Math.Abs(pace):0.##} Punkte unter dem Zeitanteil ({timeShare:0.##}%). Team-Flag und Benachrichtigung an die Vertriebsleitung.",
+                        now,
+                        annualTarget,
+                        $"owner:{ownerId:D}:fiscal-year:{fiscalYear.Id:D}",
+                        true));
+                }
+            }
+        }
+
+        if (scope is null || scope.AllowsRule("R-12"))
         foreach (var appointment in appointments.Where(appointment => appointment.IsActive
-            && appointment.RescheduleCount >= 3
+            && appointment.RescheduleCount >= ruleConfiguration.AppointmentRescheduleCount
             && IsOpenStatus(appointment.Status)))
         {
             var target = appointment.Relations.FirstOrDefault();
@@ -491,6 +1049,118 @@ public sealed class WorklistService(
                 appointment.StartsAt, null));
         }
 
+        if (scope is null || scope.AllowsRule("R-15"))
+        foreach (var serviceCase in serviceCases.Where(serviceCase => serviceCase.IsActive
+            && IsOpenStatus(serviceCase.Status)
+            && (IsUrgentPriority(serviceCase.Priority)
+                || serviceCase.DueAt <= now
+                || (serviceCase.DueAt is null
+                    && serviceCase.OpenedAt is { } openedAt
+                    && openedAt <= now.AddDays(-ruleConfiguration.ServiceCaseResponseDays)))) )
+        {
+            var dueAt = serviceCase.DueAt
+                ?? serviceCase.OpenedAt?.AddDays(ruleConfiguration.ServiceCaseResponseDays)
+                ?? serviceCase.SourceCreatedAt
+                ?? now;
+            var customerName = serviceCase.CustomerId is { } customerId
+                ? customerNames.GetValueOrDefault(customerId)
+                : null;
+            var urgent = IsUrgentPriority(serviceCase.Priority) || dueAt <= now;
+            candidates.Add(new WorklistCandidate(
+                "service-case-overdue", "R-15", CrmEntityTypes.ServiceCase, serviceCase.Id, serviceCase.OwnerId,
+                $"Servicefall bearbeiten · {serviceCase.Subject}",
+                urgent
+                    ? $"Servicefall {serviceCase.Priority.ToLowerInvariant()} / {serviceCase.Status}; Frist {FormatAge(dueAt, now)} überschritten oder heute fällig.{(customerName is null ? string.Empty : $" Kunde: {customerName}.")}"
+                    : $"Servicefall seit {FormatAge(serviceCase.OpenedAt ?? serviceCase.SourceCreatedAt ?? now, now)} ohne dokumentierte Bearbeitung.",
+                dueAt,
+                null,
+                null,
+                urgent));
+        }
+
+        if (scope is null || scope.AllowsRule("R-16"))
+        foreach (var offer in offers.Where(offer => offer.IsActive
+            && IsOpenStatus(offer.Status)
+            && offer.SentAt is { } sentAt
+            && sentAt <= now.AddDays(-ruleConfiguration.OfferFollowUpDays)))
+        {
+            var customerName = offer.CustomerId is { } customerId
+                ? customerNames.GetValueOrDefault(customerId)
+                : null;
+            candidates.Add(new WorklistCandidate(
+                "offer-follow-up", "R-16", CrmEntityTypes.Offer, offer.Id, offer.OwnerId,
+                $"Angebot nachfassen · {offer.Name}",
+                $"Gesendetes Angebot seit {FormatAge(offer.SentAt!.Value, now)} ohne Entscheidung; Folgekontakt prüfen.{(customerName is null ? string.Empty : $" Kunde: {customerName}.")}",
+                offer.SentAt.Value.AddDays(ruleConfiguration.OfferFollowUpDays),
+                offer.Amount));
+        }
+
+        if (scope is null || scope.AllowsRule("R-17"))
+        foreach (var order in orders.Where(order => order.IsActive
+            && IsOpenStatus(order.Status)
+            && order.DeliveredAt is null
+            && order.PromisedAt is { } promisedAt
+            && promisedAt.AddDays(ruleConfiguration.OrderDeliveryEscalationDays) <= now))
+        {
+            var customerName = order.CustomerId is { } customerId
+                ? customerNames.GetValueOrDefault(customerId)
+                : null;
+            candidates.Add(new WorklistCandidate(
+                "order-overdue", "R-17", CrmEntityTypes.Order, order.Id, order.OwnerId,
+                $"Lieferverzug prüfen · {order.Name}",
+                $"Zugesagter Liefertermin war am {order.PromisedAt!.Value:dd.MM.yyyy}; Auftrag ist noch nicht abgeschlossen.{(customerName is null ? string.Empty : $" Kunde: {customerName}.")}",
+                order.PromisedAt.Value.AddDays(ruleConfiguration.OrderDeliveryEscalationDays),
+                order.Amount,
+                null,
+                true));
+        }
+
+        if (scope is null || scope.AllowsRule("R-18"))
+        foreach (var invoice in invoices.Where(invoice => invoice.IsActive
+            && IsOpenInvoice(invoice.Status)
+            && invoice.OpenAmount.GetValueOrDefault(invoice.Amount ?? 0m) > 0
+            && invoice.DueAt is { } dueAt
+            && dueAt.AddDays(ruleConfiguration.InvoiceOverdueGraceDays) <= now))
+        {
+            var customerName = invoice.CustomerId is { } customerId
+                ? customerNames.GetValueOrDefault(customerId)
+                : null;
+            var openAmount = invoice.OpenAmount.GetValueOrDefault(invoice.Amount ?? 0m);
+            candidates.Add(new WorklistCandidate(
+                "invoice-overdue", "R-18", CrmEntityTypes.Invoice, invoice.Id, invoice.OwnerId,
+                $"Überfällige Rechnung prüfen · {invoice.Name}",
+                $"Rechnung seit {FormatAge(invoice.DueAt!.Value, now)} überfällig; offener Betrag {openAmount:0.##} {invoice.Currency ?? "EUR"}.{(customerName is null ? string.Empty : $" Kunde: {customerName}.")}",
+                invoice.DueAt.Value.AddDays(ruleConfiguration.InvoiceOverdueGraceDays),
+                openAmount,
+                null,
+                true));
+        }
+
+        if (scope is null || scope.AllowsRule("R-08"))
+        foreach (var customer in customers.Where(customer => customer.IsActive
+            && customer.OwnerId.HasValue
+            && customer.OwnerAssignedAt is { } ownerAssignedAt
+            && ownerAssignedAt <= now.AddDays(-ruleConfiguration.OwnerChangeAfterDays)
+            && (!customer.LastContactAt.HasValue
+                || customer.LastContactAt <= now.AddDays(-ruleConfiguration.OwnerChangeNoContactDays))))
+        {
+            var hasPendingRequest = ownerChanges.Any(request => request.CustomerId == customer.Id
+                && IsPendingOwnerChange(request.Status));
+            if (hasPendingRequest)
+                continue;
+
+            var ownerName = ownerNames.GetValueOrDefault(customer.OwnerId!.Value) ?? "unbekannter Besitzer";
+            candidates.Add(new WorklistCandidate(
+                "ownership-change", "R-08", CrmEntityTypes.Customer, customer.Id, customer.OwnerId,
+                $"Zuständigkeit klären · {customer.Name}",
+                $"Kunde seit mehr als {ruleConfiguration.OwnerChangeAfterDays} Tagen bei {ownerName} und seit mehr als {ruleConfiguration.OwnerChangeNoContactDays} Tagen ohne Kontakt. Leitung entscheidet; kein automatischer Besitzerwechsel.",
+                customer.LastContactAt?.AddDays(ruleConfiguration.OwnerChangeNoContactDays) ?? now,
+                customer.LifetimeRevenue,
+                null,
+                true));
+        }
+
+        if (scope is null || scope.AllowsRule("R-08"))
         foreach (var request in ownerChanges.Where(request => IsPendingOwnerChange(request.Status)))
         {
             var targetName = request.CustomerId is { } customerId
@@ -509,6 +1179,467 @@ public sealed class WorklistService(
         }
 
         return candidates;
+    }
+
+    private async Task<EvaluationScope> BuildFullEvaluationScopeAsync(
+        IReadOnlyCollection<CrmSynchronizationChange> changes,
+        CancellationToken cancellationToken)
+    {
+        var scope = new EvaluationScope { IsFullEvaluation = true };
+        var deletedChanges = changes
+            .Where(change => string.Equals(change.ChangeKind, "deleted", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (deletedChanges.Length == 0)
+            return scope;
+
+        var providerKeys = deletedChanges.Select(change => change.ProviderKey).Distinct().ToArray();
+        var connectionKeys = deletedChanges.Select(change => change.ConnectionKey).Distinct().ToArray();
+        var entityTypes = deletedChanges.Select(change => change.EntityType).Distinct().ToArray();
+        var externalIds = deletedChanges.Select(change => change.ExternalId).Distinct().ToArray();
+        var deletedKeys = deletedChanges
+            .Select(change => (change.ProviderKey, change.ConnectionKey, change.EntityType, change.ExternalId))
+            .ToHashSet();
+        var links = await db.IntegrationEntityLinks
+            .AsNoTracking()
+            .Where(link => providerKeys.Contains(link.ProviderKey)
+                && connectionKeys.Contains(link.ConnectionKey)
+                && entityTypes.Contains(link.EntityType)
+                && externalIds.Contains(link.ExternalId))
+            .Select(link => new
+            {
+                link.ProviderKey,
+                link.ConnectionKey,
+                link.EntityType,
+                link.ExternalId,
+                link.InternalEntityType,
+                link.InternalEntityId
+            })
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var link in links.Where(link => deletedKeys.Contains((
+                         link.ProviderKey,
+                         link.ConnectionKey,
+                         link.EntityType,
+                         link.ExternalId))))
+        {
+            scope.MarkDeleted(link.InternalEntityType, link.InternalEntityId);
+        }
+
+        return scope;
+    }
+
+    private async Task<EvaluationScope> BuildEvaluationScopeAsync(
+        IReadOnlyCollection<CrmSynchronizationChange> changes,
+        CancellationToken cancellationToken)
+    {
+        var scope = new EvaluationScope();
+        if (changes.Count == 0)
+            return scope;
+
+        var providerKeys = changes.Select(change => change.ProviderKey).Distinct().ToArray();
+        var connectionKeys = changes.Select(change => change.ConnectionKey).Distinct().ToArray();
+        var entityTypes = changes.Select(change => change.EntityType).Distinct().ToArray();
+        var externalIds = changes.Select(change => change.ExternalId).Distinct().ToArray();
+        var changedKeys = changes
+            .Select(change => (change.ProviderKey, change.ConnectionKey, change.EntityType, change.ExternalId))
+            .ToHashSet();
+        var deletedKeys = changes
+            .Where(change => string.Equals(change.ChangeKind, "deleted", StringComparison.OrdinalIgnoreCase))
+            .Select(change => (change.ProviderKey, change.ConnectionKey, change.EntityType, change.ExternalId))
+            .ToHashSet();
+        var links = await db.IntegrationEntityLinks
+            .AsNoTracking()
+            .Where(link => providerKeys.Contains(link.ProviderKey)
+                && connectionKeys.Contains(link.ConnectionKey)
+                && entityTypes.Contains(link.EntityType)
+                && externalIds.Contains(link.ExternalId))
+            .Select(link => new
+            {
+                link.ProviderKey,
+                link.ConnectionKey,
+                link.EntityType,
+                link.ExternalId,
+                link.InternalEntityType,
+                link.InternalEntityId
+            })
+            .ToArrayAsync(cancellationToken);
+
+        foreach (var link in links.Where(link => changedKeys.Contains((
+                         link.ProviderKey,
+                         link.ConnectionKey,
+                         link.EntityType,
+                         link.ExternalId))))
+        {
+            if (deletedKeys.Contains((link.ProviderKey, link.ConnectionKey, link.EntityType, link.ExternalId)))
+                scope.MarkDeleted(link.InternalEntityType, link.InternalEntityId);
+
+            switch (link.InternalEntityType)
+            {
+                case CrmEntityTypes.Customer:
+                    scope.Add(link.InternalEntityType, link.InternalEntityId, "R-07", "R-08", "R-10", "R-13");
+                    break;
+                case CrmEntityTypes.Contact:
+                    scope.Add(link.InternalEntityType, link.InternalEntityId);
+                    break;
+                case CrmEntityTypes.Lead:
+                    scope.Add(link.InternalEntityType, link.InternalEntityId, "R-01", "R-02", "R-03", "R-04", "R-07", "R-09");
+                    break;
+                case CrmEntityTypes.Deal:
+                    scope.Add(link.InternalEntityType, link.InternalEntityId, "R-05", "R-08", "R-11", "R-14");
+                    break;
+                case CrmEntityTypes.Contract:
+                    scope.Add(link.InternalEntityType, link.InternalEntityId, "R-06");
+                    break;
+                case CrmEntityTypes.Activity:
+                    scope.Add(link.InternalEntityType, link.InternalEntityId);
+                    break;
+                case CrmEntityTypes.Appointment:
+                    scope.Add(link.InternalEntityType, link.InternalEntityId, "R-12");
+                    break;
+                case CrmEntityTypes.ServiceCase:
+                    scope.Add(link.InternalEntityType, link.InternalEntityId, "R-15");
+                    break;
+                case CrmEntityTypes.Offer:
+                    scope.Add(link.InternalEntityType, link.InternalEntityId, "R-16");
+                    break;
+                case CrmEntityTypes.Order:
+                    scope.Add(link.InternalEntityType, link.InternalEntityId, "R-17");
+                    break;
+                case CrmEntityTypes.Invoice:
+                    scope.Add(link.InternalEntityType, link.InternalEntityId, "R-18");
+                    break;
+                case CrmEntityTypes.Product:
+                case CrmEntityTypes.ProductCategory:
+                    // A product/category change can alter the cross-selling
+                    // result for every active customer, but not the other
+                    // rules. This is intentionally a narrow broadening.
+                    scope.AllCustomersForCrossSell = true;
+                    scope.EnableRule("R-10");
+                    break;
+                case CrmEntityTypes.Pipeline:
+                case CrmEntityTypes.PipelineStage:
+                case CrmEntityTypes.DealStageHistory:
+                    scope.Add(link.InternalEntityType, link.InternalEntityId);
+                    break;
+                case CrmEntityTypes.Owner:
+                    scope.Add(link.InternalEntityType, link.InternalEntityId, "R-11");
+                    scope.OwnerIds.Add(link.InternalEntityId);
+                    break;
+            }
+        }
+
+        var contactIds = scope.Ids(CrmEntityTypes.Contact);
+        if (contactIds.Length > 0)
+        {
+            var contacts = await db.SalesContacts
+                .AsNoTracking()
+                .Where(contact => contactIds.Contains(contact.Id))
+                .Select(contact => contact.CustomerId)
+                .ToArrayAsync(cancellationToken);
+            foreach (var customerId in contacts.Where(id => id.HasValue).Select(id => id!.Value))
+                scope.Add(CrmEntityTypes.Customer, customerId, "R-07", "R-08", "R-10", "R-13");
+
+            var contactServiceCases = await db.SalesServiceCases
+                .AsNoTracking()
+                .Where(serviceCase => serviceCase.ContactId.HasValue && contactIds.Contains(serviceCase.ContactId.Value))
+                .Select(serviceCase => serviceCase.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var serviceCaseId in contactServiceCases)
+                scope.Add(CrmEntityTypes.ServiceCase, serviceCaseId, "R-15");
+
+            var contactOffers = await db.SalesOffers
+                .AsNoTracking()
+                .Where(offer => offer.ContactId.HasValue && contactIds.Contains(offer.ContactId.Value))
+                .Select(offer => offer.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var offerId in contactOffers)
+                scope.Add(CrmEntityTypes.Offer, offerId, "R-16");
+        }
+
+        var leadIds = scope.Ids(CrmEntityTypes.Lead);
+        if (leadIds.Length > 0)
+        {
+            var leadCustomers = await db.SalesLeads
+                .AsNoTracking()
+                .Where(lead => leadIds.Contains(lead.Id))
+                .Select(lead => lead.CustomerId)
+                .ToArrayAsync(cancellationToken);
+            foreach (var customerId in leadCustomers.Where(id => id.HasValue).Select(id => id!.Value))
+                scope.Add(CrmEntityTypes.Customer, customerId, "R-07", "R-08", "R-10", "R-13");
+        }
+
+        var activityIds = scope.Ids(CrmEntityTypes.Activity);
+        if (activityIds.Length > 0)
+        {
+            var activityRelations = await db.SalesActivityRelations
+                .AsNoTracking()
+                .Where(relation => activityIds.Contains(relation.ActivityId))
+                .ToArrayAsync(cancellationToken);
+            foreach (var relation in activityRelations)
+            {
+                switch (relation.TargetType)
+                {
+                    case CrmEntityTypes.Customer:
+                        scope.Add(relation.TargetType, relation.TargetId, "R-07", "R-08", "R-13");
+                        break;
+                    case CrmEntityTypes.Lead:
+                        scope.Add(relation.TargetType, relation.TargetId, "R-01", "R-02", "R-03", "R-04", "R-07", "R-09");
+                        break;
+                    case CrmEntityTypes.Deal:
+                        scope.Add(relation.TargetType, relation.TargetId, "R-05", "R-08", "R-11", "R-14");
+                        break;
+                    case CrmEntityTypes.Contact:
+                        scope.Add(relation.TargetType, relation.TargetId);
+                        break;
+                }
+            }
+
+            var relationContactIds = activityRelations
+                .Where(relation => relation.TargetType == CrmEntityTypes.Contact)
+                .Select(relation => relation.TargetId)
+                .Distinct()
+                .ToArray();
+            if (relationContactIds.Length > 0)
+            {
+                var relationCustomers = await db.SalesContacts
+                    .AsNoTracking()
+                    .Where(contact => relationContactIds.Contains(contact.Id))
+                    .Select(contact => contact.CustomerId)
+                    .ToArrayAsync(cancellationToken);
+                foreach (var customerId in relationCustomers.Where(id => id.HasValue).Select(id => id!.Value))
+                    scope.Add(CrmEntityTypes.Customer, customerId, "R-07", "R-08", "R-13");
+            }
+        }
+
+        var ownerIds = scope.OwnerIds.ToArray();
+        if (ownerIds.Length > 0)
+        {
+            var ownerCustomers = await db.SalesCustomers
+                .AsNoTracking()
+                .Where(customer => customer.OwnerId.HasValue && ownerIds.Contains(customer.OwnerId.Value))
+                .Select(customer => customer.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var customerId in ownerCustomers)
+                scope.Add(CrmEntityTypes.Customer, customerId, "R-07", "R-08", "R-10", "R-13");
+
+            var ownerLeads = await db.SalesLeads
+                .AsNoTracking()
+                .Where(lead => lead.OwnerId.HasValue && ownerIds.Contains(lead.OwnerId.Value))
+                .Select(lead => lead.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var leadId in ownerLeads)
+                scope.Add(CrmEntityTypes.Lead, leadId, "R-01", "R-02", "R-03", "R-04", "R-07", "R-09");
+
+            var ownerDeals = await db.SalesDeals
+                .AsNoTracking()
+                .Where(deal => deal.OwnerId.HasValue && ownerIds.Contains(deal.OwnerId.Value))
+                .Select(deal => deal.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var dealId in ownerDeals)
+                scope.Add(CrmEntityTypes.Deal, dealId, "R-05", "R-08", "R-11", "R-14");
+
+            var ownerContracts = await db.SalesContracts
+                .AsNoTracking()
+                .Where(contract => contract.OwnerId.HasValue && ownerIds.Contains(contract.OwnerId.Value))
+                .Select(contract => contract.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var contractId in ownerContracts)
+                scope.Add(CrmEntityTypes.Contract, contractId, "R-06");
+
+            var ownerAppointments = await db.SalesAppointments
+                .AsNoTracking()
+                .Where(appointment => appointment.OwnerId.HasValue && ownerIds.Contains(appointment.OwnerId.Value))
+                .Select(appointment => appointment.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var appointmentId in ownerAppointments)
+                scope.Add(CrmEntityTypes.Appointment, appointmentId, "R-12");
+
+            var ownerServiceCases = await db.SalesServiceCases
+                .AsNoTracking()
+                .Where(serviceCase => serviceCase.OwnerId.HasValue && ownerIds.Contains(serviceCase.OwnerId.Value))
+                .Select(serviceCase => serviceCase.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var serviceCaseId in ownerServiceCases)
+                scope.Add(CrmEntityTypes.ServiceCase, serviceCaseId, "R-15");
+
+            var ownerOffers = await db.SalesOffers
+                .AsNoTracking()
+                .Where(offer => offer.OwnerId.HasValue && ownerIds.Contains(offer.OwnerId.Value))
+                .Select(offer => offer.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var offerId in ownerOffers)
+                scope.Add(CrmEntityTypes.Offer, offerId, "R-16");
+
+            var ownerOrders = await db.SalesOrders
+                .AsNoTracking()
+                .Where(order => order.OwnerId.HasValue && ownerIds.Contains(order.OwnerId.Value))
+                .Select(order => order.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var orderId in ownerOrders)
+                scope.Add(CrmEntityTypes.Order, orderId, "R-17");
+
+            var ownerInvoices = await db.SalesInvoices
+                .AsNoTracking()
+                .Where(invoice => invoice.OwnerId.HasValue && ownerIds.Contains(invoice.OwnerId.Value))
+                .Select(invoice => invoice.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var invoiceId in ownerInvoices)
+                scope.Add(CrmEntityTypes.Invoice, invoiceId, "R-18");
+        }
+
+        var pipelineIds = scope.Ids(CrmEntityTypes.Pipeline);
+        var stageIds = scope.Ids(CrmEntityTypes.PipelineStage);
+        var historyIds = scope.Ids(CrmEntityTypes.DealStageHistory);
+        var historyDealIds = historyIds.Length == 0
+            ? Array.Empty<Guid>()
+            : await db.SalesDealStageHistory
+                .AsNoTracking()
+                .Where(history => historyIds.Contains(history.Id))
+                .Select(history => history.DealId)
+                .ToArrayAsync(cancellationToken);
+        var pipelineDealIds = pipelineIds.Length == 0 && stageIds.Length == 0
+            ? Array.Empty<Guid>()
+            : await db.SalesDeals
+                .AsNoTracking()
+                .Where(deal => (deal.PipelineId.HasValue && pipelineIds.Contains(deal.PipelineId.Value))
+                    || (deal.PipelineStageId.HasValue && stageIds.Contains(deal.PipelineStageId.Value)))
+                .Select(deal => deal.Id)
+                .ToArrayAsync(cancellationToken);
+        foreach (var dealId in historyDealIds.Concat(pipelineDealIds).Distinct())
+                scope.Add(CrmEntityTypes.Deal, dealId, "R-05", "R-08", "R-11", "R-14");
+
+        var customerIds = scope.Ids(CrmEntityTypes.Customer);
+        if (customerIds.Length > 0)
+        {
+            var customerDeals = await db.SalesDeals
+                .AsNoTracking()
+                .Where(deal => deal.CustomerId.HasValue && customerIds.Contains(deal.CustomerId.Value))
+                .Select(deal => deal.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var dealId in customerDeals)
+                scope.Add(CrmEntityTypes.Deal, dealId, "R-05", "R-08", "R-11", "R-14");
+
+            var customerContracts = await db.SalesContracts
+                .AsNoTracking()
+                .Where(contract => customerIds.Contains(contract.CustomerId))
+                .Select(contract => contract.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var contractId in customerContracts)
+                scope.Add(CrmEntityTypes.Contract, contractId, "R-06");
+
+            var customerServiceCases = await db.SalesServiceCases
+                .AsNoTracking()
+                .Where(serviceCase => serviceCase.CustomerId.HasValue && customerIds.Contains(serviceCase.CustomerId.Value))
+                .Select(serviceCase => serviceCase.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var serviceCaseId in customerServiceCases)
+                scope.Add(CrmEntityTypes.ServiceCase, serviceCaseId, "R-15");
+
+            var customerOffers = await db.SalesOffers
+                .AsNoTracking()
+                .Where(offer => offer.CustomerId.HasValue && customerIds.Contains(offer.CustomerId.Value))
+                .Select(offer => offer.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var offerId in customerOffers)
+                scope.Add(CrmEntityTypes.Offer, offerId, "R-16");
+
+            var customerOrders = await db.SalesOrders
+                .AsNoTracking()
+                .Where(order => order.CustomerId.HasValue && customerIds.Contains(order.CustomerId.Value))
+                .Select(order => order.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var orderId in customerOrders)
+                scope.Add(CrmEntityTypes.Order, orderId, "R-17");
+
+            var customerInvoices = await db.SalesInvoices
+                .AsNoTracking()
+                .Where(invoice => invoice.CustomerId.HasValue && customerIds.Contains(invoice.CustomerId.Value))
+                .Select(invoice => invoice.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var invoiceId in customerInvoices)
+                scope.Add(CrmEntityTypes.Invoice, invoiceId, "R-18");
+        }
+
+        var dealIds = scope.Ids(CrmEntityTypes.Deal);
+        if (dealIds.Length > 0)
+        {
+            var dealCustomers = await db.SalesDeals
+                .AsNoTracking()
+                .Where(deal => dealIds.Contains(deal.Id))
+                .Select(deal => deal.CustomerId)
+                .ToArrayAsync(cancellationToken);
+            foreach (var customerId in dealCustomers.Where(id => id.HasValue).Select(id => id!.Value))
+                scope.Add(CrmEntityTypes.Customer, customerId, "R-07", "R-08", "R-10", "R-13");
+
+            var dealOwners = await db.SalesDeals
+                .AsNoTracking()
+                .Where(deal => dealIds.Contains(deal.Id) && deal.OwnerId.HasValue)
+                .Select(deal => deal.OwnerId!.Value)
+                .ToArrayAsync(cancellationToken);
+            foreach (var ownerId in dealOwners)
+            {
+                scope.OwnerIds.Add(ownerId);
+                scope.Add(CrmEntityTypes.Owner, ownerId, "R-11");
+            }
+
+            var dealContracts = await db.SalesContracts
+                .AsNoTracking()
+                .Where(contract => contract.DealId.HasValue && dealIds.Contains(contract.DealId.Value))
+                .Select(contract => contract.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var contractId in dealContracts)
+                scope.Add(CrmEntityTypes.Contract, contractId, "R-06");
+
+            var dealServiceCases = await db.SalesServiceCases
+                .AsNoTracking()
+                .Where(serviceCase => serviceCase.DealId.HasValue && dealIds.Contains(serviceCase.DealId.Value))
+                .Select(serviceCase => serviceCase.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var serviceCaseId in dealServiceCases)
+                scope.Add(CrmEntityTypes.ServiceCase, serviceCaseId, "R-15");
+
+            var dealOffers = await db.SalesOffers
+                .AsNoTracking()
+                .Where(offer => offer.DealId.HasValue && dealIds.Contains(offer.DealId.Value))
+                .Select(offer => offer.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var offerId in dealOffers)
+                scope.Add(CrmEntityTypes.Offer, offerId, "R-16");
+
+            var dealOrders = await db.SalesOrders
+                .AsNoTracking()
+                .Where(order => order.DealId.HasValue && dealIds.Contains(order.DealId.Value))
+                .Select(order => order.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var orderId in dealOrders)
+                scope.Add(CrmEntityTypes.Order, orderId, "R-17");
+
+            var dealInvoices = await db.SalesInvoices
+                .AsNoTracking()
+                .Where(invoice => invoice.DealId.HasValue && dealIds.Contains(invoice.DealId.Value))
+                .Select(invoice => invoice.Id)
+                .ToArrayAsync(cancellationToken);
+            foreach (var invoiceId in dealInvoices)
+                scope.Add(CrmEntityTypes.Invoice, invoiceId, "R-18");
+        }
+
+        var contractIds = scope.Ids(CrmEntityTypes.Contract);
+        if (contractIds.Length > 0)
+        {
+            var contractCustomers = await db.SalesContracts
+                .AsNoTracking()
+                .Where(contract => contractIds.Contains(contract.Id))
+                .Select(contract => new { contract.CustomerId, contract.DealId })
+                .ToArrayAsync(cancellationToken);
+            foreach (var contract in contractCustomers)
+            {
+                scope.Add(CrmEntityTypes.Customer, contract.CustomerId, "R-07", "R-08", "R-10", "R-13");
+                if (contract.DealId.HasValue)
+                    scope.Add(CrmEntityTypes.Deal, contract.DealId.Value, "R-05", "R-08", "R-11", "R-14");
+            }
+        }
+
+        return scope;
     }
 
     private async Task<Guid?> ResolveOwnerIdAsync(ClaimsPrincipal user, CancellationToken cancellationToken)
@@ -536,10 +1667,21 @@ public sealed class WorklistService(
             "contract-renewal-critical" => 100m,
             "lead-first-response" => 95m,
             "deal-stalled" => 80m,
+            "call-not-reachable" => 100m,
+            "call-email-follow-up" => 95m,
+            "call-long-runner" => 80m,
+            "call-follow-up" => 70m,
+            "target-pace-gap" => 100m,
+            "deal-reactivation" => 70m,
+            "account-care" => 40m,
             "contract-renewal" => 70m,
             "ownership-change" => 50m,
             "appointment-rescheduled" => 45m,
             "customer-stale" => 30m,
+            "service-case-overdue" => 100m,
+            "invoice-overdue" => 100m,
+            "order-overdue" => 90m,
+            "offer-follow-up" => 70m,
             _ => 10m
         };
         var now = DateTimeOffset.UtcNow;
@@ -552,10 +1694,53 @@ public sealed class WorklistService(
         return Math.Round(baseScore + ageBonus + valueBonus, 2);
     }
 
-    private static WorklistItemDto ToDto(SalesWorkItem item)
+    private async Task<IReadOnlyDictionary<(string EntityType, Guid EntityId), string>> ResolveExternalUrlsAsync(
+        IReadOnlyCollection<SalesWorkItem> items,
+        CancellationToken cancellationToken)
+    {
+        var targets = items
+            .SelectMany(item => item.Relations)
+            .Select(relation => (relation.TargetType, relation.TargetId))
+            .Distinct()
+            .ToArray();
+        if (targets.Length == 0)
+            return new Dictionary<(string EntityType, Guid EntityId), string>();
+
+        var targetIds = targets.Select(target => target.TargetId).Distinct().ToArray();
+        var links = await db.IntegrationEntityLinks
+            .AsNoTracking()
+            .Where(link => link.SourceDeletedAt == null
+                && link.ExternalUrl != null
+                && targetIds.Contains(link.InternalEntityId))
+            .Select(link => new
+            {
+                link.InternalEntityType,
+                link.InternalEntityId,
+                link.ExternalUrl,
+                link.LastSeenAt
+            })
+            .ToArrayAsync(cancellationToken);
+
+        return links
+            .Where(link => targets.Contains((link.InternalEntityType, link.InternalEntityId))
+                && !string.IsNullOrWhiteSpace(link.ExternalUrl))
+            .GroupBy(link => (link.InternalEntityType, link.InternalEntityId))
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderByDescending(link => link.LastSeenAt).First().ExternalUrl!);
+    }
+
+    private static WorklistItemDto ToDto(
+        SalesWorkItem item,
+        IReadOnlyDictionary<(string EntityType, Guid EntityId), string>? externalUrls = null)
     {
         var relation = item.Relations.FirstOrDefault(relation => relation.RelationRole == "primary")
             ?? item.Relations.FirstOrDefault();
+        var externalUrl = relation is not null
+            && externalUrls is not null
+            && externalUrls.TryGetValue((relation.TargetType, relation.TargetId), out var resolvedUrl)
+                ? resolvedUrl
+                : null;
         return new WorklistItemDto(
             item.Id,
             item.WorkItemType,
@@ -571,7 +1756,9 @@ public sealed class WorklistService(
             item.SourceRuleCode,
             relation?.TargetType,
             relation?.TargetId,
+            externalUrl,
             item.CreatedAt,
+            item.AvailableFrom,
             item.SnoozedUntil,
             item.RequiresApproval);
     }
@@ -579,14 +1766,189 @@ public sealed class WorklistService(
     private static string PriorityBand(decimal score)
         => score >= 100 ? "critical" : score >= 70 ? "high" : score >= 40 ? "medium" : "low";
 
+    private static bool IsActiveStatus(string? status)
+        => status is WorkItemStatuses.Open
+            or WorkItemStatuses.Scheduled
+            or WorkItemStatuses.Snoozed;
+
     private static bool IsOpenStatus(string? status)
         => !status.IsOneOf("won", "closed", "closed_won", "lost", "closed_lost", "converted", "cancelled", "canceled", "expired", "terminated", "rejected", "completed", "done", "archived");
+
+    private static bool IsOpenInvoice(string? status)
+        => !status.IsOneOf("paid", "paid_in_full", "settled", "closed", "cancelled", "canceled", "void", "written_off", "written-off");
+
+    private static bool IsUrgentPriority(string? priority)
+        => priority.IsOneOf("urgent", "critical", "high", "sehr hoch", "hoch");
 
     private static bool IsWonStatus(string? status)
         => status.IsOneOf("won", "closed_won", "converted");
 
+    private static bool IsLostStatus(string? status)
+        => status.IsOneOf("lost", "closed_lost");
+
+    private static bool IsReactivationLossReason(string? lossReason)
+        => lossReason is not null
+            && (lossReason.Contains("timing", StringComparison.OrdinalIgnoreCase)
+                || lossReason.Contains("budget", StringComparison.OrdinalIgnoreCase)
+                || lossReason.Contains("zeit", StringComparison.OrdinalIgnoreCase)
+                || lossReason.Contains("budget", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsRevenueTargetType(string? targetType)
+        => targetType is not null
+            && (targetType.Contains("revenue", StringComparison.OrdinalIgnoreCase)
+                || targetType.Contains("umsatz", StringComparison.OrdinalIgnoreCase)
+                || targetType.Contains("sales", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsOwnerChangeStage(SalesPipelineStage? stage)
+        => stage is not null
+            && (stage.Name.Contains("agent wechsel", StringComparison.OrdinalIgnoreCase)
+                || stage.StageType.Contains("agent wechsel", StringComparison.OrdinalIgnoreCase)
+                || stage.Key.Contains("agent wechsel", StringComparison.OrdinalIgnoreCase)
+                || stage.Name.Contains("owner change", StringComparison.OrdinalIgnoreCase)
+                || stage.StageType.Contains("owner change", StringComparison.OrdinalIgnoreCase)
+                || stage.Key.Contains("owner change", StringComparison.OrdinalIgnoreCase));
+
     private static bool IsPendingOwnerChange(string? status)
         => status.IsOneOf("pending", "open", "requested", "proposed", "new");
+
+    private async Task<SalesWorkCalendar?> LoadWorkingCalendarAsync(CancellationToken cancellationToken)
+        => await db.SalesWorkCalendars
+            .AsNoTracking()
+            .Include(calendar => calendar.WorkingHours)
+            .Include(calendar => calendar.Holidays)
+            .Where(calendar => calendar.IsDefault && calendar.IsActive)
+            .OrderBy(calendar => calendar.Name)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private static DateTimeOffset AddWorkingHours(
+        DateTimeOffset start,
+        decimal hours,
+        SalesWorkCalendar? calendar)
+    {
+        if (hours <= 0)
+            return start;
+        if (calendar is null)
+            return start.AddHours((double)hours);
+
+        var timeZone = ResolveTimeZone(calendar.TimeZone);
+        var cursor = start;
+        var remaining = (double)hours;
+        for (var day = 0; day < 3700 && remaining > 0; day++)
+        {
+            var localDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(cursor, timeZone).DateTime.Date);
+            foreach (var interval in WorkingIntervals(localDate, calendar, timeZone))
+            {
+                if (interval.End <= cursor)
+                    continue;
+
+                var intervalStart = interval.Start > cursor ? interval.Start : cursor;
+                var availableHours = (interval.End - intervalStart).TotalHours;
+                if (remaining <= availableHours)
+                    return intervalStart.AddHours(remaining);
+
+                remaining -= availableHours;
+            }
+
+            cursor = StartOfLocalDay(localDate.AddDays(1), timeZone);
+        }
+
+        return start.AddHours((double)hours);
+    }
+
+    private static double CalculateWorkingHours(
+        DateTimeOffset start,
+        DateTimeOffset end,
+        SalesWorkCalendar? calendar)
+    {
+        if (end <= start)
+            return 0;
+        if (calendar is null)
+            return (end - start).TotalHours;
+
+        var timeZone = ResolveTimeZone(calendar.TimeZone);
+        var totalHours = 0d;
+        var localStart = TimeZoneInfo.ConvertTime(start, timeZone).Date;
+        var localEnd = TimeZoneInfo.ConvertTime(end, timeZone).Date;
+        for (var date = DateOnly.FromDateTime(localStart); date <= DateOnly.FromDateTime(localEnd); date = date.AddDays(1))
+        {
+            foreach (var interval in WorkingIntervals(date, calendar, timeZone))
+            {
+                var overlapStart = interval.Start > start ? interval.Start : start;
+                var overlapEnd = interval.End < end ? interval.End : end;
+                if (overlapEnd > overlapStart)
+                    totalHours += (overlapEnd - overlapStart).TotalHours;
+            }
+        }
+
+        return totalHours;
+    }
+
+    private static IReadOnlyCollection<(DateTimeOffset Start, DateTimeOffset End)> WorkingIntervals(
+        DateOnly date,
+        SalesWorkCalendar calendar,
+        TimeZoneInfo timeZone)
+    {
+        var holiday = calendar.Holidays.FirstOrDefault(item => item.Date == date);
+        if (holiday is not null && !holiday.IsWorkingDayOverride)
+            return [];
+
+        var hours = calendar.WorkingHours.FirstOrDefault(item => item.DayOfWeek == (int)date.DayOfWeek);
+        if (hours is { IsWorkingDay: false })
+            return [];
+
+        var start = hours?.StartAt ?? (date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday
+            ? null
+            : new TimeSpan(9, 0, 0));
+        var end = hours?.EndAt ?? (date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday
+            ? null
+            : new TimeSpan(17, 0, 0));
+        if (!start.HasValue || !end.HasValue || end <= start)
+            return [];
+
+        var dayStart = AtLocalTime(date, start.Value, timeZone);
+        var dayEnd = AtLocalTime(date, end.Value, timeZone);
+        if (hours?.BreakStartAt is { } breakStart
+            && hours.BreakEndAt is { } breakEnd
+            && breakStart > start
+            && breakEnd < end
+            && breakEnd > breakStart)
+        {
+            return [
+                (dayStart, AtLocalTime(date, breakStart, timeZone)),
+                (AtLocalTime(date, breakEnd, timeZone), dayEnd)
+            ];
+        }
+
+        return [(dayStart, dayEnd)];
+    }
+
+    private static DateTimeOffset StartOfLocalDay(DateOnly date, TimeZoneInfo timeZone)
+        => AtLocalTime(date, TimeSpan.Zero, timeZone);
+
+    private static DateTimeOffset AtLocalTime(DateOnly date, TimeSpan time, TimeZoneInfo timeZone)
+    {
+        var local = DateTime.SpecifyKind(date.ToDateTime(TimeOnly.FromTimeSpan(time)), DateTimeKind.Unspecified);
+        return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(local, timeZone));
+    }
+
+    private static TimeZoneInfo ResolveTimeZone(string? timeZoneId)
+    {
+        if (!string.IsNullOrWhiteSpace(timeZoneId))
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
+            catch (InvalidTimeZoneException)
+            {
+            }
+        }
+
+        return TimeZoneInfo.Utc;
+    }
 
     private static string FormatAge(DateTimeOffset from, DateTimeOffset now)
     {
@@ -610,6 +1972,7 @@ public sealed class WorklistService(
             Id = Guid.NewGuid(),
             TenantId = item.TenantId,
             WorkItemId = item.Id,
+            WorkItem = item,
             EventType = eventType,
             DetailsJson = JsonSerializer.Serialize(details),
             ActorSubject = actorSubject,
@@ -638,12 +2001,92 @@ public sealed class WorklistService(
         });
 
     private static string SerializeState(SalesWorkItem item)
-        => JsonSerializer.Serialize(new { item.Status, item.CompletedAt, item.CompletedBy, item.SnoozedUntil, item.UpdatedAt });
+        => JsonSerializer.Serialize(new
+        {
+            item.Status,
+            item.CompletedAt,
+            item.CompletedBy,
+            item.AvailableFrom,
+            item.SnoozedUntil,
+            item.WorkItemChainId,
+            item.PreviousWorkItemId,
+            item.ClosureReason,
+            item.UpdatedAt
+        });
 
     private static ActorInfo Actor(ClaimsPrincipal user)
         => new(
             user.FindFirstValue("sub"),
             user.FindFirstValue("name") ?? user.FindFirstValue(ClaimTypes.Name) ?? user.FindFirstValue(ClaimTypes.Email));
+
+    private sealed class EvaluationScope
+    {
+        private readonly Dictionary<(string EntityType, Guid EntityId), HashSet<string>> targets = [];
+        private readonly HashSet<string> enabledRules = [];
+
+        public HashSet<Guid> OwnerIds { get; } = [];
+
+        public bool AllCustomersForCrossSell { get; set; }
+
+        public bool IsFullEvaluation { get; set; }
+
+        private readonly HashSet<(string EntityType, Guid EntityId)> deletedTargets = [];
+
+        public bool IsEmpty
+            => !AllCustomersForCrossSell
+                && enabledRules.Count == 0
+                && targets.Values.All(rules => rules.Count == 0);
+
+        public void Add(string entityType, Guid entityId, params string[] rules)
+        {
+            if (!targets.TryGetValue((entityType, entityId), out var targetRules))
+            {
+                targetRules = [];
+                targets.Add((entityType, entityId), targetRules);
+            }
+
+            foreach (var rule in rules)
+                targetRules.Add(rule);
+        }
+
+        public void EnableRule(string ruleCode)
+            => enabledRules.Add(ruleCode);
+
+        public void MarkDeleted(string entityType, Guid entityId)
+            => deletedTargets.Add((entityType, entityId));
+
+        public bool IsDeletedTarget(SalesWorkItem item)
+            => item.Relations.Any(relation => deletedTargets.Contains((relation.TargetType, relation.TargetId)));
+
+        public Guid[] Ids(string entityType)
+            => targets.Keys
+                .Where(target => target.EntityType == entityType && target.EntityId != Guid.Empty)
+                .Select(target => target.EntityId)
+                .Distinct()
+                .ToArray();
+
+        public bool AllowsRule(string ruleCode)
+            => IsFullEvaluation
+                || enabledRules.Contains(ruleCode)
+                || AllCustomersForCrossSell && ruleCode == "R-10"
+                || targets.Values.Any(rules => rules.Contains(ruleCode));
+
+        public bool Matches(SalesWorkItem item)
+            => IsFullEvaluation
+                || item.SourceRuleCode is not null
+                && item.Relations.Any(relation => Matches(
+                    relation.TargetType,
+                    relation.TargetId,
+                    item.SourceRuleCode));
+
+        public bool Matches(string targetType, Guid targetId, string ruleCode)
+            => IsFullEvaluation
+                || ruleCode == "R-10"
+                && AllCustomersForCrossSell
+                && targetType == CrmEntityTypes.Customer
+                || targets.TryGetValue((targetType, targetId), out var rules)
+                    && rules.Contains(ruleCode);
+    }
 
     private sealed record WorklistCandidate(
         string WorkItemType,
@@ -673,33 +2116,58 @@ public sealed class WorklistService(
 
     private static readonly RuleDefinitionSeed[] DefaultRules =
     [
+        new("R-01", "Anruf-Folgeaktion", "Anrufversuch ohne qualifiziertes Gespräch; nächster Versuch nach 14 Tagen.", new { maxAttempts = 5, intervalDays = 14 }),
+        new("R-02", "E-Mail nach fünf Versuchen", "Fünfter Anrufversuch ohne qualifiziertes Gespräch; E-Mail-Vorlage und Wiedervorlage vorschlagen.", new { attempts = 5, intervalDays = 14 }),
+        new("R-03", "Anruf-Langläufer", "Sechs bis zehn Anrufversuche ohne qualifiziertes Gespräch; 30-Tage-Intervall.", new { minAttempts = 6, maxAttempts = 10, intervalDays = 30 }),
+        new("R-04", "Nicht erreichbar vorschlagen", "Mehr als zehn Anrufversuche ohne qualifiziertes Gespräch; keine automatische CRM-Statusänderung.", new { minAttempts = 11, requiresApproval = true }),
         new("R-05", "Deal ohne Aktivität", "Offener Deal ohne dokumentierte Aktivität seit mehr als 30 Tagen.", new { inactiveDays = 30 }),
         new("R-06", "Vertragsverlängerung", "Aktiver Vertrag endet innerhalb der nächsten 90 Tage.", new { horizonDays = 90, criticalDays = 30 }),
-        new("R-07", "Kundenkontakt überfällig", "Kein Kontakt oder letzter Kontakt liegt mehr als drei Monate zurück.", new { inactiveMonths = 3 }),
+        new("R-07", "Kundenkontakt überfällig", "Kein Kontakt oder letzter Kontakt liegt mehr als 90 Tage zurück.", new { inactiveDays = 90 }),
         new("R-09", "Lead-Erstreaktion", "Neuer Lead ohne dokumentierte Aktivität nach einer Stunde.", new { responseHours = 1 }),
         new("R-08", "Zuständigkeit klären", "Offener Vorschlag zur Änderung der Zuständigkeit.", new { }),
         new("R-10", "Cross-Selling", "Aktiver Kunde ohne Deal oder Vertrag in einer Produktkategorie.", new { }),
-        new("R-12", "Termin mehrfach verschoben", "Termin wurde mindestens dreimal verschoben.", new { minimumReschedules = 3 })
+        new("R-11", "Ziel-Pace", "Zielerreichung liegt mehr als 15 Punkte unter dem zeitanteiligen Ziel.", new { gapPoints = 15 }),
+        new("R-12", "Termin mehrfach verschoben", "Termin wurde mindestens dreimal verschoben.", new { minimumReschedules = 3 }),
+        new("R-13", "Account Care", "Aktiver Kunde mit Umsatzhistorie und mehr als 90 Tagen ohne Telefonat.", new { inactiveDays = 90 }),
+        new("R-14", "Deal reaktivieren", "Verlorener Deal mit Timing- oder Budgetgrund und einem Alter von mehr als 90 Tagen kann reaktiviert werden.", new { ageDays = 90 }),
+        new("R-15", "Servicefall bearbeiten", "Offener oder dringender Servicefall ohne rechtzeitige Bearbeitung.", new { responseDays = 2 }),
+        new("R-16", "Angebot nachfassen", "Gesendetes Angebot ohne Entscheidung nach sieben Tagen.", new { followUpDays = 7 }),
+        new("R-17", "Lieferverzug", "Offener Auftrag nach Überschreitung des zugesagten Liefertermins.", new { escalationDays = 1 }),
+        new("R-18", "Rechnung überfällig", "Offene Rechnung nach dem Fälligkeitsdatum.", new { graceDays = 0 })
     ];
 
     private static readonly IReadOnlyDictionary<string, string> WorkItemTypeNames = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["contract-renewal-critical"] = "Vertrag läuft bald aus",
         ["lead-first-response"] = "Neuer Lead ohne Erstreaktion",
+        ["call-follow-up"] = "Anruf-Folgeaktion",
+        ["call-email-follow-up"] = "E-Mail nach fünf Anrufversuchen",
+        ["call-long-runner"] = "Anruf-Langläufer",
+        ["call-not-reachable"] = "Nicht erreichbar prüfen",
+        ["target-pace-gap"] = "Zielabweichung prüfen",
         ["deal-stalled"] = "Deal ohne Aktivität",
+        ["deal-reactivation"] = "Verlorenen Deal reaktivieren",
         ["contract-renewal"] = "Vertragsverlängerung",
         ["ownership-change"] = "Zuständigkeit klären",
         ["cross-sell"] = "Cross-Selling-Chance",
         ["appointment-rescheduled"] = "Termin mehrfach verschoben",
-        ["customer-stale"] = "Kundenkontakt überfällig"
+        ["customer-stale"] = "Kundenkontakt überfällig",
+        ["lead-reactivation"] = "Lead reaktivieren",
+        ["account-care"] = "Account Care",
+        ["service-case-overdue"] = "Servicefall bearbeiten",
+        ["offer-follow-up"] = "Angebot nachfassen",
+        ["order-overdue"] = "Lieferverzug prüfen",
+        ["invoice-overdue"] = "Überfällige Rechnung prüfen"
     };
 
     private static class WorkItemStatuses
     {
         public const string Open = "open";
+        public const string Scheduled = "scheduled";
         public const string Snoozed = "snoozed";
         public const string Completed = "completed";
         public const string Resolved = "resolved";
+        public const string Closed = "closed";
     }
 
     private static class RuleRunStatuses
@@ -708,6 +2176,12 @@ public sealed class WorklistService(
         public const string Running = "running";
     }
 }
+
+public sealed record WorklistEvaluationResult(
+    int EvaluatedCount,
+    int CreatedCount,
+    int ResolvedCount,
+    bool FullEvaluation);
 
 public sealed record WorklistResponse(
     DateTimeOffset GeneratedAt,
@@ -731,11 +2205,13 @@ public sealed record WorklistItemDto(
     string? SourceRuleCode,
     string? TargetType,
     Guid? TargetId,
+    string? ExternalUrl,
     DateTimeOffset CreatedAt,
+    DateTimeOffset? AvailableFrom,
     DateTimeOffset? SnoozedUntil,
     bool RequiresApproval);
 
-public sealed record SnoozeWorklistItemRequest(DateTimeOffset Until);
+public sealed record SnoozeWorklistItemRequest(DateTimeOffset? Until = null, bool Tomorrow = false);
 
 internal static class StringStatusExtensions
 {

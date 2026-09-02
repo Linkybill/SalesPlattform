@@ -118,6 +118,7 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
     public async Task UpsertAsync(
         CrmCanonicalRecord record,
         Guid syncRunId,
+        int callConversationThresholdSeconds,
         CancellationToken cancellationToken)
     {
         var raw = await db.IntegrationRawRecords
@@ -148,6 +149,7 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
             raw.PayloadJson = record.Payload.GetRawText();
             raw.ExternalModifiedAt = record.ModifiedAt;
             raw.LastSeenAt = DateTimeOffset.UtcNow;
+            raw.SourceDeletedAt = null;
             raw.SyncRunId = syncRunId;
             raw.SyncedAt = DateTimeOffset.UtcNow;
         }
@@ -188,10 +190,22 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
                 await UpsertContractAsync(contract, cancellationToken);
                 break;
             case CrmCanonicalActivity activity:
-                await UpsertActivityAsync(activity, cancellationToken);
+                await UpsertActivityAsync(activity, callConversationThresholdSeconds, cancellationToken);
                 break;
             case CrmCanonicalAppointment appointment:
                 await UpsertAppointmentAsync(appointment, cancellationToken);
+                break;
+            case CrmCanonicalServiceCase serviceCase:
+                await UpsertServiceCaseAsync(serviceCase, cancellationToken);
+                break;
+            case CrmCanonicalOffer offer:
+                await UpsertOfferAsync(offer, cancellationToken);
+                break;
+            case CrmCanonicalOrder order:
+                await UpsertOrderAsync(order, cancellationToken);
+                break;
+            case CrmCanonicalInvoice invoice:
+                await UpsertInvoiceAsync(invoice, cancellationToken);
                 break;
             default:
                 throw new InvalidOperationException(
@@ -236,7 +250,7 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
             .Select(item => item.ExternalId)
             .ToArrayAsync(cancellationToken);
 
-    public async Task MarkDeletedAsync(
+    public async Task<bool> MarkDeletedAsync(
         CrmDeletedRecord record,
         Guid syncRunId,
         CancellationToken cancellationToken)
@@ -246,8 +260,8 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
                 && item.ConnectionKey == record.ConnectionKey
                 && item.EntityType == record.EntityType
                 && item.ExternalId == record.ExternalId, cancellationToken);
-        if (link is null)
-            return;
+        if (link is null || link.SourceDeletedAt is not null)
+            return false;
 
         link.SourceDeletedAt = record.DeletedAt;
         var raw = await db.IntegrationRawRecords
@@ -308,7 +322,25 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
                 var appointment = await db.SalesAppointments.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
                 if (appointment is not null) { appointment.IsActive = false; appointment.SourceDeletedAt = record.DeletedAt; }
                 break;
+            case CrmEntityTypes.ServiceCase:
+                var serviceCase = await db.SalesServiceCases.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
+                if (serviceCase is not null) { serviceCase.IsActive = false; serviceCase.SourceDeletedAt = record.DeletedAt; }
+                break;
+            case CrmEntityTypes.Offer:
+                var offer = await db.SalesOffers.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
+                if (offer is not null) { offer.IsActive = false; offer.SourceDeletedAt = record.DeletedAt; }
+                break;
+            case CrmEntityTypes.Order:
+                var order = await db.SalesOrders.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
+                if (order is not null) { order.IsActive = false; order.SourceDeletedAt = record.DeletedAt; }
+                break;
+            case CrmEntityTypes.Invoice:
+                var invoice = await db.SalesInvoices.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
+                if (invoice is not null) { invoice.IsActive = false; invoice.SourceDeletedAt = record.DeletedAt; }
+                break;
         }
+
+        return true;
     }
 
     public async Task BackfillLeadActivityMarkersAsync(
@@ -346,6 +378,144 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         {
             if (leads.TryGetValue(marker.LeadId, out var lead))
                 RegisterLeadActivity(lead, marker.FirstActivityAt);
+        }
+    }
+
+    public async Task RecalculateLeadCallCountersAsync(
+        IReadOnlyCollection<CrmSynchronizationChange> changes,
+        int callConversationThresholdSeconds,
+        CancellationToken cancellationToken)
+    {
+        var activityChanges = changes
+            .Where(change => change.EntityType == CrmEntityTypes.Activity)
+            .ToArray();
+        if (activityChanges.Length == 0)
+            return;
+
+        var providerKeys = activityChanges.Select(change => change.ProviderKey).Distinct().ToArray();
+        var connectionKeys = activityChanges.Select(change => change.ConnectionKey).Distinct().ToArray();
+        var externalIds = activityChanges.Select(change => change.ExternalId).Distinct().ToArray();
+        var changedKeys = activityChanges
+            .Select(change => (change.ProviderKey, change.ConnectionKey, change.ExternalId))
+            .ToHashSet();
+        var activityLinks = await db.IntegrationEntityLinks
+            .AsNoTracking()
+            .Where(link => providerKeys.Contains(link.ProviderKey)
+                && connectionKeys.Contains(link.ConnectionKey)
+                && link.EntityType == CrmEntityTypes.Activity
+                && externalIds.Contains(link.ExternalId))
+            .Select(link => new
+            {
+                link.ProviderKey,
+                link.ConnectionKey,
+                link.ExternalId,
+                link.InternalEntityId
+            })
+            .ToArrayAsync(cancellationToken);
+        var changedActivityIds = activityLinks
+            .Where(link => changedKeys.Contains((link.ProviderKey, link.ConnectionKey, link.ExternalId)))
+            .Select(link => link.InternalEntityId)
+            .Distinct()
+            .ToArray();
+        if (changedActivityIds.Length == 0)
+            return;
+
+        var leadIds = await db.SalesActivityRelations
+            .AsNoTracking()
+            .Where(relation => changedActivityIds.Contains(relation.ActivityId)
+                && relation.TargetType == CrmEntityTypes.Lead)
+            .Select(relation => relation.TargetId)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+        if (leadIds.Length == 0)
+            return;
+
+        var calls = await db.SalesActivityRelations
+            .AsNoTracking()
+            .Where(relation => leadIds.Contains(relation.TargetId)
+                && relation.TargetType == CrmEntityTypes.Lead)
+            .Join(
+                db.SalesActivities.AsNoTracking().Where(activity => activity.ActivityType == "call"
+                    && activity.SourceDeletedAt == null),
+                relation => relation.ActivityId,
+                activity => activity.Id,
+                (relation, activity) => new
+                {
+                    activity.Id,
+                    relation.TargetId,
+                    activity.OccurredAt,
+                    activity.DurationSeconds,
+                    activity.ConnectionStatus,
+                    activity.Result
+                })
+            .OrderByDescending(item => item.OccurredAt)
+            .ToArrayAsync(cancellationToken);
+        var activityIds = calls
+            .Select(call => call.Id)
+            .Distinct()
+            .ToArray();
+        var activities = await db.SalesActivities
+            .Where(activity => activityIds.Contains(activity.Id))
+            .ToDictionaryAsync(activity => activity.Id, cancellationToken);
+        var classifiedCalls = calls
+            .Select(call => new
+            {
+                call.TargetId,
+                call.OccurredAt,
+                CountsAsConversation = CallQualification.IsConversation(
+                    call.DurationSeconds,
+                    call.ConnectionStatus,
+                    call.Result,
+                    callConversationThresholdSeconds)
+            })
+            .ToArray();
+        foreach (var call in calls)
+        {
+            if (!activities.TryGetValue(call.Id, out var activity))
+                continue;
+
+            activity.CountsAsConversation = call.DurationSeconds.HasValue
+                ? CallQualification.IsConversation(
+                    call.DurationSeconds,
+                    call.ConnectionStatus,
+                    call.Result,
+                    callConversationThresholdSeconds)
+                : null;
+            activity.ConversationClass = CallQualification.ConversationClass(
+                true,
+                call.DurationSeconds,
+                call.ConnectionStatus,
+                call.Result,
+                callConversationThresholdSeconds);
+        }
+        var leads = await db.SalesLeads
+            .Where(lead => leadIds.Contains(lead.Id))
+            .ToDictionaryAsync(lead => lead.Id, cancellationToken);
+
+        foreach (var group in classifiedCalls.GroupBy(call => call.TargetId))
+        {
+            if (!leads.TryGetValue(group.Key, out var lead))
+                continue;
+
+            var orderedCalls = group.OrderByDescending(call => call.OccurredAt).ToArray();
+            lead.TotalCallAttempts = orderedCalls.Length;
+            var callsSinceConversation = 0;
+            foreach (var call in orderedCalls)
+            {
+                if (call.CountsAsConversation == true)
+                    break;
+                callsSinceConversation++;
+            }
+            lead.CallsSinceConversation = callsSinceConversation;
+        }
+
+        foreach (var leadId in leadIds.Where(leadId => !classifiedCalls.Any(call => call.TargetId == leadId)))
+        {
+            if (leads.TryGetValue(leadId, out var lead))
+            {
+                lead.TotalCallAttempts = 0;
+                lead.CallsSinceConversation = 0;
+            }
         }
     }
 
@@ -419,6 +589,7 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
             : await db.SalesCustomers.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
                 ?? throw MissingEntity("Kunde", link.InternalEntityId);
         var previousStatus = customer.Status;
+        var previousOwnerId = customer.OwnerId;
         var isNewCustomer = link is null;
         if (link is null)
         {
@@ -438,6 +609,8 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         customer.AddressLine1 = record.AddressLine1;
         customer.HouseNumber = record.HouseNumber;
         customer.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
+        if (isNewCustomer || previousOwnerId != customer.OwnerId || !customer.OwnerAssignedAt.HasValue)
+            customer.OwnerAssignedAt = record.ModifiedAt ?? record.CreatedAt ?? DateTimeOffset.UtcNow;
         customer.Status = record.Status ?? customer.Status;
         customer.IsActive = true;
         customer.NeedsReview = string.IsNullOrWhiteSpace(customer.CountryCode)
@@ -481,9 +654,10 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         contact.NormalizedEmail = NormalizeEmail(record.Email);
         contact.Phone = record.Phone;
         contact.NormalizedPhone = NormalizePhone(record.Phone);
-        contact.MobilePhone = record.MobilePhone;
-        contact.JobTitle = record.JobTitle;
-        contact.IsPrimary = record.IsPrimary;
+            contact.MobilePhone = record.MobilePhone;
+            contact.JobTitle = record.JobTitle;
+            contact.RoleType = record.RoleType;
+            contact.IsPrimary = record.IsPrimary;
         contact.IsActive = true;
         contact.SourceCreatedAt = record.CreatedAt;
         contact.SourceModifiedAt = record.ModifiedAt;
@@ -604,6 +778,7 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
             ConnectionKey = record.ConnectionKey,
             EntityType = CrmEntityTypes.ProductCategory,
             ExternalId = externalId,
+            ExternalUrl = record.ExternalUrl,
             InternalEntityType = CrmEntityTypes.ProductCategory,
             InternalEntityId = category.Id,
             LastSeenAt = DateTimeOffset.UtcNow
@@ -715,7 +890,8 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
                 record.ContractEndAt,
                 record.DurationMonths,
                 record.Amount,
-                record.Currency),
+                record.Currency)
+                { ExternalUrl = record.ExternalUrl },
                 deal.CustomerId.Value,
                 deal.Id,
                 cancellationToken);
@@ -792,7 +968,10 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         SetLinkSeen(link, record);
     }
 
-    private async Task UpsertActivityAsync(CrmCanonicalActivity record, CancellationToken cancellationToken)
+    private async Task UpsertActivityAsync(
+        CrmCanonicalActivity record,
+        int callConversationThresholdSeconds,
+        CancellationToken cancellationToken)
     {
         var link = await FindLinkAsync(record, cancellationToken);
         var activity = link is null
@@ -810,13 +989,27 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         activity.DurationSeconds = record.DurationSeconds;
         activity.Direction = record.Direction;
         activity.ConnectionStatus = record.ConnectionStatus;
-        activity.ConversationClass = record.ConversationClass;
-        activity.CountsAsConversation = record.CountsAsConversation;
+        activity.ConversationClass = CallQualification.ConversationClass(
+            record.ActivityType == "call",
+            record.DurationSeconds,
+            record.ConnectionStatus,
+            record.Result,
+            callConversationThresholdSeconds) ?? record.ConversationClass;
+        activity.CountsAsConversation = record.ActivityType == "call"
+            ? record.DurationSeconds.HasValue
+                ? CallQualification.IsConversation(
+                    record.DurationSeconds,
+                    record.ConnectionStatus,
+                    record.Result,
+                    callConversationThresholdSeconds)
+                : null
+            : record.CountsAsConversation;
         activity.Result = record.Result;
         activity.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
         activity.SourceCreatedAt = record.CreatedAt;
         activity.SourceModifiedAt = record.ModifiedAt;
         activity.LastSeenAt = DateTimeOffset.UtcNow;
+        activity.SourceDeletedAt = null;
         SetLinkSeen(link, record);
 
         foreach (var relation in record.Relations)
@@ -842,6 +1035,7 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
                 target.Value.Id,
                 activity.OccurredAt,
                 record.ActivityType == "call",
+                record.ActivityType != "call" || activity.CountsAsConversation == true,
                 cancellationToken);
         }
     }
@@ -906,6 +1100,136 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         }
     }
 
+    private async Task UpsertServiceCaseAsync(CrmCanonicalServiceCase record, CancellationToken cancellationToken)
+    {
+        var link = await FindLinkAsync(record, cancellationToken);
+        var serviceCase = link is null
+            ? new SalesServiceCase { Id = Guid.NewGuid(), Subject = record.Subject, Status = record.Status, Priority = record.Priority }
+            : await db.SalesServiceCases.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Service-Fall", link.InternalEntityId);
+        if (link is null)
+        {
+            db.SalesServiceCases.Add(serviceCase);
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.ServiceCase, serviceCase.Id));
+        }
+
+        serviceCase.Subject = record.Subject;
+        serviceCase.Description = record.Description;
+        serviceCase.Status = record.Status;
+        serviceCase.Priority = record.Priority;
+        serviceCase.Origin = record.Origin;
+        serviceCase.Reason = record.Reason;
+        serviceCase.CustomerId = await FindInternalIdAsync(record, CrmEntityTypes.Customer, record.CustomerExternalId, cancellationToken);
+        serviceCase.ContactId = await FindInternalIdAsync(record, CrmEntityTypes.Contact, record.ContactExternalId, cancellationToken);
+        serviceCase.DealId = await FindInternalIdAsync(record, CrmEntityTypes.Deal, record.DealExternalId, cancellationToken);
+        serviceCase.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
+        serviceCase.OpenedAt = record.OpenedAt;
+        serviceCase.DueAt = record.DueAt;
+        serviceCase.ResolvedAt = record.ResolvedAt;
+        serviceCase.IsActive = true;
+        serviceCase.SourceCreatedAt = record.CreatedAt;
+        serviceCase.SourceModifiedAt = record.ModifiedAt;
+        serviceCase.LastSeenAt = DateTimeOffset.UtcNow;
+        SetLinkSeen(link, record);
+    }
+
+    private async Task UpsertOfferAsync(CrmCanonicalOffer record, CancellationToken cancellationToken)
+    {
+        var link = await FindLinkAsync(record, cancellationToken);
+        var offer = link is null
+            ? new SalesOffer { Id = Guid.NewGuid(), Name = record.Name, Status = record.Status }
+            : await db.SalesOffers.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Angebot", link.InternalEntityId);
+        if (link is null)
+        {
+            db.SalesOffers.Add(offer);
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.Offer, offer.Id));
+        }
+
+        offer.Name = record.Name;
+        offer.OfferNumber = record.OfferNumber;
+        offer.Status = record.Status;
+        offer.Amount = record.Amount;
+        offer.Currency = record.Currency;
+        offer.CustomerId = await FindInternalIdAsync(record, CrmEntityTypes.Customer, record.CustomerExternalId, cancellationToken);
+        offer.ContactId = await FindInternalIdAsync(record, CrmEntityTypes.Contact, record.ContactExternalId, cancellationToken);
+        offer.DealId = await FindInternalIdAsync(record, CrmEntityTypes.Deal, record.DealExternalId, cancellationToken);
+        offer.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
+        offer.IssuedAt = record.IssuedAt;
+        offer.SentAt = record.SentAt;
+        offer.ValidUntil = record.ValidUntil;
+        offer.IsActive = true;
+        offer.SourceCreatedAt = record.CreatedAt;
+        offer.SourceModifiedAt = record.ModifiedAt;
+        offer.LastSeenAt = DateTimeOffset.UtcNow;
+        SetLinkSeen(link, record);
+    }
+
+    private async Task UpsertOrderAsync(CrmCanonicalOrder record, CancellationToken cancellationToken)
+    {
+        var link = await FindLinkAsync(record, cancellationToken);
+        var order = link is null
+            ? new SalesOrder { Id = Guid.NewGuid(), Name = record.Name, Status = record.Status }
+            : await db.SalesOrders.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Auftrag", link.InternalEntityId);
+        if (link is null)
+        {
+            db.SalesOrders.Add(order);
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.Order, order.Id));
+        }
+
+        order.Name = record.Name;
+        order.OrderNumber = record.OrderNumber;
+        order.Status = record.Status;
+        order.Amount = record.Amount;
+        order.Currency = record.Currency;
+        order.CustomerId = await FindInternalIdAsync(record, CrmEntityTypes.Customer, record.CustomerExternalId, cancellationToken);
+        order.OfferId = await FindInternalIdAsync(record, CrmEntityTypes.Offer, record.OfferExternalId, cancellationToken);
+        order.DealId = await FindInternalIdAsync(record, CrmEntityTypes.Deal, record.DealExternalId, cancellationToken);
+        order.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
+        order.OrderedAt = record.OrderedAt;
+        order.PromisedAt = record.PromisedAt;
+        order.DeliveredAt = record.DeliveredAt;
+        order.IsActive = true;
+        order.SourceCreatedAt = record.CreatedAt;
+        order.SourceModifiedAt = record.ModifiedAt;
+        order.LastSeenAt = DateTimeOffset.UtcNow;
+        SetLinkSeen(link, record);
+    }
+
+    private async Task UpsertInvoiceAsync(CrmCanonicalInvoice record, CancellationToken cancellationToken)
+    {
+        var link = await FindLinkAsync(record, cancellationToken);
+        var invoice = link is null
+            ? new SalesInvoice { Id = Guid.NewGuid(), Name = record.Name, Status = record.Status }
+            : await db.SalesInvoices.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
+                ?? throw MissingEntity("Rechnung", link.InternalEntityId);
+        if (link is null)
+        {
+            db.SalesInvoices.Add(invoice);
+            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.Invoice, invoice.Id));
+        }
+
+        invoice.Name = record.Name;
+        invoice.InvoiceNumber = record.InvoiceNumber;
+        invoice.Status = record.Status;
+        invoice.Amount = record.Amount;
+        invoice.OpenAmount = record.OpenAmount;
+        invoice.Currency = record.Currency;
+        invoice.CustomerId = await FindInternalIdAsync(record, CrmEntityTypes.Customer, record.CustomerExternalId, cancellationToken);
+        invoice.OrderId = await FindInternalIdAsync(record, CrmEntityTypes.Order, record.OrderExternalId, cancellationToken);
+        invoice.DealId = await FindInternalIdAsync(record, CrmEntityTypes.Deal, record.DealExternalId, cancellationToken);
+        invoice.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
+        invoice.IssuedAt = record.IssuedAt;
+        invoice.DueAt = record.DueAt;
+        invoice.PaidAt = record.PaidAt;
+        invoice.IsActive = true;
+        invoice.SourceCreatedAt = record.CreatedAt;
+        invoice.SourceModifiedAt = record.ModifiedAt;
+        invoice.LastSeenAt = DateTimeOffset.UtcNow;
+        SetLinkSeen(link, record);
+    }
+
     private async Task<Guid?> ResolvePipelineIdAsync(CrmCanonicalRecord record, string? externalId, string? name, CancellationToken cancellationToken)
     {
         var byLink = await FindInternalIdAsync(record, CrmEntityTypes.Pipeline, externalId, cancellationToken);
@@ -966,6 +1290,7 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         Guid targetId,
         DateTimeOffset occurredAt,
         bool isPhoneCall,
+        bool countsAsContact,
         CancellationToken cancellationToken)
     {
         switch (targetType)
@@ -974,7 +1299,8 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
                 var customer = await db.SalesCustomers.SingleOrDefaultAsync(item => item.Id == targetId, cancellationToken);
                 if (customer is not null)
                 {
-                    customer.LastContactAt = customer.LastContactAt is null || customer.LastContactAt < occurredAt ? occurredAt : customer.LastContactAt;
+                    if (countsAsContact)
+                        customer.LastContactAt = customer.LastContactAt is null || customer.LastContactAt < occurredAt ? occurredAt : customer.LastContactAt;
                     if (isPhoneCall)
                         customer.LastPhoneCallAt = customer.LastPhoneCallAt is null || customer.LastPhoneCallAt < occurredAt
                             ? occurredAt
@@ -990,7 +1316,8 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
                 if (lead is not null)
                 {
                     RegisterLeadActivity(lead, occurredAt);
-                    if (lead.LastContactAt is null || lead.LastContactAt < occurredAt) lead.LastContactAt = occurredAt;
+                    if (countsAsContact && (lead.LastContactAt is null || lead.LastContactAt < occurredAt))
+                        lead.LastContactAt = occurredAt;
                     if (isPhoneCall && (lead.LastPhoneCallAt is null || lead.LastPhoneCallAt < occurredAt)) lead.LastPhoneCallAt = occurredAt;
                 }
                 break;
@@ -1032,6 +1359,7 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
             ConnectionKey = record.ConnectionKey,
             EntityType = entityType,
             ExternalId = record.ExternalId,
+            ExternalUrl = record.ExternalUrl,
             InternalEntityType = entityType,
             InternalEntityId = internalEntityId,
             LastSeenAt = DateTimeOffset.UtcNow
@@ -1039,7 +1367,12 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
 
     private static void SetLinkSeen(IntegrationEntityLink? link, CrmCanonicalRecord record)
     {
-        if (link is not null) link.LastSeenAt = DateTimeOffset.UtcNow;
+        if (link is null) return;
+
+        link.LastSeenAt = DateTimeOffset.UtcNow;
+        link.SourceDeletedAt = null;
+        if (!string.IsNullOrWhiteSpace(record.ExternalUrl))
+            link.ExternalUrl = record.ExternalUrl;
     }
 
     private static InvalidOperationException MissingEntity(string type, Guid id)

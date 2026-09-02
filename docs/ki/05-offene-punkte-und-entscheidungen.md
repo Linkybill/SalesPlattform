@@ -2,9 +2,10 @@
 
 ## Im Pflichtenheft ausdrücklich offen
 
-1. **Mailbox vs. Gespräch:** Liefert das Telefonsystem einen
-   Verbindungsstatus? Falls nicht, muss ein Gespräch in der Protokollierung
-   korrigierbar sein.
+1. **Mailbox vs. Gespräch:** Der Mapper berücksichtigt vorhandene
+   Verbindungs-/Ergebnisfelder und behandelt Mailbox, nicht erreicht und
+   falschen Ansprechpartner als Versuch. Falls Zoho dafür abweichende Werte
+   liefert, müssen diese Werte in der Mapping-Konfiguration ergänzt werden.
 2. **Eingehende Anrufe:** Setzen eingehende Anrufe den Staffelungszähler
    zurück? Für Kontakt spricht ein Reset, für Akquise-Messung eine getrennte
    Zählung.
@@ -17,10 +18,17 @@
 ## Geklärte fachliche Leitentscheidungen
 
 - Das Tool erzeugt und verwaltet Wiedervorlagen selbst.
-- Ein erfolgreicher Anruf beginnt bei 20 Sekunden Gesprächsdauer, vorbehaltlich
-  der Mailbox-Klärung.
+- Ein qualifiziertes Gespräch beginnt ab der appweiten Einstellung
+  `sales.callConversationThresholdSeconds` (Standard: 20 Sekunden). Die
+  Einstellung gilt für den gesamten Tenant und kann nicht pro Benutzer
+  überschrieben werden; Mailbox, Nichterreichen und falscher Ansprechpartner
+  bleiben unabhängig von der Dauer Versuche.
 - Es gibt einen Staffelungszähler seit dem letzten Gespräch und einen
   kumulativen Auswertungszähler.
+- Alle Regel-Zeit- und Versuchsschwellen werden als tenantbezogene
+  `sales.rules.*`-App-Einstellungen mit den Pflichtenheft-Defaults gepflegt.
+  Eine Änderung wirkt bei der nächsten Regelbewertung; die Regelengine hält
+  keine fest verdrahteten Zeitgrenzen mehr vor.
 - Die Karte ist weltweit, startet aber im deutschsprachigen Raum und nutzt Land
   plus PLZ.
 - Ein Deal entspricht genau einem Produkt.
@@ -52,6 +60,14 @@
 - Provider-Webhooks ergänzen später den festen 15-Minuten-Crawl. Sie ersetzen
   weder den Lückenschluss durch Incremental-Crawls noch den Reconciliation-
   Vollimport.
+- Öffnende Links zu Ursprungsdatensätzen werden vom jeweiligen CRM-Adapter
+  beim Import als optionale `ExternalUrl` an der Integrationszuordnung
+  gespeichert. Sales-Arbeitsliste und Reports können daraus den Absprung
+  rendern; Common und Identity Platform bleiben CRM-anbieterneutral.
+- Das Zurückstellen eines Arbeitslisteneintrags erzeugt eine neue lokale
+  Vorgangsinstanz mit `AvailableFrom` („Bearbeitung beginnen ab“). Die alte
+  Instanz bleibt als `deferred`-Vorgänger historisch erhalten; der Nachfolger
+  wird erst ab dem gespeicherten Zeitpunkt ausgeliefert.
 - Die technische Laufzeitprüfung generischer Jobs erfolgt über eine Heartbeat-
   Lease des `IdentityPlatform.Shared`-Workers. Verwaiste `queued`- oder
   `running`-Läufe werden nach 90 Sekunden ohne Heartbeat aus der Platform-
@@ -70,6 +86,13 @@
   `running`, wird der verwaiste app-eigene Lauf bereinigt und der neue Lauf
   darf starten. E-Mails bleiben eine Related-List desselben CRM-Laufs und
   werden nicht als eigener Job geführt.
+- Die technische Zuordnung eines CRM-Datensatzes erfolgt ausschließlich über
+  die bestehende Remote-ID im Integrationslink. Full-Crawls führen einen
+  sicheren Missing-ID-Abgleich durch und löschen lokale Fachdaten niemals
+  physisch. Bei einer gelöschten CRM-Task wird der lokale Vorgang geschlossen
+  und in derselben Vorgangskette neu angelegt; bei einem gelöschten Lead,
+  Kunden, Kontakt oder Deal wird der betroffene Vorgang mit
+  `target-deleted-in-crm` geschlossen und nicht ersetzt.
 
 ## Noch zu entscheiden, bevor die Fachintegration beginnt
 
@@ -112,11 +135,13 @@ keine stillschweigend getroffenen Anforderungen:
 | Native Windows-Rebuilds | vorhanden |
 | Pflichtenheft und KI-Kontext | vorhanden |
 | Zoho-Authentifizierung, Adapter und vollständiger fachlicher Hintergrundimport | vorhanden |
-| Eigene Sales-Domänenmodelle und Regelengine | EF-Datenmodell vorhanden; erste Arbeitslisten-Projektion für R-05/R-06/R-07/R-08/R-09/R-10/R-12 umgesetzt |
+| Eigene Sales-Domänenmodelle und Regelengine | EF-Datenmodell vorhanden; Arbeitslisten-Projektion und Regelbewertung für R-01 bis R-18 umgesetzt |
 | Vollständiges Zieldatenmodell vor dem Vollimport | EF-Entitäten und additive Migration umgesetzt; Zoho-Mappings für den fachlichen Initialimport umgesetzt |
-| Start-Arbeitsliste | umgesetzt; weitere Wiedervorlagen-, Team- und KPI-Sichten offen |
-| Fachansichten und KPI-Cockpit | offen / nicht implementiert |
-| Fachliche Rollenmatrix | erste Rollenabgrenzung für Vertrieb und Vertriebsleitung umgesetzt; weitere Fachrollen offen |
+| Start-Arbeitsliste | umgesetzt; Vorgangsketten, `AvailableFrom`, CRM-Absprung und CRM-geführte Auflösung umgesetzt |
+| Reportseite und Seiteneditor | umgesetzt; Standardbaum, direkte Bearbeitung mit Grid/Tabs/Akkordeon/Überschrift/Text und tenantbezogene Speicherung vorhanden |
+| Fachansichten und KPI-Cockpit | read-only Report-Projektion für Cockpit, Team, Meetings, Analyse, Kunden, Ziele/Pace, Aufräumen, Servicefälle und kommerzielle Kette umgesetzt |
+| Historische KPI-Snapshots | werden unmittelbar in jedem Full- und Incremental-Sync für Pipeline, KPIs, Aktivitäten und Kundenstatus aktualisiert; Vergleichsvisualisierungen werden weiter ausgebaut |
+| Fachliche Rollenmatrix | `sales-user`, `sales-manager`, `sales-management` und `sales-backoffice` mit serverseitiger Report-Freigabe angelegt |
 
 Jede neue Implementierung soll diese Tabelle und die betroffenen Infodateien
 mitpflegen. Ein Eintrag „vorhanden“ im Startgerüst bedeutet nicht, dass der

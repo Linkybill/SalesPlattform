@@ -10,6 +10,11 @@ public sealed class SalesWorkItem : SalesEntity
     public string? Reason { get; set; }
     public Guid? OwnerId { get; set; }
     public DateTimeOffset? DueAt { get; set; }
+    /// <summary>
+    /// Earliest point at which this work-item occurrence may be worked on.
+    /// Stored in UTC; the tenant's time zone is used when calculating it.
+    /// </summary>
+    public DateTimeOffset? AvailableFrom { get; set; }
     public decimal? PriorityScore { get; set; }
     public DateTimeOffset? PriorityCalculatedAt { get; set; }
     public string? SourceRuleCode { get; set; }
@@ -19,6 +24,9 @@ public sealed class SalesWorkItem : SalesEntity
     public string? CompletedBy { get; set; }
     public DateTimeOffset? DismissedAt { get; set; }
     public DateTimeOffset? SnoozedUntil { get; set; }
+    public Guid WorkItemChainId { get; set; }
+    public Guid? PreviousWorkItemId { get; set; }
+    public string? ClosureReason { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 
@@ -221,13 +229,22 @@ public sealed class SalesCommunicationTemplate : SalesEntity
 
 public sealed class SalesNotification : SalesEntity
 {
+    public required string NotificationKey { get; set; }
     public required string RecipientSubject { get; set; }
+    public string? RecipientEmail { get; set; }
+    public required string Channel { get; set; }
     public Guid? WorkItemId { get; set; }
     public string? Title { get; set; }
+    public string? Subject { get; set; }
+    public string? BodyHtml { get; set; }
     public string? PayloadJson { get; set; }
     public DateTimeOffset? DueAt { get; set; }
     public int EscalationLevel { get; set; }
     public required string DeliveryStatus { get; set; }
+    public int AttemptCount { get; set; }
+    public DateTimeOffset? NextAttemptAt { get; set; }
+    public DateTimeOffset? LockedUntil { get; set; }
+    public string? LastError { get; set; }
     public DateTimeOffset? SentAt { get; set; }
     public DateTimeOffset? ReadAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }

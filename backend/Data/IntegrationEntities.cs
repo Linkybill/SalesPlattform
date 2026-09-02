@@ -28,8 +28,10 @@ public sealed class IntegrationEntityLink : SalesEntity
     public string ConnectionKey { get; set; } = "default";
     public required string EntityType { get; set; }
     public required string ExternalId { get; set; }
+    public string? ExternalUrl { get; set; }
     public required string InternalEntityType { get; set; }
     public Guid InternalEntityId { get; set; }
+    public Guid? WorkItemId { get; set; }
     public DateTimeOffset LastSeenAt { get; set; }
     public DateTimeOffset? SourceDeletedAt { get; set; }
 }

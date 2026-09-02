@@ -7,6 +7,7 @@ using SalesPlattform.Backend.Data;
 using SalesPlattform.Backend.Integrations.Abstractions;
 using SalesPlattform.Backend.Integrations;
 using SalesPlattform.Backend.Integrations.Repositories;
+using SalesPlattform.Backend.Services;
 
 namespace SalesPlattform.Backend.Integrations.Zoho;
 
@@ -17,6 +18,7 @@ public sealed class ZohoSyncService(
     ISalesCrmRepositoryFactory repositoryFactory,
     ZohoConnectionStore connectionStore,
     ZohoConfigurationService configuration,
+    SalesApplicationSettingsService applicationSettings,
     PlatformJobLivenessClient platformJobLiveness,
     ILogger<ZohoSyncService> logger) : ICrmSynchronizationAdapter
 {
@@ -134,9 +136,15 @@ public sealed class ZohoSyncService(
                 $"Der CRM-Lauf {request.RunId:D} gehört zum Provider '{run.ProviderKey}' und kann nicht durch '{adapter.ProviderKey}' fortgesetzt werden.");
         }
 
-        await RunAsync(
+        var callConversationThresholdSeconds = await applicationSettings
+            .GetCallConversationThresholdSecondsAsync(
+                request.TenantId,
+                request.RequestedBy,
+                cancellationToken);
+        var changes = await RunAsync(
             new ZohoSynchronizationWorkItem(request.RunId, request.TenantId, request.RequestedBy),
             snapshot => ReportProgressAsync(progress, snapshot, cancellationToken),
+            callConversationThresholdSeconds,
             cancellationToken);
         var completed = await GetSnapshotAsync(
                 request.RunId,
@@ -153,7 +161,8 @@ public sealed class ZohoSyncService(
             completed.RecordsFailed == 0
                 ? $"CRM-Synchronisation abgeschlossen: {completed.RecordsWritten} Datensätze geschrieben."
                 : $"CRM-Synchronisation mit {completed.RecordsFailed} Fehlern abgeschlossen.",
-            details);
+            details,
+            changes);
     }
 
     private async Task<ZohoSynchronizationSnapshot?> GetSnapshotAsync(
@@ -187,9 +196,10 @@ public sealed class ZohoSyncService(
         return ZohoSynchronizationSnapshotMapper.Map(run, writtenRecords);
     }
 
-    internal async Task RunAsync(
+    internal async Task<IReadOnlyCollection<CrmSynchronizationChange>> RunAsync(
         ZohoSynchronizationWorkItem workItem,
         Func<ZohoSynchronizationSnapshot, Task> publish,
+        int callConversationThresholdSeconds,
         CancellationToken cancellationToken = default)
     {
         await using var session = await dbFactory.OpenAsync(cancellationToken);
@@ -202,12 +212,12 @@ public sealed class ZohoSyncService(
         if (run is null)
         {
             logger.LogWarning("Zoho import job {RunId} was not found in the tenant database.", workItem.RunId);
-            return;
+            return [];
         }
         if (run.Status is not ("queued" or "running"))
         {
             logger.LogInformation("Zoho import job {RunId} is already in state {Status}; skipping it.", workItem.RunId, run.Status);
-            return;
+            return [];
         }
 
         await repository.ClearSyncErrorsAsync(run.Id, cancellationToken);
@@ -230,6 +240,7 @@ public sealed class ZohoSyncService(
             var availableModules = await adapter.GetModulesAsync(cancellationToken);
             var sourceRecords = new Dictionary<string, IReadOnlyCollection<CrmExternalRecord>>(
                 StringComparer.OrdinalIgnoreCase);
+            var changes = new HashSet<CrmSynchronizationChange>();
 
             foreach (var module in modules)
             {
@@ -243,6 +254,16 @@ public sealed class ZohoSyncService(
                 if (!IsSyntheticModule(module)
                     && !availableModules.Contains(module, StringComparer.OrdinalIgnoreCase))
                 {
+                    if (IsOptionalModule(module))
+                    {
+                        runItem.Status = "skipped";
+                        runItem.Error = $"Das optionale Zoho-Modul '{module}' ist für diesen Zugang nicht verfügbar; es wird übersprungen.";
+                        runItem.FinishedAt = DateTimeOffset.UtcNow;
+                        await repository.SaveChangesAsync(cancellationToken);
+                        await NotifyAsync(publish, run);
+                        continue;
+                    }
+
                     runItem.Status = "failed";
                     runItem.Error = $"Zoho stellt das Modul '{module}' für diesen OAuth-Zugang nicht als verfügbar bereit. "
                         + "Bitte die Zoho-Modulberechtigung und danach die Verbindung erneuern.";
@@ -291,8 +312,18 @@ public sealed class ZohoSyncService(
                         try
                         {
                             var canonical = recordMapper.Map(record);
-                            await repository.UpsertAsync(canonical, run.Id, cancellationToken);
+                            await repository.UpsertAsync(
+                                canonical,
+                                run.Id,
+                                callConversationThresholdSeconds,
+                                cancellationToken);
                             await repository.SaveChangesAsync(cancellationToken);
+                            changes.Add(new CrmSynchronizationChange(
+                                canonical.ProviderKey,
+                                canonical.ConnectionKey,
+                                canonical.EntityType,
+                                canonical.ExternalId,
+                                "upserted"));
                             run.RecordsWritten++;
                             runItem.RecordsWritten++;
                         }
@@ -322,12 +353,47 @@ public sealed class ZohoSyncService(
                                      modifiedSince,
                                      cancellationToken))
                         {
-                            await repository.MarkDeletedAsync(deleted, run.Id, cancellationToken);
+                            if (await repository.MarkDeletedAsync(deleted, run.Id, cancellationToken))
+                            {
+                                changes.Add(new CrmSynchronizationChange(
+                                    deleted.Provider,
+                                    deleted.ConnectionKey,
+                                    deleted.EntityType,
+                                    deleted.ExternalId,
+                                    "deleted"));
+                            }
                         }
                     }
 
                     if (runItem.RecordsFailed == 0)
                     {
+                        if (!isIncremental && SupportsFullReconciliation(module))
+                        {
+                            var inferredDeletes = await ReconcileMissingRecordsAsync(
+                                module,
+                                records,
+                                run.Id,
+                                repository,
+                                cancellationToken);
+                            foreach (var deleted in inferredDeletes)
+                            {
+                                changes.Add(new CrmSynchronizationChange(
+                                    deleted.Provider,
+                                    deleted.ConnectionKey,
+                                    deleted.EntityType,
+                                    deleted.ExternalId,
+                                    "deleted"));
+                            }
+
+                            if (inferredDeletes.Count > 0)
+                            {
+                                logger.LogWarning(
+                                    "Zoho Full-Crawl: {Count} fehlende aktive Remote-IDs im Modul {Module} als gelöscht erkannt.",
+                                    inferredDeletes.Count,
+                                    module);
+                            }
+                        }
+
                         runItem.Error = null;
                         cursor.LastModifiedAt = watermark;
                         cursor.LastExternalId = records.LastOrDefault()?.ExternalId;
@@ -367,8 +433,14 @@ public sealed class ZohoSyncService(
                 sourceRecords,
                 repository,
                 publish,
+                changes,
+                callConversationThresholdSeconds,
                 cancellationToken);
             await repository.BackfillLeadActivityMarkersAsync(cancellationToken);
+            await repository.RecalculateLeadCallCountersAsync(
+                changes,
+                callConversationThresholdSeconds,
+                cancellationToken);
 
             run.Status = run.RecordsFailed == 0 ? "succeeded" : "completed_with_errors";
             run.CurrentModule = null;
@@ -381,6 +453,7 @@ public sealed class ZohoSyncService(
             if (run.Status == "succeeded")
                 await connectionStore.MarkSyncAsync(cancellationToken);
             await NotifyAsync(publish, run);
+            return changes.ToArray();
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -409,7 +482,8 @@ public sealed class ZohoSyncService(
                 :
                 [
                     "Users", "Accounts", "Contacts", "Leads", "Products", "Pipelines",
-                    "PipelineStages", "Deals", "DealStageHistory", "Calls", "Tasks", "Events", "Emails"
+                    "PipelineStages", "Deals", "Cases", "Quotes", "Sales_Orders", "Invoices",
+                    "DealStageHistory", "Calls", "Tasks", "Events", "Emails"
                 ])
             .Select(module => module.Trim())
             .Where(module => module.Length > 0)
@@ -448,9 +522,87 @@ public sealed class ZohoSyncService(
             || module.Equals("DealStageHistory", StringComparison.OrdinalIgnoreCase)
             || module.Equals("Emails", StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsOptionalModule(string module)
+        => module.Equals("Cases", StringComparison.OrdinalIgnoreCase)
+            || module.Equals("Quotes", StringComparison.OrdinalIgnoreCase)
+            || module.Equals("Sales_Orders", StringComparison.OrdinalIgnoreCase)
+            || module.Equals("SalesOrders", StringComparison.OrdinalIgnoreCase)
+            || module.Equals("Invoices", StringComparison.OrdinalIgnoreCase);
+
     private static bool IsRelatedModule(string module)
         => module.Equals("DealStageHistory", StringComparison.OrdinalIgnoreCase)
             || module.Equals("Emails", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<IReadOnlyCollection<CrmDeletedRecord>> ReconcileMissingRecordsAsync(
+        string module,
+        IReadOnlyCollection<CrmExternalRecord> records,
+        Guid syncRunId,
+        ISalesCrmRepository repository,
+        CancellationToken cancellationToken)
+    {
+        var entityType = CanonicalEntityType(module);
+        var seenExternalIds = records
+            .Select(record => record.ExternalId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var activeExternalIds = await repository.GetExternalIdsAsync(
+            adapter.ProviderKey,
+            "default",
+            entityType,
+            cancellationToken);
+        var prefix = CanonicalExternalIdPrefix(module);
+        var missingExternalIds = activeExternalIds
+            .Where(externalId => prefix is null
+                || externalId.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .Where(externalId => !seenExternalIds.Contains(externalId))
+            .ToArray();
+        if (missingExternalIds.Length == 0)
+            return [];
+
+        var detectedAt = DateTimeOffset.UtcNow;
+        var deleted = new List<CrmDeletedRecord>(missingExternalIds.Length);
+        foreach (var externalId in missingExternalIds)
+        {
+            var record = new CrmDeletedRecord(
+                adapter.ProviderKey,
+                module,
+                entityType,
+                externalId,
+                detectedAt);
+            if (await repository.MarkDeletedAsync(record, syncRunId, cancellationToken))
+                deleted.Add(record);
+        }
+
+        return deleted;
+    }
+
+    private static bool SupportsFullReconciliation(string module)
+        => !IsSyntheticModule(module);
+
+    private static string CanonicalEntityType(string module)
+        => module.ToLowerInvariant() switch
+        {
+            "users" => CrmEntityTypes.Owner,
+            "accounts" => CrmEntityTypes.Customer,
+            "contacts" => CrmEntityTypes.Contact,
+            "leads" => CrmEntityTypes.Lead,
+            "products" => CrmEntityTypes.Product,
+            "deals" => CrmEntityTypes.Deal,
+            "calls" or "tasks" => CrmEntityTypes.Activity,
+            "events" or "meetings" or "appointments" => CrmEntityTypes.Appointment,
+            "cases" => CrmEntityTypes.ServiceCase,
+            "quotes" => CrmEntityTypes.Offer,
+            "sales_orders" or "salesorders" => CrmEntityTypes.Order,
+            "invoices" => CrmEntityTypes.Invoice,
+            _ => module.ToLowerInvariant()
+        };
+
+    private static string? CanonicalExternalIdPrefix(string module)
+        => module.ToLowerInvariant() switch
+        {
+            "calls" or "tasks" => $"{module}:",
+            "events" or "meetings" or "appointments" => $"{module}:",
+            _ => null
+        };
 
     private async Task ImportRelatedRecordsAsync(
         IntegrationSyncRun run,
@@ -459,6 +611,8 @@ public sealed class ZohoSyncService(
         IReadOnlyDictionary<string, IReadOnlyCollection<CrmExternalRecord>> sourceRecords,
         ISalesCrmRepository repository,
         Func<ZohoSynchronizationSnapshot, Task> publish,
+        ISet<CrmSynchronizationChange> changes,
+        int callConversationThresholdSeconds,
         CancellationToken cancellationToken)
     {
         if (modules.Contains("Emails", StringComparer.OrdinalIgnoreCase))
@@ -472,6 +626,8 @@ public sealed class ZohoSyncService(
                 sourceRecords,
                 repository,
                 publish,
+                changes,
+                callConversationThresholdSeconds,
                 cancellationToken);
         }
 
@@ -486,6 +642,8 @@ public sealed class ZohoSyncService(
                 sourceRecords,
                 repository,
                 publish,
+                changes,
+                callConversationThresholdSeconds,
                 cancellationToken);
         }
     }
@@ -499,6 +657,8 @@ public sealed class ZohoSyncService(
         IReadOnlyDictionary<string, IReadOnlyCollection<CrmExternalRecord>> sourceRecords,
         ISalesCrmRepository repository,
         Func<ZohoSynchronizationSnapshot, Task> publish,
+        ISet<CrmSynchronizationChange> changes,
+        int callConversationThresholdSeconds,
         CancellationToken cancellationToken)
     {
         var runItem = await repository.GetOrCreateSyncRunItemAsync(run, module, cancellationToken);
@@ -587,6 +747,8 @@ public sealed class ZohoSyncService(
                         records,
                         repository,
                         publish,
+                        changes,
+                        callConversationThresholdSeconds,
                         cancellationToken);
                     logger.LogInformation(
                         "Zoho related list {RelatedList}: {ParentModule}/{ExternalId} geliefert {RecordCount} Datensätze ({CompletedParents}/{TotalParents} Elternobjekte).",
@@ -690,6 +852,8 @@ public sealed class ZohoSyncService(
         IReadOnlyCollection<CrmExternalRecord> records,
         ISalesCrmRepository repository,
         Func<ZohoSynchronizationSnapshot, Task> publish,
+        ISet<CrmSynchronizationChange> changes,
+        int callConversationThresholdSeconds,
         CancellationToken cancellationToken)
     {
         var recordsArray = records.ToArray();
@@ -701,13 +865,26 @@ public sealed class ZohoSyncService(
                 .ToArray();
             try
             {
+                var batchChanges = new List<CrmSynchronizationChange>(batch.Length);
                 foreach (var record in batch)
                 {
                     var canonical = recordMapper.Map(record);
-                    await repository.UpsertAsync(canonical, run.Id, cancellationToken);
+                    await repository.UpsertAsync(
+                        canonical,
+                        run.Id,
+                        callConversationThresholdSeconds,
+                        cancellationToken);
+                    batchChanges.Add(new CrmSynchronizationChange(
+                        canonical.ProviderKey,
+                        canonical.ConnectionKey,
+                        canonical.EntityType,
+                        canonical.ExternalId,
+                        "upserted"));
                 }
 
                 await repository.SaveChangesAsync(cancellationToken);
+                foreach (var change in batchChanges)
+                    changes.Add(change);
                 run.RecordsWritten += batch.Length;
                 runItem.RecordsWritten += batch.Length;
             }
@@ -723,6 +900,8 @@ public sealed class ZohoSyncService(
                     module,
                     batch,
                     repository,
+                    changes,
+                    callConversationThresholdSeconds,
                     cancellationToken);
             }
 
@@ -736,6 +915,8 @@ public sealed class ZohoSyncService(
         string module,
         IReadOnlyCollection<CrmExternalRecord> records,
         ISalesCrmRepository repository,
+        ISet<CrmSynchronizationChange> changes,
+        int callConversationThresholdSeconds,
         CancellationToken cancellationToken)
     {
         foreach (var record in records)
@@ -743,8 +924,18 @@ public sealed class ZohoSyncService(
             try
             {
                 var canonical = recordMapper.Map(record);
-                await repository.UpsertAsync(canonical, run.Id, cancellationToken);
+                await repository.UpsertAsync(
+                    canonical,
+                    run.Id,
+                    callConversationThresholdSeconds,
+                    cancellationToken);
                 await repository.SaveChangesAsync(cancellationToken);
+                changes.Add(new CrmSynchronizationChange(
+                    canonical.ProviderKey,
+                    canonical.ConnectionKey,
+                    canonical.EntityType,
+                    canonical.ExternalId,
+                    "upserted"));
                 run.RecordsWritten++;
                 runItem.RecordsWritten++;
             }

@@ -24,10 +24,26 @@ public sealed record CrmSynchronizationResult(
     long RecordsWritten,
     long RecordsFailed,
     string? Message,
-    JsonElement? Details = null)
+    JsonElement? Details = null,
+    IReadOnlyCollection<CrmSynchronizationChange>? Changes = null)
 {
     public bool HasWarnings => RecordsFailed > 0;
+
+    public IReadOnlyCollection<CrmSynchronizationChange> ChangedRecords
+        => Changes ?? Array.Empty<CrmSynchronizationChange>();
 }
+
+/// <summary>
+/// Provider-neutral identity of a source record changed by one CRM run. The
+/// internal Sales IDs are deliberately resolved after persistence, so the
+/// sync adapter does not leak database details into the integration boundary.
+/// </summary>
+public sealed record CrmSynchronizationChange(
+    string ProviderKey,
+    string ConnectionKey,
+    string EntityType,
+    string ExternalId,
+    string ChangeKind);
 
 public interface ICrmSynchronizationProgressSink
 {

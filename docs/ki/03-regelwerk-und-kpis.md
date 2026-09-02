@@ -32,10 +32,27 @@ diesen Startwerten. Vertragsenden unter 30 Tagen werden als eigener kritischer
 Vorgang geführt; Cross-Selling verwendet 20 Basispunkte. Eine Änderung durch
 Praxiswerte muss später über das konfigurierbare Prioritätsprofil erfolgen.
 
+Zeit- und Versuchsschwellen werden als tenantbezogene App-Einstellungen
+(`sales.rules.*`) gepflegt und bei jeder Regelbewertung neu geladen. Die
+aktuellen Defaults aus dem Pflichtenheft sind: 14 Tage Anruf-Wiedervorlage,
+E-Mail-Aktion beim 5. Versuch mit ebenfalls 14 Tagen Wiedervorlage,
+Langläufer ab Versuch 6 bis Versuch 10 mit 30 Tagen Abstand, „nicht
+erreichbar“ ab mehr als 10 Versuchen, hängender Deal nach 30 Tagen mit
+Cockpit-Eskalation nach 60 Tagen, Renewal innerhalb 90 Tagen mit kritischer
+Stufe ab 30 Tagen, überfälliger Kontakt nach 90 Tagen, Lead-Erstreaktion
+nach 1 und Eskalation nach 4 Arbeitsstunden sowie dreimal verschobener Termin.
+Die Parameter für Account-Care, Deal-Reaktivierung, Mindestwerte und Pace sind
+ebenfalls vorbereitet und verwenden die aktuellen Vorgaben als Defaults.
+Für die ergänzte CRM-Kette gelten zusätzlich: Servicefall-Reaktion nach 2
+Tagen, Angebots-Folgeaktion nach 7 Tagen, Lieferverzug nach 1 Toleranztag und
+Rechnungsüberfälligkeit ab dem Fälligkeitstag. Alle Zeitwerte werden in Tagen
+als Tenant-App-Einstellungen geführt.
+
 ## Gespräch und Anrufzähler
 
-Ein Gespräch zählt standardmäßig ab 20 Sekunden. 0 Sekunden bzw. nicht
-verbunden und 1–19 Sekunden zählen als Versuch. Es gibt zwei Zähler:
+Ein Gespräch zählt ab der appweit konfigurierten Mindestdauer, standardmäßig
+ab 20 Sekunden. 0 Sekunden bzw. nicht verbunden und jede Dauer unterhalb der
+konfigurierten Schwelle zählen als Versuch. Es gibt zwei Zähler:
 
 - Versuche seit dem letzten Gespräch: wird bei einem Gespräch zurückgesetzt und
   steuert die Staffelung.
@@ -45,7 +62,7 @@ Der Verbindungsstatus soll Vorrang vor der Dauer haben. Ist ein Anruf technisch
 eine Mailbox, braucht die Oberfläche eine Korrekturmöglichkeit. Die Behandlung
 eingehender Anrufe ist noch offen.
 
-## Geschäftsregeln R-01 bis R-14
+## Geschäftsregeln R-01 bis R-18
 
 | ID | Auslöser | Ergebnis |
 |---|---|---|
@@ -55,26 +72,53 @@ eingehender Anrufe ist noch offen.
 | R-04 | Mehr als 10 Versuche ohne Gespräch | Status „nicht erreichbar“ nur vorschlagen; keine automatische Statusänderung, Besitzerfreigabe und Bereinigung |
 | R-05 | Offener Deal länger als 30 Tage ohne Aktivität | Rot in Besitzerliste; ab 60 Tagen zusätzlich Cockpit-Handlungspunkt |
 | R-06 | Vertragsende innerhalb 90 Tagen | Verlängerungsvorgang für Besitzer; unter 30 Tagen höchste Priorität und Management-Hinweis |
-| R-07 | Letzter Kontakt älter als 3 Monate oder `NULL` | Reaktivierungsvorgang, älteste zuerst |
+| R-07 | Letzter Kontakt älter als 90 Tage oder `NULL` | Reaktivierungsvorgang, älteste zuerst |
 | R-08 | Stufe „Agent Wechsel“ oder entsprechende Regel | Besitzerwechsel-Liste mit altem Besitzer, Kontakt und Wert; Leitung entscheidet, kein Auto-Wechsel |
 | R-09 | Neuer Lead ohne Aktivität nach 1 Arbeitsstunde | Besitzer benachrichtigen; nach 4 Arbeitsstunden eskalieren; höchste Priorität |
 | R-10 | Aktiver Kunde ohne Deal in definierter Produktkategorie | Cross-Selling-Liste; Kategorien und Mindestkundenwert konfigurierbar |
 | R-11 | Zielerreichung mehr als 15 Punkte unter Zeitanteil | Team-Flag und Hinweis an die Leitung |
 | R-12 | Termin mindestens dreimal verschoben | Verdachtsfall in Arbeitsliste; Deal klären oder als verloren markieren |
-| R-13 | Aktiver Kunde mit Umsatzhistorie, aber mehr als 3 Monate ohne Telefon | Account-Care-Liste; Zeitraum und Mindestumsatz konfigurierbar |
-| R-14 | Verlorener Deal älter als 3 Monate, Grund Timing/Budget | Reaktivierungsvorschlag an früheren Besitzer |
+| R-13 | Aktiver Kunde mit Umsatzhistorie, aber mehr als 90 Tage ohne Telefon | Account-Care-Liste; Zeitraum und Mindestumsatz konfigurierbar |
+| R-14 | Verlorener Deal älter als 90 Tage, Grund Timing/Budget | Reaktivierungsvorschlag an früheren Besitzer |
+| R-15 | Offener/dringender Servicefall ohne rechtzeitige Bearbeitung | Servicefall-Vorgang; bei Fristüberschreitung bzw. hoher Priorität eskalieren |
+| R-16 | Gesendetes Angebot ohne Entscheidung nach 7 Tagen | Folgekontakt beim Besitzer |
+| R-17 | Offener Auftrag nach zugesagtem Liefertermin plus Toleranz | Lieferverzug prüfen und eskalieren |
+| R-18 | Offene Rechnung nach Fälligkeit plus Toleranz | Zahlungsstatus prüfen; offener Betrag anzeigen |
 
 Wiedervorlagen erzeugt und verwaltet das Tool selbst. Grenzwerte, Intervalle,
 Besitzerlogik und Automatisierungsgrade gehören in die Konfiguration.
 
 ### Umsetzungsstand der ersten Arbeitsliste
 
-Aktiv ausgewertet werden R-05, R-06, R-07, R-08, R-09, R-10 und R-12. Die
-Projektion schreibt passende `SalesWorkItem`-Einträge, Regelruns und
-Regelauswertungen. Erledigen und Zurückstellen werden als WorkItem-Event und
-Audit protokolliert. R-09 nutzt bis zur Aktivierung eines Arbeitszeitkalenders
-eine verstrichene Stunde; R-01 bis R-04, R-11, R-13 und R-14 bleiben weitere
-Regelengine-Ausbaustufen.
+Aktiv ausgewertet werden R-01 bis R-18. Die Projektion schreibt passende
+`SalesWorkItem`-Einträge, Regelruns und Regelauswertungen. Ein
+Vorgang wird nicht mehr lokal als fachlich erledigt markiert: Die Auflösung
+erfolgt, wenn der nächste CRM-Sync den zugrunde liegenden Zustand nicht mehr
+als Treffer liefert. Zurückstellen bleibt eine lokale Arbeitslisten-Funktion
+und wird als geschlossene Vorgängerinstanz mit neuem Nachfolger, `AvailableFrom`,
+WorkItem-Ketten-ID und Audit protokolliert. R-09 verwendet den konfigurierten
+Arbeitszeitkalender und eskaliert nach der konfigurierten Arbeitszeit. R-11
+berechnet die Pace je Mitarbeiter aus dem laufenden Geschäftsjahr, R-13 prüft
+Umsatzhistorie plus Telefonalter und R-14 prüft verlorene Deals mit Timing-/
+Budgetgrund. Alle Regeln laufen nach Full- und Incremental-Crawl; der
+Incremental-Crawl erweitert den Scope nur auf betroffene Datensätze und ihre
+fachlichen Abhängigkeiten.
+
+R-09 und R-11 erzeugen einen priorisierten Vorgang und zusätzlich eine
+idempotente E-Mail-Outbox-Benachrichtigung: R-09 geht zunächst an den Besitzer
+und ab der Eskalationsgrenze an die hinterlegten Empfänger der
+Vertriebsleitung; R-11 geht an diese Leitungsempfänger. Die Zustellung läuft
+über den providerbasierten SMTP-Transport. Die lokalen Defaults zeigen auf
+Mailpit (`mailpit:1025`); O365/Graph kann später als weiterer Provider ergänzt
+werden. Zustellstatus, Versuche, Sperrfrist und letzter Fehler liegen in
+`sales_notifications`.
+
+Anrufe werden als Aktivitäten importiert. Nicht erreicht, Mailbox und falscher
+Ansprechpartner bleiben Versuche und setzen den Staffelzähler nicht zurück;
+ein qualifiziertes Gespräch beginnt ab der appweit konfigurierten Mindestdauer
+(Standard: 20 Sekunden). Die
+Incremental-Bewertung folgt nach dem Sync von der Aktivität über Lead,
+Kontakt, Kunde oder Deal nur den betroffenen Regelzielen.
 
 ## Sortierung
 
