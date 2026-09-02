@@ -37,6 +37,10 @@ Besitzer wird über die E-Mail des authentifizierten Plattform-Benutzers gesucht
 ein Benutzer ohne Zuordnung erhält nur nicht zugeordnete Vorgänge und eine
 transparente Hinweismeldung. Ein Benutzer kann fremde, besitzerbezogene
 Vorgänge auch über eine direkt bekannte ID nicht erledigen oder zurückstellen.
+Eine explizite tenantbezogene Zuordnung in der Sales-App hat Vorrang vor dem
+E-Mail-Fallback. Sie wird ausschließlich durch Tenant-Administratoren gepflegt
+und verbindet die stabile Plattform-Subject-ID mit einer synchronisierten
+`SalesOwner`-ID.
 
 ## Schreib- und Freigabegrenzen
 

@@ -123,6 +123,14 @@ gesetzt werden; die localhost-Werte im Bootstrap sind nur für den lokalen
 Docker-Desktop/Kubernetes-Betrieb. Client-ID und Client-Secret bleiben dabei
 mandantenbezogene Application Settings.
 
+### CRM-Benutzerzuordnung
+
+Die Arbeitsliste kann einen Plattform-Benutzer explizit einem synchronisierten
+CRM-Besitzer zuordnen. Tenant-Administratoren öffnen dafür in der Sales-App den
+Menüpunkt `Einstellungen`. Die Zuordnung wird tenantbezogen in der Einstellung
+`crm.ownerMappings` gespeichert; die Oberfläche verwendet die stabile
+Plattform-Subject-ID und validiert den ausgewählten aktiven CRM-Besitzer.
+
 ## Datenbank
 
 Die Datenbank wird nicht als eigene Infrastruktur in der Sales-Plattform

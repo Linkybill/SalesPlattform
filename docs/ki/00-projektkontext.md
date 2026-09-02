@@ -54,6 +54,11 @@ Stand: 2026-09-02.
   auswählbare Provider; seine Client-ID, sein Datacenter und sein Client-Secret
   werden nur eingeblendet, wenn `Zoho CRM` ausgewählt ist. Das Client-Secret ist
   ein verschlüsseltes Secret-Setting.
+- Die CRM-Besitzerzuordnung wird ebenfalls tenantbezogen in den AppSettings
+  gespeichert. Die Sales-App bietet dafür unter `Einstellungen` einen
+  komfortablen Editor; gespeichert wird die Zuordnung über die stabile
+  Plattform-Subject-ID und die `SalesOwner`-ID, mit E-Mail als Anzeige- und
+  Fallback-Wert.
 - Die aktuell integrierten Paketstände sind `@hammer2fall/identity-platform-react`
   `0.1.43` im Frontend und `IdentityPlatform.Shared` `0.1.37` im Backend.
   Die Jobdefinition enthält neben Zeitplan und Aktivierung auch

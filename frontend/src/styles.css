@@ -37,6 +37,19 @@ h2 { margin-bottom: 0; font-size: 22px; }
 .integration-card { margin-bottom: 22px; }
 .button-row { display: flex; flex-wrap: wrap; gap: 10px; }
 .integration-meta { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 18px; color: #9aaac0; font-size: 13px; }
+.owner-mapping-card { margin-bottom: 22px; }
+.owner-mapping-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 22px 0 18px; }
+.owner-mapping-form label { display: grid; gap: 8px; color: #d9e8f8; font-size: 13px; font-weight: 700; }
+.owner-mapping-form input, .owner-mapping-form select { width: 100%; border: 1px solid #466482; border-radius: 9px; padding: 12px 13px; color: #e8eef8; background: #1b2c42; font: inherit; font-size: 14px; }
+.owner-mapping-form input:focus, .owner-mapping-form select:focus { outline: 2px solid #71d9ec; outline-offset: 1px; }
+.owner-mapping-list { display: grid; gap: 10px; margin-top: 18px; }
+.owner-mapping-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 15px; border: 1px solid #294766; border-radius: 10px; background: #0d2034; }
+.owner-mapping-row > div { display: grid; gap: 5px; min-width: 0; }
+.owner-mapping-row strong { overflow-wrap: anywhere; color: #e8eef8; font-size: 13px; }
+.owner-mapping-row small { overflow-wrap: anywhere; color: #8fa9c5; font-size: 12px; }
+.ghost-button { cursor: pointer; border: 1px solid #466482; border-radius: 9px; padding: 9px 12px; color: #d9e8f8; background: transparent; font-size: 12px; font-weight: 700; }
+.ghost-button:hover { border-color: #71d9ec; color: #b2f3fa; background: #132d45; }
+.ghost-button:disabled { cursor: wait; opacity: .6; }
 .integration-progress { display: grid; gap: 10px; margin-top: 18px; padding: 13px 15px; border: 1px solid #2a5570; border-radius: 9px; color: #b7c9dc; background: #0d2034; font-size: 13px; }
 .integration-progress code { color: #b3f0f7; font-size: 12px; }
 .worklist-card { margin-bottom: 22px; }
@@ -97,4 +110,6 @@ h2 { margin-bottom: 0; font-size: 22px; }
   .card-heading { align-items: flex-start; flex-direction: column; }
   .worklist-item { flex-direction: column; }
   .worklist-actions { align-items: stretch; }
+  .owner-mapping-form { grid-template-columns: 1fr; }
+  .owner-mapping-row { grid-template-columns: 1fr; }
 }

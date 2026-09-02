@@ -13,7 +13,8 @@ namespace SalesPlattform.Backend.Services;
 /// worklist from the already synchronized CRM data.
 /// </summary>
 public sealed class WorklistService(
-    PlatformTenantDbContextFactory<SalesPlattformDbContext> dbFactory)
+    PlatformTenantDbContextFactory<SalesPlattformDbContext> dbFactory,
+    OwnerMappingService ownerMappings)
 {
     // The platform factory opens the tenant-bound database session per request.
     // The service is scoped, so the active context only lives for one operation.
@@ -502,20 +503,7 @@ public sealed class WorklistService(
     }
 
     private async Task<Guid?> ResolveOwnerIdAsync(ClaimsPrincipal user, CancellationToken cancellationToken)
-    {
-        var email = user.FindFirstValue(ClaimTypes.Email)
-            ?? user.FindFirstValue("email")
-            ?? user.FindFirstValue("preferred_username");
-        if (string.IsNullOrWhiteSpace(email))
-            return null;
-
-        var normalizedEmail = email.Trim().ToUpperInvariant();
-        return await db.SalesOwners
-            .AsNoTracking()
-            .Where(owner => owner.Email != null && owner.Email.ToUpper() == normalizedEmail)
-            .Select(owner => (Guid?)owner.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-    }
+        => await ownerMappings.ResolveOwnerIdAsync(user, db, cancellationToken);
 
     private async Task<bool> CanAccessAsync(
         SalesWorkItem item,

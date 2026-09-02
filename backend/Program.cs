@@ -26,6 +26,7 @@ builder.Services.AddApplicationSettings<SalesPlattformDbContext>(builder.Configu
 });
 builder.Services.AddScoped<TenantAdminAccessService>();
 builder.Services.AddScoped<HelloWorldService>();
+builder.Services.AddScoped<OwnerMappingService>();
 builder.Services.AddScoped<WorklistService>();
 builder.Services.AddOptions<ZohoOptions>()
     .Bind(builder.Configuration.GetSection("Zoho"));
@@ -73,6 +74,65 @@ app.UseIdentityPlatform();
 app.MapIdentityPlatformEndpoints();
 app.MapApplicationSettingsEndpoints();
 app.MapZohoIntegrationEndpoints();
+
+app.MapGet("/api/owner-mappings", async (
+    ClaimsPrincipal user,
+    OwnerMappingService ownerMappings,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await ownerMappings.GetAsync(user, cancellationToken));
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Forbid();
+    }
+    catch (InvalidOperationException exception)
+    {
+        return Results.BadRequest(new { message = exception.Message });
+    }
+}).RequireAuthorization("sales-user");
+
+app.MapPut("/api/owner-mappings", async (
+    SaveOwnerMappingRequest request,
+    ClaimsPrincipal user,
+    OwnerMappingService ownerMappings,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await ownerMappings.SaveAsync(request, user, cancellationToken));
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Forbid();
+    }
+    catch (ArgumentException exception)
+    {
+        return Results.BadRequest(new { message = exception.Message });
+    }
+}).RequireAuthorization("sales-user");
+
+app.MapDelete("/api/owner-mappings/{platformUserEmail}", async (
+    string platformUserEmail,
+    ClaimsPrincipal user,
+    OwnerMappingService ownerMappings,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        return Results.Ok(await ownerMappings.DeleteAsync(platformUserEmail, user, cancellationToken));
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Forbid();
+    }
+    catch (ArgumentException exception)
+    {
+        return Results.BadRequest(new { message = exception.Message });
+    }
+}).RequireAuthorization("sales-user");
 
 app.MapGet("/api/worklist", async (
     ClaimsPrincipal user,

@@ -104,6 +104,16 @@
         "settingKey": "crm.integration",
         "value": "zoho"
       }
+    },
+    {
+      "key": "crm.ownerMappings",
+      "name": "CRM-Benutzerzuordnungen",
+      "description": "Tenantbezogene Zuordnung von Identity-Platform-Benutzern zu CRM-Besitzern. Komfortabel über SalesPlattform > Einstellungen pflegen.",
+      "category": "Arbeitsliste",
+      "type": "string",
+      "defaultValue": "[]",
+      "scopes": ["tenantApp"],
+      "validation": { "maxLength": 50000 }
     }
   ],
   "client": {
