@@ -59,6 +59,9 @@ public interface ISalesCrmRepository
         Guid syncRunId,
         CancellationToken cancellationToken);
 
+    Task BackfillLeadActivityMarkersAsync(
+        CancellationToken cancellationToken);
+
     void AddSyncError(
         Guid syncRunId,
         Guid syncRunItemId,

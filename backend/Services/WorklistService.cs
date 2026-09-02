@@ -435,6 +435,8 @@ public sealed class WorklistService(
         foreach (var lead in leads.Where(lead => lead.IsActive
             && IsOpenStatus(lead.Status)
             && !lead.FirstActivityAt.HasValue
+            && !lead.LastContactAt.HasValue
+            && !lead.LastPhoneCallAt.HasValue
             && lead.SourceCreatedAt is { } createdAt
             && createdAt <= now.AddHours(-1)))
         {

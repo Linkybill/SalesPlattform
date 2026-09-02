@@ -368,6 +368,7 @@ public sealed class ZohoSyncService(
                 repository,
                 publish,
                 cancellationToken);
+            await repository.BackfillLeadActivityMarkersAsync(cancellationToken);
 
             run.Status = run.RecordsFailed == 0 ? "succeeded" : "completed_with_errors";
             run.CurrentModule = null;
