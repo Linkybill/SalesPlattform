@@ -85,12 +85,9 @@ public sealed class SalesCustomer : SalesEntity
     public DateTimeOffset? SourceDeletedAt { get; set; }
 
     public SalesOwner? Owner { get; set; }
-    public ICollection<SalesContact> Contacts { get; set; } = [];
     public ICollection<SalesLead> Leads { get; set; } = [];
     public ICollection<SalesDeal> Deals { get; set; } = [];
     public ICollection<SalesContract> Contracts { get; set; } = [];
-    public ICollection<SalesCustomerRelationship> ParentRelationships { get; set; } = [];
-    public ICollection<SalesCustomerRelationship> ChildRelationships { get; set; } = [];
     public ICollection<SalesCustomerStatusHistory> StatusHistory { get; set; } = [];
 
     [NotMapped]
@@ -106,20 +103,6 @@ public sealed class SalesCustomer : SalesEntity
     public string? OwnerExternalId { get; set; }
 }
 
-public sealed class SalesCustomerRelationship : SalesEntity
-{
-    public Guid ParentCustomerId { get; set; }
-    public Guid ChildCustomerId { get; set; }
-    public required string RelationshipType { get; set; }
-    public DateTimeOffset? ValidFrom { get; set; }
-    public DateTimeOffset? ValidTo { get; set; }
-    public string? Source { get; set; }
-    public string? Notes { get; set; }
-
-    public SalesCustomer? ParentCustomer { get; set; }
-    public SalesCustomer? ChildCustomer { get; set; }
-}
-
 public sealed class SalesCustomerStatusHistory : SalesEntity
 {
     public Guid CustomerId { get; set; }
@@ -131,33 +114,9 @@ public sealed class SalesCustomerStatusHistory : SalesEntity
     public SalesCustomer? Customer { get; set; }
 }
 
-public sealed class SalesContact : SalesEntity
-{
-    public Guid? CustomerId { get; set; }
-    public required string Name { get; set; }
-    public string? FirstName { get; set; }
-    public string? LastName { get; set; }
-    public string? Email { get; set; }
-    public string? NormalizedEmail { get; set; }
-    public string? Phone { get; set; }
-    public string? NormalizedPhone { get; set; }
-    public string? MobilePhone { get; set; }
-    public string? JobTitle { get; set; }
-    public string? RoleType { get; set; }
-    public bool IsPrimary { get; set; }
-    public bool IsActive { get; set; } = true;
-    public DateTimeOffset? SourceCreatedAt { get; set; }
-    public DateTimeOffset? SourceModifiedAt { get; set; }
-    public DateTimeOffset? LastSeenAt { get; set; }
-    public DateTimeOffset? SourceDeletedAt { get; set; }
-
-    public SalesCustomer? Customer { get; set; }
-}
-
 public sealed class SalesLead : SalesEntity
 {
     public Guid? CustomerId { get; set; }
-    public Guid? ContactId { get; set; }
     public Guid? OwnerId { get; set; }
     public required string Name { get; set; }
     public string? CompanyName { get; set; }
@@ -181,7 +140,6 @@ public sealed class SalesLead : SalesEntity
     public DateTimeOffset? SourceDeletedAt { get; set; }
 
     public SalesCustomer? Customer { get; set; }
-    public SalesContact? Contact { get; set; }
     public SalesOwner? Owner { get; set; }
 
     [NotMapped]
@@ -456,7 +414,6 @@ public sealed class SalesAppointmentStatusHistory : SalesEntity
 public sealed class SalesServiceCase : SalesEntity
 {
     public Guid? CustomerId { get; set; }
-    public Guid? ContactId { get; set; }
     public Guid? DealId { get; set; }
     public Guid? OwnerId { get; set; }
     public required string Subject { get; set; }
@@ -475,7 +432,6 @@ public sealed class SalesServiceCase : SalesEntity
     public bool IsActive { get; set; } = true;
 
     public SalesCustomer? Customer { get; set; }
-    public SalesContact? Contact { get; set; }
     public SalesDeal? Deal { get; set; }
     public SalesOwner? Owner { get; set; }
 }
@@ -483,7 +439,6 @@ public sealed class SalesServiceCase : SalesEntity
 public sealed class SalesOffer : SalesEntity
 {
     public Guid? CustomerId { get; set; }
-    public Guid? ContactId { get; set; }
     public Guid? DealId { get; set; }
     public Guid? OwnerId { get; set; }
     public required string Name { get; set; }
@@ -501,7 +456,6 @@ public sealed class SalesOffer : SalesEntity
     public bool IsActive { get; set; } = true;
 
     public SalesCustomer? Customer { get; set; }
-    public SalesContact? Contact { get; set; }
     public SalesDeal? Deal { get; set; }
     public SalesOwner? Owner { get; set; }
     public ICollection<SalesOrder> Orders { get; set; } = [];

@@ -13,6 +13,53 @@ public sealed class IntegrationConnection : SalesEntity
     public bool IsActive { get; set; }
 }
 
+/// <summary>
+/// One actual outbound CRM API attempt. Keeping attempts append-only makes
+/// request and provider-reported quota data auditable and safe to aggregate
+/// later by tenant, run, provider, endpoint, or time window.
+/// </summary>
+public sealed class IntegrationApiUsageEvent : SalesEntity
+{
+    public required string ProviderKey { get; set; }
+    public string ConnectionKey { get; set; } = "default";
+    public Guid? RunId { get; set; }
+    public string Origin { get; set; } = "unknown";
+    public string? RequestedBy { get; set; }
+    public string? CorrelationId { get; set; }
+    public required string HttpMethod { get; set; }
+    public required string Endpoint { get; set; }
+    public required string Operation { get; set; }
+    public required string Category { get; set; }
+    public int? StatusCode { get; set; }
+    public bool Succeeded { get; set; }
+    public bool Retryable { get; set; }
+    public long EstimatedUnits { get; set; }
+    public string UsageUnit { get; set; } = "requests";
+    public int? ProviderUnitsRemaining { get; set; }
+    public int? ProviderUnitsLimit { get; set; }
+    public int? RecordsAffected { get; set; }
+    public long DurationMilliseconds { get; set; }
+    public DateTimeOffset OccurredAt { get; set; }
+}
+
+/// <summary>
+/// Persisted Zoho CRM metadata used by all regular synchronization runs.
+/// The schema is refreshed only by the explicit manual schema-cache job; a
+/// normal full or incremental sync never calls Zoho's settings endpoints.
+/// </summary>
+public sealed class ZohoSchemaCache : SalesEntity
+{
+    public string ProviderKey { get; set; } = "zoho";
+    public string ConnectionKey { get; set; } = "default";
+    public required string AvailableModulesJson { get; set; }
+    public required string FieldsJson { get; set; }
+    public string LayoutsJson { get; set; } = "{}";
+    public string PipelinesJson { get; set; } = "[]";
+    public string RelatedListsJson { get; set; } = "{}";
+    public string? ExternalOrganizationId { get; set; }
+    public DateTimeOffset FetchedAt { get; set; }
+}
+
 public sealed class IntegrationOAuthState : SalesEntity
 {
     public required string ProviderKey { get; set; }
@@ -32,6 +79,11 @@ public sealed class IntegrationEntityLink : SalesEntity
     public required string InternalEntityType { get; set; }
     public Guid InternalEntityId { get; set; }
     public Guid? WorkItemId { get; set; }
+    /// <summary>
+    /// Last task projection sent by the application. This is deliberately
+    /// separate from LastSeenAt, which describes the inbound CRM observation.
+    /// </summary>
+    public string? LastOutboundTaskProjectionJson { get; set; }
     public DateTimeOffset LastSeenAt { get; set; }
     public DateTimeOffset? SourceDeletedAt { get; set; }
 }
@@ -199,5 +251,25 @@ public sealed class IntegrationWebhookEvent : SalesEntity
     public int AttemptCount { get; set; }
     public DateTimeOffset ReceivedAt { get; set; }
     public DateTimeOffset? ProcessedAt { get; set; }
+    public string? Error { get; set; }
+}
+
+/// <summary>
+/// Current provider callback subscription for one tenant and CRM module.
+/// Verification secrets are never stored; only a SHA-256 hash is persisted.
+/// </summary>
+public sealed class IntegrationSubscription : SalesEntity
+{
+    public required string ProviderKey { get; set; }
+    public required string ConnectionKey { get; set; }
+    public required string Module { get; set; }
+    public required string EventsJson { get; set; }
+    public required string ChannelId { get; set; }
+    public required string VerificationTokenHash { get; set; }
+    public required string NotifyUrl { get; set; }
+    public required string Status { get; set; }
+    public DateTimeOffset? ExpiresAt { get; set; }
+    public DateTimeOffset? LastCheckedAt { get; set; }
+    public DateTimeOffset? LastRenewedAt { get; set; }
     public string? Error { get; set; }
 }

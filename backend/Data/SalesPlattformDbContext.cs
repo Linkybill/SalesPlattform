@@ -8,10 +8,26 @@ namespace SalesPlattform.Backend.Data;
 public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbContext> options)
     : PlatformTenantDbContext<SalesPlattformDbContext>(options)
 {
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        NormalizeDateTimeOffsets();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        NormalizeDateTimeOffsets();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
     public DbSet<HelloWorldRecord> HelloWorldRecords => Set<HelloWorldRecord>();
     public DbSet<ApplicationSettingValueEntity> ApplicationSettingValues => Set<ApplicationSettingValueEntity>();
 
     public DbSet<IntegrationConnection> IntegrationConnections => Set<IntegrationConnection>();
+    public DbSet<IntegrationApiUsageEvent> IntegrationApiUsageEvents => Set<IntegrationApiUsageEvent>();
+    public DbSet<ZohoSchemaCache> ZohoSchemaCaches => Set<ZohoSchemaCache>();
     public DbSet<IntegrationOAuthState> IntegrationOAuthStates => Set<IntegrationOAuthState>();
     public DbSet<IntegrationEntityLink> IntegrationEntityLinks => Set<IntegrationEntityLink>();
     public DbSet<IntegrationRawRecord> IntegrationRawRecords => Set<IntegrationRawRecord>();
@@ -24,14 +40,13 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
     public DbSet<IntegrationStageMapping> IntegrationStageMappings => Set<IntegrationStageMapping>();
     public DbSet<IntegrationWritebackOperation> IntegrationWritebackOperations => Set<IntegrationWritebackOperation>();
     public DbSet<IntegrationWebhookEvent> IntegrationWebhookEvents => Set<IntegrationWebhookEvent>();
+    public DbSet<IntegrationSubscription> IntegrationSubscriptions => Set<IntegrationSubscription>();
 
     public DbSet<SalesOwner> SalesOwners => Set<SalesOwner>();
     public DbSet<SalesTeam> SalesTeams => Set<SalesTeam>();
     public DbSet<SalesTeamMember> SalesTeamMembers => Set<SalesTeamMember>();
     public DbSet<SalesCustomer> SalesCustomers => Set<SalesCustomer>();
-    public DbSet<SalesCustomerRelationship> SalesCustomerRelationships => Set<SalesCustomerRelationship>();
     public DbSet<SalesCustomerStatusHistory> SalesCustomerStatusHistories => Set<SalesCustomerStatusHistory>();
-    public DbSet<SalesContact> SalesContacts => Set<SalesContact>();
     public DbSet<SalesLead> SalesLeads => Set<SalesLead>();
     public DbSet<SalesProductCategory> SalesProductCategories => Set<SalesProductCategory>();
     public DbSet<SalesProduct> SalesProducts => Set<SalesProduct>();
@@ -79,6 +94,26 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
     public DbSet<SalesOwnerChangeRequest> SalesOwnerChangeRequests => Set<SalesOwnerChangeRequest>();
     public DbSet<SalesAuditLog> SalesAuditLogs => Set<SalesAuditLog>();
 
+    private void NormalizeDateTimeOffsets()
+    {
+        // PostgreSQL timestamptz represents an absolute instant and Npgsql
+        // requires DateTimeOffset values sent to it to use UTC. CRM and
+        // tenant-calendar calculations may legitimately produce local offsets
+        // such as Europe/Berlin (+02:00), so normalize at the persistence
+        // boundary for every entity written by this application.
+        foreach (var entry in ChangeTracker.Entries())
+        {
+            if (entry.State is not (EntityState.Added or EntityState.Modified))
+                continue;
+
+            foreach (var property in entry.Properties)
+            {
+                if (property.CurrentValue is DateTimeOffset value && value.Offset != TimeSpan.Zero)
+                    property.CurrentValue = value.ToUniversalTime();
+            }
+        }
+    }
+
     protected override void ConfigurePlatformModel(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<HelloWorldRecord>(entity =>
@@ -106,6 +141,33 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         connection.Property(item => item.ApiDomain).HasMaxLength(300).IsRequired();
         connection.HasIndex(item => new { item.TenantId, item.ProviderKey, item.ConnectionKey }).IsUnique();
 
+        var apiUsage = Table<IntegrationApiUsageEvent>(modelBuilder, "integration_api_usage_events");
+        apiUsage.Property(item => item.ProviderKey).HasMaxLength(50).IsRequired();
+        apiUsage.Property(item => item.ConnectionKey).HasMaxLength(100).IsRequired();
+        apiUsage.Property(item => item.Origin).HasMaxLength(40).IsRequired();
+        apiUsage.Property(item => item.RequestedBy).HasMaxLength(256);
+        apiUsage.Property(item => item.CorrelationId).HasMaxLength(200);
+        apiUsage.Property(item => item.HttpMethod).HasMaxLength(20).IsRequired();
+        apiUsage.Property(item => item.Endpoint).HasMaxLength(500).IsRequired();
+        apiUsage.Property(item => item.Operation).HasMaxLength(200).IsRequired();
+        apiUsage.Property(item => item.Category).HasMaxLength(80).IsRequired();
+        apiUsage.Property(item => item.UsageUnit).HasMaxLength(50).IsRequired();
+        apiUsage.HasIndex(item => new { item.TenantId, item.ProviderKey, item.ConnectionKey, item.OccurredAt });
+        apiUsage.HasIndex(item => new { item.TenantId, item.RunId, item.OccurredAt });
+        apiUsage.HasIndex(item => new { item.TenantId, item.Origin, item.OccurredAt });
+
+        var zohoSchema = Table<ZohoSchemaCache>(modelBuilder, "zoho_schema_cache");
+        zohoSchema.Property(item => item.ProviderKey).HasMaxLength(50).IsRequired();
+        zohoSchema.Property(item => item.ConnectionKey).HasMaxLength(100).IsRequired();
+        zohoSchema.Property(item => item.AvailableModulesJson).HasColumnType("jsonb").IsRequired();
+        zohoSchema.Property(item => item.FieldsJson).HasColumnType("jsonb").IsRequired();
+        zohoSchema.Property(item => item.LayoutsJson).HasColumnType("jsonb").IsRequired();
+        zohoSchema.Property(item => item.PipelinesJson).HasColumnType("jsonb").IsRequired();
+        zohoSchema.Property(item => item.RelatedListsJson).HasColumnType("jsonb").IsRequired();
+        zohoSchema.Property(item => item.ExternalOrganizationId).HasMaxLength(200);
+        zohoSchema.Property(item => item.FetchedAt).IsRequired();
+        zohoSchema.HasIndex(item => new { item.TenantId, item.ProviderKey, item.ConnectionKey }).IsUnique();
+
         var oauthState = Table<IntegrationOAuthState>(modelBuilder, "integration_oauth_states");
         oauthState.Property(item => item.ProviderKey).HasMaxLength(50).IsRequired();
         oauthState.Property(item => item.StateHash).HasMaxLength(128).IsRequired();
@@ -120,6 +182,7 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         link.Property(item => item.ExternalId).HasMaxLength(200).IsRequired();
         link.Property(item => item.ExternalUrl).HasMaxLength(2000);
         link.Property(item => item.InternalEntityType).HasMaxLength(80).IsRequired();
+        link.Property(item => item.LastOutboundTaskProjectionJson).HasColumnType("jsonb");
         link.HasIndex(item => new { item.TenantId, item.ProviderKey, item.ConnectionKey, item.EntityType, item.ExternalId }).IsUnique();
         link.HasIndex(item => new { item.TenantId, item.InternalEntityType, item.InternalEntityId });
         link.HasIndex(item => new { item.TenantId, item.WorkItemId });
@@ -256,6 +319,20 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         webhook.Property(item => item.Error).HasMaxLength(4000);
         webhook.HasIndex(item => new { item.TenantId, item.ProviderKey, item.ConnectionKey, item.ExternalEventId }).IsUnique();
         webhook.HasIndex(item => new { item.TenantId, item.Status, item.ReceivedAt });
+
+        var subscription = Table<IntegrationSubscription>(modelBuilder, "integration_subscriptions");
+        subscription.Property(item => item.ProviderKey).HasMaxLength(50).IsRequired();
+        subscription.Property(item => item.ConnectionKey).HasMaxLength(100).IsRequired();
+        subscription.Property(item => item.Module).HasMaxLength(100).IsRequired();
+        subscription.Property(item => item.EventsJson).HasColumnType("jsonb").IsRequired();
+        subscription.Property(item => item.ChannelId).HasMaxLength(100).IsRequired();
+        subscription.Property(item => item.VerificationTokenHash).HasMaxLength(128).IsRequired();
+        subscription.Property(item => item.NotifyUrl).HasMaxLength(2000).IsRequired();
+        subscription.Property(item => item.Status).HasMaxLength(30).IsRequired();
+        subscription.Property(item => item.Error).HasMaxLength(4000);
+        subscription.HasIndex(item => new { item.TenantId, item.ProviderKey, item.ConnectionKey, item.Module }).IsUnique();
+        subscription.HasIndex(item => new { item.TenantId, item.ProviderKey, item.ChannelId }).IsUnique();
+        subscription.HasIndex(item => new { item.TenantId, item.Status, item.ExpiresAt });
     }
 
     private static void ConfigureCanonicalModel(ModelBuilder modelBuilder)
@@ -299,35 +376,10 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         customer.HasIndex(item => new { item.TenantId, item.OwnerAssignedAt });
         customer.HasOne(item => item.Owner).WithMany(item => item.Customers).HasForeignKey(item => item.OwnerId).OnDelete(DeleteBehavior.SetNull);
 
-        var customerRelationship = Table<SalesCustomerRelationship>(modelBuilder, "sales_customer_relationships");
-        customerRelationship.Property(item => item.RelationshipType).HasMaxLength(80).IsRequired();
-        customerRelationship.Property(item => item.Source).HasMaxLength(100);
-        customerRelationship.Property(item => item.Notes).HasMaxLength(2000);
-        customerRelationship.HasIndex(item => new { item.TenantId, item.ParentCustomerId, item.ChildCustomerId, item.RelationshipType }).IsUnique();
-        customerRelationship.ToTable("sales_customer_relationships", table =>
-            table.HasCheckConstraint("CK_sales_customer_relationships_not_self", "\"ParentCustomerId\" <> \"ChildCustomerId\""));
-        customerRelationship.HasOne(item => item.ParentCustomer).WithMany(item => item.ParentRelationships).HasForeignKey(item => item.ParentCustomerId).OnDelete(DeleteBehavior.Restrict);
-        customerRelationship.HasOne(item => item.ChildCustomer).WithMany(item => item.ChildRelationships).HasForeignKey(item => item.ChildCustomerId).OnDelete(DeleteBehavior.Restrict);
-
         var customerStatus = Table<SalesCustomerStatusHistory>(modelBuilder, "sales_customer_status_history");
         customerStatus.Property(item => item.Status).HasMaxLength(100).IsRequired();
         customerStatus.HasIndex(item => new { item.TenantId, item.CustomerId, item.ValidFrom });
         customerStatus.HasOne(item => item.Customer).WithMany(item => item.StatusHistory).HasForeignKey(item => item.CustomerId).OnDelete(DeleteBehavior.Restrict);
-
-        var contact = Table<SalesContact>(modelBuilder, "sales_contacts");
-        contact.Property(item => item.Name).HasMaxLength(300).IsRequired();
-        contact.Property(item => item.FirstName).HasMaxLength(150);
-        contact.Property(item => item.LastName).HasMaxLength(150);
-        contact.Property(item => item.Email).HasMaxLength(320);
-        contact.Property(item => item.NormalizedEmail).HasMaxLength(320);
-        contact.Property(item => item.Phone).HasMaxLength(100);
-        contact.Property(item => item.NormalizedPhone).HasMaxLength(100);
-        contact.Property(item => item.MobilePhone).HasMaxLength(100);
-        contact.Property(item => item.JobTitle).HasMaxLength(200);
-        contact.Property(item => item.RoleType).HasMaxLength(100);
-        contact.HasIndex(item => new { item.TenantId, item.NormalizedEmail });
-        contact.HasIndex(item => new { item.TenantId, item.NormalizedPhone });
-        contact.HasOne(item => item.Customer).WithMany(item => item.Contacts).HasForeignKey(item => item.CustomerId).OnDelete(DeleteBehavior.SetNull);
 
         var lead = Table<SalesLead>(modelBuilder, "sales_leads");
         lead.Property(item => item.Name).HasMaxLength(300).IsRequired();
@@ -342,7 +394,6 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         lead.HasIndex(item => new { item.TenantId, item.NormalizedPhone });
         lead.HasIndex(item => new { item.TenantId, item.ResponseDueAt });
         lead.HasOne(item => item.Customer).WithMany(item => item.Leads).HasForeignKey(item => item.CustomerId).OnDelete(DeleteBehavior.SetNull);
-        lead.HasOne(item => item.Contact).WithMany().HasForeignKey(item => item.ContactId).OnDelete(DeleteBehavior.SetNull);
         lead.HasOne(item => item.Owner).WithMany(item => item.Leads).HasForeignKey(item => item.OwnerId).OnDelete(DeleteBehavior.SetNull);
 
         var category = Table<SalesProductCategory>(modelBuilder, "sales_product_categories");
@@ -463,7 +514,6 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         serviceCase.HasIndex(item => new { item.TenantId, item.IsActive, item.Status, item.DueAt });
         serviceCase.HasIndex(item => new { item.TenantId, item.CustomerId, item.OpenedAt });
         serviceCase.HasOne(item => item.Customer).WithMany().HasForeignKey(item => item.CustomerId).OnDelete(DeleteBehavior.SetNull);
-        serviceCase.HasOne(item => item.Contact).WithMany().HasForeignKey(item => item.ContactId).OnDelete(DeleteBehavior.SetNull);
         serviceCase.HasOne(item => item.Deal).WithMany().HasForeignKey(item => item.DealId).OnDelete(DeleteBehavior.SetNull);
         serviceCase.HasOne(item => item.Owner).WithMany().HasForeignKey(item => item.OwnerId).OnDelete(DeleteBehavior.SetNull);
 
@@ -476,7 +526,6 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         offer.HasIndex(item => new { item.TenantId, item.Status, item.ValidUntil });
         offer.HasIndex(item => new { item.TenantId, item.CustomerId, item.IssuedAt });
         offer.HasOne(item => item.Customer).WithMany().HasForeignKey(item => item.CustomerId).OnDelete(DeleteBehavior.SetNull);
-        offer.HasOne(item => item.Contact).WithMany().HasForeignKey(item => item.ContactId).OnDelete(DeleteBehavior.SetNull);
         offer.HasOne(item => item.Deal).WithMany().HasForeignKey(item => item.DealId).OnDelete(DeleteBehavior.SetNull);
         offer.HasOne(item => item.Owner).WithMany().HasForeignKey(item => item.OwnerId).OnDelete(DeleteBehavior.SetNull);
 
@@ -561,7 +610,16 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         evaluation.Property(item => item.TargetType).HasMaxLength(50).IsRequired();
         evaluation.Property(item => item.Outcome).HasMaxLength(50).IsRequired();
         evaluation.Property(item => item.ExplanationJson).HasColumnType("jsonb");
-        evaluation.HasIndex(item => new { item.TenantId, item.RuleRunId, item.TargetType, item.TargetId }).IsUnique();
+        evaluation.HasIndex(item => new
+        {
+            item.TenantId,
+            item.RuleRunId,
+            item.RuleDefinitionId,
+            item.TargetType,
+            item.TargetId
+        })
+            .HasDatabaseName("IX_sales_rule_evaluations_rule_target")
+            .IsUnique();
         evaluation.HasOne(item => item.RuleRun).WithMany(item => item.Evaluations).HasForeignKey(item => item.RuleRunId).OnDelete(DeleteBehavior.Cascade);
         evaluation.HasOne(item => item.RuleDefinition).WithMany(item => item.Evaluations).HasForeignKey(item => item.RuleDefinitionId).OnDelete(DeleteBehavior.Restrict);
         evaluation.HasOne(item => item.WorkItem).WithMany(item => item.RuleEvaluations).HasForeignKey(item => item.WorkItemId).OnDelete(DeleteBehavior.SetNull);

@@ -49,7 +49,6 @@ public sealed record SaveOwnerMappingRequest(
 public sealed class OwnerMappingService(
     PlatformTenantDbContextFactory<SalesPlattformDbContext> dbFactory,
     IApplicationSettingsStore settingsStore,
-    IApplicationSettingsSecretStore secretSettings,
     IOptions<ApplicationSettingsOptions> settingsOptions,
     TenantAdminAccessService tenantAdminAccess)
 {
@@ -85,13 +84,16 @@ public sealed class OwnerMappingService(
             .ToArrayAsync(cancellationToken);
 
         var ownerById = owners.ToDictionary(owner => owner.Id);
+        var ownerByEmail = owners
+            .Where(owner => !string.IsNullOrWhiteSpace(owner.Email))
+            .GroupBy(owner => NormalizeEmail(owner.Email) ?? owner.Email!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
         var responseMappings = mappings
-            .Where(mapping => mapping.CrmOwnerId != Guid.Empty)
-            .Select(mapping => ownerById.TryGetValue(mapping.CrmOwnerId, out var owner)
+            .Select(mapping => ResolveOwner(mapping, ownerById, ownerByEmail) is { } owner
                 ? new OwnerMappingDto(
                     mapping.PlatformUserSubject,
                     mapping.PlatformUserEmail,
-                    mapping.CrmOwnerId,
+                    owner.Id,
                     owner.DisplayName,
                     owner.Email,
                     mapping.UpdatedAt,
@@ -139,13 +141,15 @@ public sealed class OwnerMappingService(
                 email,
                 owner.Id,
                 DateTimeOffset.UtcNow,
-                ActorName(user)));
+                ActorName(user),
+                owner.Email));
         }
         else
         {
             existing.PlatformUserSubject = subject ?? existing.PlatformUserSubject;
             existing.PlatformUserEmail = email;
             existing.CrmOwnerId = owner.Id;
+            existing.CrmOwnerEmail = owner.Email;
             existing.UpdatedAt = DateTimeOffset.UtcNow;
             existing.UpdatedBy = ActorName(user);
         }
@@ -183,11 +187,25 @@ public sealed class OwnerMappingService(
                 && string.Equals(candidate.PlatformUserEmail, email, StringComparison.OrdinalIgnoreCase)));
 
         if (mapping is not null
+            && mapping.CrmOwnerId != Guid.Empty
             && await db.SalesOwners.AsNoTracking().AnyAsync(
                 owner => owner.Id == mapping.CrmOwnerId && owner.IsActive,
                 cancellationToken))
         {
             return mapping.CrmOwnerId;
+        }
+
+        if (mapping is not null && NormalizeEmail(mapping.CrmOwnerEmail) is { } mappedEmail)
+        {
+            var mappedOwnerId = await db.SalesOwners
+                .AsNoTracking()
+                .Where(owner => owner.IsActive
+                    && owner.Email != null
+                    && owner.Email.ToUpper() == mappedEmail.ToUpper())
+                .Select(owner => (Guid?)owner.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (mappedOwnerId.HasValue)
+                return mappedOwnerId;
         }
 
         if (email is null)
@@ -213,17 +231,23 @@ public sealed class OwnerMappingService(
         CancellationToken cancellationToken)
     {
         var context = SettingsContext(user);
-        var value = await secretSettings.GetAsync(
-            context,
-            SettingKey,
-            ApplicationSettingScopes.TenantApp,
-            cancellationToken);
-        if (string.IsNullOrWhiteSpace(value))
+        var value = (await settingsStore.LoadAsync(context, cancellationToken))
+            .FirstOrDefault(item => string.Equals(item.Key, SettingKey, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(item.Scope, ApplicationSettingScopes.TenantApp, StringComparison.OrdinalIgnoreCase));
+        if (value is null)
             return [];
 
         try
         {
-            return JsonSerializer.Deserialize<List<PersistedOwnerMapping>>(value, JsonOptions) ?? [];
+            if (value.Value.ValueKind == JsonValueKind.String)
+            {
+                var legacyJson = value.Value.GetString();
+                return string.IsNullOrWhiteSpace(legacyJson)
+                    ? []
+                    : JsonSerializer.Deserialize<List<PersistedOwnerMapping>>(legacyJson, JsonOptions) ?? [];
+            }
+
+            return value.Value.Deserialize<List<PersistedOwnerMapping>>(JsonOptions) ?? [];
         }
         catch (JsonException)
         {
@@ -238,8 +262,7 @@ public sealed class OwnerMappingService(
         CancellationToken cancellationToken)
     {
         var context = SettingsContext(user);
-        var value = JsonSerializer.Serialize(mappings, JsonOptions);
-        using var document = JsonDocument.Parse(JsonSerializer.Serialize(value));
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(mappings, JsonOptions));
         await settingsStore.SetAsync(
             context,
             SettingKey,
@@ -247,6 +270,20 @@ public sealed class OwnerMappingService(
             document.RootElement.Clone(),
             ActorName(user),
             cancellationToken);
+    }
+
+    private static CrmOwnerOption? ResolveOwner(
+        PersistedOwnerMapping mapping,
+        IReadOnlyDictionary<Guid, CrmOwnerOption> ownerById,
+        IReadOnlyDictionary<string, CrmOwnerOption> ownerByEmail)
+    {
+        if (mapping.CrmOwnerId != Guid.Empty && ownerById.TryGetValue(mapping.CrmOwnerId, out var ownerByIdValue))
+            return ownerByIdValue;
+
+        return !string.IsNullOrWhiteSpace(mapping.CrmOwnerEmail)
+            && ownerByEmail.TryGetValue(mapping.CrmOwnerEmail, out var ownerByEmailValue)
+            ? ownerByEmailValue
+            : null;
     }
 
     private ApplicationSettingsContext SettingsContext(ClaimsPrincipal user)
@@ -303,11 +340,13 @@ public sealed class OwnerMappingService(
         string platformUserEmail,
         Guid crmOwnerId,
         DateTimeOffset updatedAt,
-        string? updatedBy)
+        string? updatedBy,
+        string? crmOwnerEmail = null)
     {
         public string? PlatformUserSubject { get; set; } = platformUserSubject;
         public string PlatformUserEmail { get; set; } = platformUserEmail;
         public Guid CrmOwnerId { get; set; } = crmOwnerId;
+        public string? CrmOwnerEmail { get; set; } = crmOwnerEmail;
         public DateTimeOffset UpdatedAt { get; set; } = updatedAt;
         public string? UpdatedBy { get; set; } = updatedBy;
     }

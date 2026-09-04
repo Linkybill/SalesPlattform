@@ -30,7 +30,6 @@ public static class SalesWebPartCatalog
 
     public static readonly IReadOnlyList<SalesWebPartDefinition> Definitions =
     [
-        new("worklist", "Arbeitsliste", "Priorisierte Vorgänge aus den CRM-Regeln.", "sales-user"),
         new("cockpit", "Cockpit", "Statusampel, Kern-KPIs, Funnel und Handlungspunkte.", "sales-manager"),
         new("team", "Team-Steuerung", "Zielerreichung und Aktivität je Mitarbeiter.", "sales-manager"),
         new("meetings", "Meeting Report", "Geplante, durchgeführte, abgesagte und verschobene Termine.", "sales-manager"),
@@ -44,21 +43,30 @@ public static class SalesWebPartCatalog
 
     public static IReadOnlyCollection<SalesDashboardLayoutNode> DefaultLayout =>
     [
-        new("intro-heading", SalesDashboardNodeTypes.Heading, "Vertriebsübersicht", Columns: 2),
-        new("intro-text", SalesDashboardNodeTypes.Text, Text: "Alle verfügbaren Reports werden aus der Tenant-Datenbank gelesen. Der Tenant-Administrator kann diese Seite direkt bearbeiten und die Reports mit Grids, Tabs, Akkordeons, Überschriften und Texten anordnen.", Columns: 2),
+        new("intro-heading", SalesDashboardNodeTypes.Heading, "Vertriebsübersicht", Columns: 12),
+        new("intro-text", SalesDashboardNodeTypes.Text, Text: "Alle verfügbaren Reports werden aus der Tenant-Datenbank gelesen. Der Tenant-Administrator kann diese Seite direkt bearbeiten und die Reports mit Grids, Tabs, Akkordeons, Überschriften und Texten anordnen.", Columns: 12),
         new(
             "main-grid",
             SalesDashboardNodeTypes.Grid,
             Title: "Reports",
-            Columns: 2,
+            Columns: 12,
+            GridColumns: 12,
             Children: Definitions.Select(definition => new SalesDashboardLayoutNode(
                 $"report-{definition.Key}",
                 SalesDashboardNodeTypes.Report,
                 Title: definition.Title,
                 ReportKey: definition.Key,
-                Columns: definition.Key is "worklist" or "cockpit" or "analysis" or "service" or "commercial" ? 2 : 1,
+                Columns: SalesWebPartCatalog.DefaultReportSpan(definition.Key),
                 Visible: true)).ToArray())
     ];
+
+    public static int DefaultReportSpan(string key)
+        => key switch
+        {
+            "cockpit" or "team" or "analysis" or "customers" or "goals" or "cleanup" or "commercial" => 12,
+            "meetings" or "service" => 6,
+            _ => 12
+        };
 
     public static bool Exists(string key)
         => Definitions.Any(definition => string.Equals(definition.Key, key, StringComparison.OrdinalIgnoreCase));
@@ -86,7 +94,8 @@ public sealed record SalesDashboardLayoutNode(
     string? Title = null,
     string? Text = null,
     string? ReportKey = null,
-    int Columns = 1,
+    int Columns = 12,
+    int? GridColumns = null,
     bool Visible = true,
     IReadOnlyCollection<SalesDashboardLayoutNode>? Children = null);
 
@@ -97,6 +106,7 @@ public sealed record SalesDashboardLayoutNodeDto(
     string? Text,
     string? ReportKey,
     int Columns,
+    int? GridColumns,
     bool Visible,
     bool Allowed,
     IReadOnlyCollection<SalesDashboardLayoutNodeDto> Children);
@@ -226,11 +236,11 @@ public sealed class SalesDashboardLayoutService(
                         SalesDashboardNodeTypes.Report,
                         SalesWebPartCatalog.Find(item.Key)!.Title,
                         ReportKey: item.Key.ToLowerInvariant(),
-                        Columns: Math.Clamp(item.Columns, 1, 2),
+                        Columns: Math.Clamp(item.Columns, 1, 12),
                         Visible: item.Visible))
                     .ToArray();
                 return new(
-                    EnsureAllReports([new("legacy-grid", SalesDashboardNodeTypes.Grid, Title: "Reports", Columns: 2, Children: reports)]),
+                    EnsureAllReports([new("legacy-grid", SalesDashboardNodeTypes.Grid, Title: "Reports", Columns: 12, GridColumns: 12, Children: reports)]),
                     false);
             }
         }
@@ -266,7 +276,7 @@ public sealed class SalesDashboardLayoutService(
                 SalesDashboardNodeTypes.Report,
                 Title: definition.Title,
                 ReportKey: definition.Key,
-                Columns: definition.Key is "worklist" or "cockpit" or "analysis" or "service" or "commercial" ? 2 : 1,
+                Columns: SalesWebPartCatalog.DefaultReportSpan(definition.Key),
                 Visible: true))
             .ToArray();
         if (missing.Length == 0)
@@ -280,7 +290,13 @@ public sealed class SalesDashboardLayoutService(
         }
         else
         {
-            result.Add(new SalesDashboardLayoutNode("additional-reports", SalesDashboardNodeTypes.Grid, Title: "Weitere Reports", Columns: 2, Children: missing));
+            result.Add(new SalesDashboardLayoutNode(
+                "additional-reports",
+                SalesDashboardNodeTypes.Grid,
+                Title: "Weitere Reports",
+                Columns: 12,
+                GridColumns: 12,
+                Children: missing));
         }
 
         return result;
@@ -347,13 +363,32 @@ public sealed class SalesDashboardLayoutService(
                 ? NormalizeChildren(original.Children, depth + 1, ref nodeCount, reportKeys)
                 : Array.Empty<SalesDashboardLayoutNode>();
 
+            var columns = Math.Clamp(original.Columns, 1, 12);
+            var legacyGrid = type == SalesDashboardNodeTypes.Grid && original.GridColumns is null;
+            var legacyGridColumns = legacyGrid ? Math.Clamp(original.Columns, 1, 4) : 12;
+            int? gridColumns = type == SalesDashboardNodeTypes.Grid
+                ? Math.Clamp(original.GridColumns ?? Math.Min(columns, 4), 1, 12)
+                : null;
+            // Before the 12-column grid was introduced, a grid stored its
+            // internal column count in Columns. Preserve that meaning when
+            // reading old tenant layouts; new layouts use GridColumns for the
+            // internal raster and Columns for the node's width in its parent.
+            if (legacyGrid)
+            {
+                columns = 12;
+                normalizedChildren = normalizedChildren
+                    .Select(child => child with { Columns = Math.Clamp((int)Math.Round(child.Columns * 12d / legacyGridColumns), 1, 12) })
+                    .ToArray();
+            }
+
             result.Add(new SalesDashboardLayoutNode(
                 id,
                 type,
                 title,
                 text,
                 reportKey,
-                Math.Clamp(original.Columns, 1, 4),
+                columns,
+                gridColumns,
                 original.Visible,
                 normalizedChildren));
         }
@@ -376,6 +411,7 @@ public sealed class SalesDashboardLayoutService(
             node.Text,
             node.ReportKey,
             node.Columns,
+            node.GridColumns,
             node.Visible,
             allowed,
             (node.Children ?? []).Select(child => ToDto(child, user)).ToArray());

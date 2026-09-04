@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using SalesPlattform.Backend.Integrations;
 using SalesPlattform.Backend.Integrations.Abstractions;
@@ -18,12 +19,8 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             [
                 "id", "Account_Name", "Name", "Industry", "Billing_Code", "Billing_City",
                 "Billing_Country", "Billing_State", "Billing_Street", "Owner", "Account_Status",
-                "Tax_Number", "Website", "Created_Time", "Modified_Time"
-            ],
-            ["Contacts"] =
-            [
-                "id", "Full_Name", "First_Name", "Last_Name", "Account_Name", "Email", "Phone",
-                "Mobile", "Mobile_Phone", "Title", "Contact_Role", "Role", "Contact_Status", "Owner", "Created_Time", "Modified_Time"
+                "Tax_Number", "Website", "Billing_Latitude", "Billing_Longitude", "Billing_Coordinates",
+                "Latitude", "Longitude", "Coordinates", "Created_Time", "Modified_Time"
             ],
             ["Leads"] =
             [
@@ -58,27 +55,37 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
                 "id", "Event_Title", "Subject", "What_Id", "Who_Id", "Owner", "Start_DateTime",
                 "End_DateTime", "Event_Status", "Type", "$event_cancelled", "Created_Time", "Modified_Time"
             ],
+            ["Meetings"] =
+            [
+                "id", "Event_Title", "Subject", "What_Id", "Who_Id", "Owner", "Start_DateTime",
+                "End_DateTime", "Event_Status", "Type", "$event_cancelled", "Created_Time", "Modified_Time"
+            ],
+            ["Appointments"] =
+            [
+                "id", "Event_Title", "Subject", "What_Id", "Who_Id", "Owner", "Start_DateTime",
+                "End_DateTime", "Event_Status", "Type", "$event_cancelled", "Created_Time", "Modified_Time"
+            ],
             ["Cases"] =
             [
                 "id", "Case_Number", "Subject", "Description", "Status", "Priority", "Case_Origin",
-                "Case_Reason", "Account_Name", "Contact_Name", "Deal_Name", "Owner", "Created_Time",
+                "Case_Reason", "Account_Name", "Deal_Name", "Owner", "Created_Time",
                 "Modified_Time", "Due_Date", "Closed_Time", "Resolution"
             ],
             ["Quotes"] =
             [
-                "id", "Quote_Number", "Subject", "Account_Name", "Contact_Name", "Deal_Name", "Grand_Total",
+                "id", "Quote_Number", "Subject", "Account_Name", "Deal_Name", "Grand_Total",
                 "Sub_Total", "Amount", "Currency", "Quote_Stage", "Status", "Quote_Date", "Sent_Time",
                 "Valid_Till", "Owner", "Created_Time", "Modified_Time"
             ],
             ["Sales_Orders"] =
             [
-                "id", "SO_Number", "Subject", "Account_Name", "Contact_Name", "Deal_Name", "Grand_Total",
+                "id", "SO_Number", "Subject", "Account_Name", "Deal_Name", "Grand_Total",
                 "Sub_Total", "Amount", "Currency", "Status", "Order_Date", "Due_Date", "Delivered_Date",
                 "Quote_Name", "Owner", "Created_Time", "Modified_Time"
             ],
             ["Invoices"] =
             [
-                "id", "Invoice_Number", "Subject", "Account_Name", "Contact_Name", "Deal_Name", "Sales_Order",
+                "id", "Invoice_Number", "Subject", "Account_Name", "Deal_Name", "Sales_Order",
                 "Grand_Total", "Balance", "Amount", "Currency", "Status", "Invoice_Date", "Due_Date",
                 "Paid_Date", "Owner", "Created_Time", "Modified_Time"
             ],
@@ -103,7 +110,6 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
         {
             "users" => CrmEntityTypes.Owner,
             "accounts" => CrmEntityTypes.Customer,
-            "contacts" => CrmEntityTypes.Contact,
             "leads" => CrmEntityTypes.Lead,
             "products" => CrmEntityTypes.Product,
             "pipelines" => CrmEntityTypes.Pipeline,
@@ -125,7 +131,6 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
         {
             "users" => MapOwner(record),
             "accounts" => MapCustomer(record),
-            "contacts" => MapContact(record),
             "leads" => MapLead(record),
             "products" => MapProduct(record),
             "pipelines" => MapPipeline(record),
@@ -167,6 +172,7 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
     private static CrmCanonicalCustomer MapCustomer(CrmExternalRecord record)
     {
         var country = NormalizeCountryCode(ZohoFieldReader.String(record.Payload, "Billing_Country", "Country"));
+        var (latitude, longitude) = ReadCoordinates(record.Payload);
         return new(
             CrmProviders.Zoho,
             record.ConnectionKey(),
@@ -186,32 +192,31 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             ZohoFieldReader.String(record.Payload, "Billing_State", "State"),
             ZohoFieldReader.String(record.Payload, "Billing_Street", "Street"),
             ZohoFieldReader.String(record.Payload, "House_Number"),
+            latitude,
+            longitude,
             ZohoFieldReader.LookupId(record.Payload, "Owner"));
     }
 
-    private static CrmCanonicalContact MapContact(CrmExternalRecord record)
+    private static (decimal? Latitude, decimal? Longitude) ReadCoordinates(JsonElement payload)
     {
-        var firstName = ZohoFieldReader.String(record.Payload, "First_Name", "first_name");
-        var lastName = ZohoFieldReader.String(record.Payload, "Last_Name", "last_name");
-        return new(
-            CrmProviders.Zoho,
-            record.ConnectionKey(),
-            record.ExternalId,
-            record.Payload,
-            ZohoFieldReader.DateTimeOffset(record.Payload, "Created_Time", "created_time"),
-            record.ModifiedAt,
-            ZohoFieldReader.String(record.Payload, "Full_Name", "Name")
-                ?? JoinName(firstName, lastName)
-                ?? record.ExternalId,
-            firstName,
-            lastName,
-            ZohoFieldReader.LookupId(record.Payload, "Account_Name", "Account"),
-            ZohoFieldReader.String(record.Payload, "Email"),
-            ZohoFieldReader.String(record.Payload, "Phone"),
-            ZohoFieldReader.String(record.Payload, "Mobile", "Mobile_Phone"),
-            ZohoFieldReader.String(record.Payload, "Title", "Job_Title"),
-            ZohoFieldReader.String(record.Payload, "Contact_Role", "Role"),
-            ZohoFieldReader.Bool(record.Payload, "Is_Primary", "Primary_Contact"));
+        var latitude = ZohoFieldReader.Decimal(payload, "Billing_Latitude", "Latitude");
+        var longitude = ZohoFieldReader.Decimal(payload, "Billing_Longitude", "Longitude");
+        if (latitude.HasValue && longitude.HasValue)
+            return (latitude, longitude);
+
+        var coordinates = ZohoFieldReader.String(payload, "Billing_Coordinates", "Coordinates");
+        if (string.IsNullOrWhiteSpace(coordinates))
+            return (latitude, longitude);
+
+        var values = coordinates
+            .Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => decimal.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+                ? (decimal?)parsed
+                : null)
+            .ToArray();
+        return values.Length >= 2 && values[0].HasValue && values[1].HasValue
+            ? (latitude ?? values[0], longitude ?? values[1])
+            : (latitude, longitude);
     }
 
     private static CrmCanonicalLead MapLead(CrmExternalRecord record)
@@ -238,7 +243,6 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             ZohoFieldReader.Int32(record.Payload, "Calls_Since_Conversation") ?? 0,
             ZohoFieldReader.Int32(record.Payload, "Call_Attempts", "anrufversuche") ?? 0,
             ZohoFieldReader.LookupId(record.Payload, "Account_Name", "Account"),
-            ZohoFieldReader.LookupId(record.Payload, "Contact_Name", "Contact"),
             ZohoFieldReader.LookupId(record.Payload, "Owner"));
     }
 
@@ -445,7 +449,6 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             ZohoFieldReader.String(record.Payload, "Case_Origin", "Origin"),
             ZohoFieldReader.String(record.Payload, "Case_Reason", "Reason"),
             ZohoFieldReader.LookupId(record.Payload, "Account_Name", "Account"),
-            ZohoFieldReader.LookupId(record.Payload, "Contact_Name", "Contact"),
             ZohoFieldReader.LookupId(record.Payload, "Deal_Name", "Deal"),
             ZohoFieldReader.LookupId(record.Payload, "Owner", "owner"),
             ZohoFieldReader.DateTimeOffset(record.Payload, "Opened_Time", "Created_Time"),
@@ -466,7 +469,6 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             ZohoFieldReader.Decimal(record.Payload, "Grand_Total", "Sub_Total", "Amount"),
             ZohoFieldReader.String(record.Payload, "Currency", "Currency_Code"),
             ZohoFieldReader.LookupId(record.Payload, "Account_Name", "Account"),
-            ZohoFieldReader.LookupId(record.Payload, "Contact_Name", "Contact"),
             ZohoFieldReader.LookupId(record.Payload, "Deal_Name", "Deal"),
             ZohoFieldReader.LookupId(record.Payload, "Owner", "owner"),
             ZohoFieldReader.Date(record.Payload, "Quote_Date", "Created_Time"),
@@ -522,9 +524,16 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
         {
             var externalId = ZohoFieldReader.LookupId(payload, fieldName);
             if (string.IsNullOrWhiteSpace(externalId)) continue;
-            var entityType = fieldName.Equals("Who_Id", StringComparison.OrdinalIgnoreCase)
-                ? CrmEntityTypes.Contact
-                : CrmEntityTypes.Customer;
+            var entityType = CrmEntityTypes.Customer;
+            if (fieldName.Equals("Who_Id", StringComparison.OrdinalIgnoreCase))
+            {
+                // Zoho uses Who_Id for people records. Only Leads are part of
+                // this domain; other participant records are ignored.
+                var relatedModule = ZohoFieldReader.String(payload, "$se_module", "se_module");
+                if (!relatedModule?.Equals("Leads", StringComparison.OrdinalIgnoreCase) ?? true)
+                    continue;
+                entityType = CrmEntityTypes.Lead;
+            }
             yield return new CrmRecordRelation(entityType, externalId, "related_to");
         }
     }

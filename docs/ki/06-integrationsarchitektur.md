@@ -19,7 +19,8 @@ weiteres CRM ───┘                              │
                                               v
                                   kanonisches Domainmodell
                                               │
-                              Regeln, KPIs, Snapshots, Ansichten
+                              gemeinsame Fachschicht
+                         Regeln, CRM-Tasks, KPIs, Ansichten
 ```
 
 Die Reports werden im Frontend als unabhängige Komponenten in einem direkt
@@ -48,7 +49,6 @@ Das Domainmodell verwendet keine Zoho- oder Pipedrive-spezifischen Klassen und
 Feldnamen. Fachliche Objekte sind beispielsweise:
 
 - `Customer` / Kunde bzw. Organisation,
-- `Contact` / Ansprechpartner,
 - `Lead`,
 - `Deal` / Verkaufschance,
 - `Product` / Produktkategorie,
@@ -115,7 +115,6 @@ Die Datenbank wird in drei Bereiche gegliedert:
 
 ```text
 customers
-contacts
 leads
 deals
 products
@@ -134,15 +133,24 @@ Frontend. Jede Entität bleibt tenant-isoliert.
 
 ```text
 integration_connections
+zoho_schema_cache
 integration_entity_links
 integration_sync_runs
 integration_sync_cursors
 integration_raw_records
 integration_errors
+integration_api_usage_events
 ```
 
 - `integration_connections`: Anbieter und Mandantenverbindung, niemals rohe
   Secrets im Klartext.
+- `zoho_schema_cache`: tenantisolierter Snapshot der für den verbundenen
+  Zoho-Account verfügbaren Module, Felddefinitionen, Layouts,
+  Pipeline-/Stufendefinitionen und Related-List-Metadaten. Dieser Snapshot wird
+  ausschließlich durch den manuell startbaren Job `zoho-schema-cache`
+  aktualisiert. Full- und Incremental-Sync sowie die Metadaten-API lesen nur
+  den lokalen Snapshot und rufen Zoho-Settings nicht selbst auf. Ein
+  fehlgeschlagener Refresh ersetzt den bisherigen Snapshot nicht.
 - `integration_entity_links`: Zuordnung `(Provider, Connection, EntityType,
   ExternalId)` zu einer kanonischen Entität; dadurch können Zoho- und
   Pipedrive-IDs koexistieren. `SourceDeletedAt` hält ein Quell-Delete
@@ -155,6 +163,29 @@ integration_errors
   Reprocessing und Nachvollziehbarkeit.
 - `integration_sync_runs` und `integration_errors`: Status, Zähler, Laufzeit
   und Fehler eines Imports.
+- `integration_api_usage_events`: append-only Verbrauchsereignisse für jeden
+  tatsächlichen ausgehenden CRM-HTTP-Versuch. Gespeichert werden Mandant,
+  Verbindung, optionaler Joblauf (`RunId`), Herkunft (`Origin` = Job,
+  Benutzeroberfläche oder System), auslösender Benutzer (`RequestedBy`),
+  optionale Korrelation, normalisierter Endpoint, Kategorie, Status,
+  Fehler-/Retry-Information, Dauer, betroffene Datensätze und die
+  providerabhängige Kostenschätzung und Einheit. Externe Record-IDs werden nicht als
+  Endpoint gespeichert. Ein UI-Aufruf hat bewusst keine `RunId`, wird aber über
+  Herkunft, Benutzer und HTTP-Korrelation nachvollziehbar.
+
+Die Verbrauchsschicht ist provider-neutral: Adapter melden ihre Versuche über
+`ICrmApiUsageRecorder`; ein optionales `ICrmApiUsageCostModel` bewertet die
+jeweiligen Einheiten des Providers. Der Zoho-Adapter liest zusätzlich den
+Response-Header `X-API-CREDITS-REMAINING`, sofern Zoho ihn liefert. Die
+mandantenbezogene 24-Stunden-Auswertung ist über `/api/integrations/usage`
+verfügbar und wird auf der Importseite angezeigt. Die Zoho-Organisationszahl
+im Anbieter-Dashboard bleibt für die Gesamtzahl maßgeblich, weil sie auch
+andere Apps, Funktionen und manuelle Integrationen enthalten kann.
+
+Ein HTTP-Middleware-Flush speichert auch Messungen aus normalen API-Requests;
+die Full-, Incremental- und Schema-Cache-Jobs setzen zusätzlich ihre
+Run-ID. Ein neuer Adapter muss daher nur seine echten HTTP-Versuche melden und
+kann bei Bedarf ein eigenes Kostenmodell registrieren.
 
 ### Fachliche Ableitungen
 
@@ -176,7 +207,8 @@ aus Zoho- oder Pipedrive-JSON befüllt.
 ```text
 1. Connection und Provider auswählen
 2. Adapter authentifiziert sich
-3. Metadaten und Mapping laden
+3. gecachtes Anbieter-Schema und Mapping laden; der Cache enthält auch
+   Layouts, Pipelines/Stufen und Related Lists
 4. Datensätze paginiert lesen
 5. Rohdatensatz optional speichern
 6. Anbieter-Datensatz normalisieren
@@ -188,6 +220,13 @@ aus Zoho- oder Pipedrive-JSON befüllt.
 12. aktive lokale Arbeitsvorgänge als CRM-Tasks spiegeln und ihre Remote-IDs
     verknüpfen
 ```
+
+Das Zoho-Schema wird nicht implizit beim Hochfahren oder bei einem CRM-Sync
+geladen. Nach einer neuen Zoho-Verbindung oder einer Änderung des Zoho-Schemas
+startet ein berechtigter Benutzer den Job `Zoho-Schema cachen` einmal manuell.
+Ohne vorhandenen Snapshot wird ein Full- oder Incremental-Sync mit einer
+verständlichen Fehlermeldung beendet, damit kein Sync ungeplant die Zoho-
+Metadaten-API und deren Tageskontingent verbraucht.
 
 ### Remote-IDs und Löschabgleich
 
@@ -201,7 +240,7 @@ Datensätze erkannt werden.
 
 Lokale CRM-Stammdaten werden bei einem Quell-Delete historisch behalten, aber
 inaktiv markiert. Offene Arbeitsvorgänge, die auf einen gelöschten Lead,
-Kunden, Kontakt, Deal oder Termin zeigen, werden mit dem Grund
+Kunden, Deal oder Termin zeigen, werden mit dem Grund
 `target-deleted-in-crm` geschlossen und nicht automatisch ohne Ziel ersetzt.
 Eine gelöschte CRM-Task ist ein anderer Fall: Der verknüpfte lokale
 Arbeitsvorgang wird geschlossen und als neue Instanz derselben
@@ -210,6 +249,13 @@ als CRM-Task angelegt und erhält deren neue Remote-ID. Alte Links bleiben mit
 `SourceDeletedAt` für die Historie erhalten.
 
 ### Hintergrundjobs und Fortschritt
+
+Die Regelbewertung nach dem CRM-Sync ist eine eigene Fortschrittsphase und wird
+nicht erst beim Abschluss des Jobs sichtbar. Sie meldet Start, gepr��fte
+Regelziele, verbleibende Menge und das Persistieren der Regelergebnisse als
+Live-Fortschritt und Job-Logs. Danach werden CRM-Task-Abgleich, Kennzahlen-
+Snapshot und Benachrichtigungen ebenfalls als laufende Nachverarbeitung mit
+eigenen Fortschrittsstufen gemeldet.
 
 Ein Sync läuft nie innerhalb einer lang laufenden Browseranfrage. Die
 SalesPlattform registriert `CrmFullImportJob` und `CrmIncrementalCrawlJob` über
@@ -224,13 +270,33 @@ Damit kann ein abgestürzter Worker keinen neuen CRM-Sync dauerhaft blockieren;
 fachliche Sync-Historie und Datensatzfehler bleiben weiterhin in der
 tenantisolierten Sales-Datenbank.
 
-Beide Implementierungen delegieren an `CrmSynchronizationService`. Der Service
+Beide Eingangswege delegieren an `CrmSynchronizationService` bzw. an die
+gemeinsame `ICrmBusinessChangeProcessor`-Fachschicht. Der Service
 liest `crm.integration` aus der app-eigenen Tenant-Datenbank und wählt über
 `CrmSynchronizationAdapterRegistry` genau einen `ICrmSynchronizationAdapter`.
 Aktuell implementiert `ZohoSyncService` diese High-Level-Grenze. Paging,
 Zoho-Module, Related-Lists, Mapping und OAuth liegen hinter dem Adapter; die
 Jobs selbst enthalten keine Providerlogik. Der Adapter schreibt ausschließlich
-über `ISalesCrmRepository` in das kanonische Modell.
+über `ISalesCrmRepository` in das kanonische Modell. Danach wird unabhängig vom
+Eingangsweg die Fachschicht aufgerufen. Sie führt die tenantbezogene Ableitung
+der Anrufmarker, die gezielte oder vollständige Regelbewertung, die CRM-
+Task-Spiegelung, Kennzahlen-Snapshots und den unmittelbaren Mailversand in
+derselben Reihenfolge aus.
+
+Webhooks verwenden zusätzlich die providerneutrale
+`ICrmHookUpdateService`-Grenze. Der Platform-Job `CrmHookUpdateJob` dispatcht
+an alle registrierten Anbieter-Services. Zoho kapselt darin ausschließlich
+Registrierung, Erneuerung, Verifikation und das Lesen der gemeldeten Zoho-
+Datensätze. Der Zoho-Payload wird über `ZohoCrmRecordMapper` in das kanonische
+Modell übersetzt; danach konsumiert der Hook exakt dieselbe
+`ICrmBusinessChangeProcessor`-Schicht wie Full- und Incremental-Crawl. Ein
+späterer Pipedrive-Adapter liefert einen eigenen Mapper und eine eigene
+Hook-Implementierung, muss aber keine Regel- oder UI-Logik kopieren. Ein
+weiterer Anbieter registriert lediglich seinen eigenen
+`ICrmHookUpdateService`; der gemeinsame Platform-Job übernimmt ihn automatisch.
+Outbound-CRM-Tasks werden über `CrmAdapterRegistry` ebenfalls anhand des
+Provider-Schlüssels aufgelöst; dadurch bleibt die Remote-ID-/Update-Logik
+providerneutral.
 
 Fachlicher Detailfortschritt wird weiterhin laufbezogen in
 `integration_sync_runs`, `integration_sync_run_items` und
@@ -259,7 +325,7 @@ Duplikate erzeugen.
 
 E-Mails und Deal-Stage-Historie bleiben Related-List-Module desselben
 CRM-Sync-Jobs. E-Mails werden beim Iterieren der geänderten bzw. vollständigen
-Elternobjekte Accounts, Kontakte, Leads und Deals gelesen. Für die Related
+Elternobjekte Accounts, Leads und Deals gelesen. Für die Related
 Lists gelten vier parallele Leseoperationen und batchweise Writes; diese
 Begrenzung schützt die Provider-API und die Tenant-Datenbank, während die
 Elternbeziehungen erhalten bleiben. Ein separater E-Mail-Sync- oder
@@ -271,6 +337,54 @@ Auch die belastbaren Kennzahlen werden in diesem Lauf aktualisiert: Nach
 Synchronisation und Regelbewertung wird der Tages-Snapshot für den aktuellen
 Tenant neu berechnet. Dadurch gibt es für Mailversand und Kennzahlen keine
 separaten Zeitpläne und keine unabhängigen Sales-Jobs.
+
+### Zoho-Hooks als kostensparende Änderungserkennung
+
+Zoho ist der erste Provider mit einer konkreten Subscription-Implementierung.
+Die Tenant-App-Einstellung `crm.changeDetectionMode` steht standardmäßig auf
+`hooks-plus-crawl`. Der Incremental-Crawl bleibt dabei als Sicherheitsnetz
+aktiv; Hooks ersetzen ihn nicht vollständig. Mit `crawl-only` kann ein
+Mandant die Hook-Verarbeitung abschalten.
+
+Der technische Job `CRM-Hooks erneuern` läuft alle fünf Minuten. Er dispatcht
+an die registrierten Hook-Update-Services. Diese erneuern ihre Subscriptions,
+verarbeiten die wartenden Callback-Ereignisse und führen danach
+die fachliche Nachverarbeitung aus. Es gibt keine separaten Jobs pro Modul,
+keinen E-Mail-Job und keinen vollständigen Crawl als Reaktion auf einen Hook.
+Das Callback selbst schreibt nur ein verifiziertes Ereignis in
+`integration_webhook_events`; die Verarbeitung lädt ausschließlich die von
+Zoho gemeldeten Remote-IDs. Der Verification-Token wird nicht gespeichert,
+sondern nur als SHA-256-Hash in `integration_subscriptions`.
+
+Für Sales relevante Zoho-Subscriptions sind:
+
+| Zoho-Modul | Ereignisse | Reaktion in der SalesPlattform |
+| --- | --- | --- |
+| Users | all | Owner-/Vertreterauflösung und betroffene Zuständigkeiten neu bewerten |
+| Leads | create, edit, delete | Lead-Regeln R-01 bis R-04 und R-09 gezielt bewerten |
+| Accounts | create, edit, delete | Kundenpflege, Zuständigkeit, Cross-Selling und Account-Care neu bewerten |
+| Deals | create, edit, delete | Deal-Inaktivität, Reaktivierung, Verträge und Cockpit-Kennzahlen aktualisieren |
+| Products | create, edit, delete | Produktbeziehungen und produktbezogene Reports aktualisieren |
+| Calls | create, edit, delete | Versuch/Gespräch anhand Dauer und Ergebnis neu berechnen; Lead-Regeln auswerten |
+| Tasks | create, edit, delete | CRM-Task-Link und lokale Vorgangskette synchronisieren; bei Delete Nachfolger erzeugen |
+| Events/Meetings/Appointments | create, edit, delete | Terminstatus, Verschiebungszähler und R-12 auswerten |
+| Cases | create, edit, delete | Servicefall-Fristen und R-15 auswerten |
+| Quotes | create, edit, delete | Angebots-Folgeaktion und R-16 auswerten |
+| Sales_Orders | create, edit, delete | Lieferverzug und R-17 auswerten |
+| Invoices | create, edit, delete | Überfälligkeit und R-18 auswerten |
+
+Subscriptions werden nur für Module angelegt, die im lokalen Zoho-Schema-Cache
+als verfügbar bekannt sind. Der Hook-Wartungslauf ruft daher keine Zoho-
+Metadatenendpunkte auf. Kontakte werden weder synchronisiert noch als
+Subscription registriert; ein eventuell veralteter Contacts-Webhook wird
+verworfen. Für die Aktivierung sind die minimal nötigen Notifications-OAuth-
+Berechtigungen `ZohoCRM.notifications.CREATE` und
+`ZohoCRM.notifications.DELETE` sowie eine von Zoho erreichbare
+`Zoho:WebhookUrl` erforderlich. Die CRM-Leserechte sind auf die tatsächlich
+verwendeten Module begrenzt; für CRM-Aufgaben kommen nur
+`ZohoCRM.modules.tasks.CREATE` und `ZohoCRM.modules.tasks.UPDATE` hinzu.
+Bestehende OAuth-Verbindungen müssen nach der Scope-Änderung einmal neu
+autorisiert werden.
 
 ### Exklusive Prozessgruppen
 
@@ -352,7 +466,7 @@ Die Initialimport-Implementierung besteht aus:
 2. Integrations- und Sync-Tabellen,
 3. eine Adapter-Schnittstelle,
 4. den read-only Zoho-Adapter,
-5. dem vollständigen Initialimport für Owner, Accounts, Kontakte, Leads,
+5. dem vollständigen Initialimport für Owner, Accounts, Leads,
    Produkte, Pipelines, Stufen und Deals,
 6. dem Import der Related-Lists für E-Mails und Deal-Stage-Historie,
 7. dem Import von Calls, Tasks und Events/Terminen.

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import * as L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import { useApplicationContext } from '@hammer2fall/identity-platform-react'
 import { DashboardContentEditor, type LayoutNode, type ReportDefinition } from './DashboardContentEditor'
-import { WorklistWidget } from './WorklistWidget'
 
 type Breakdown = { label: string; count: number; amount: number | null }
 type Cockpit = {
@@ -11,7 +12,7 @@ type Cockpit = {
 type Team = { periodName: string; timeSharePercent: number; members: { ownerId: string; name: string; wonRevenue: number; target: number; attainmentPercent: number; pace: number; openDealCount: number; pipelineAmount: number; appointmentCount: number; callCount: number; conversationCount: number; appointmentTypes: Breakdown[] }[]; appointmentTypes: Breakdown[] }
 type Meetings = { periodName: string; newAppointments: number; currentWeekAppointments: number; plannedAppointments: number; completedAppointments: number; cancelledAppointments: number; rescheduledAppointments: number; noShowAppointments: number; completionRatePercent: number; noShowRatePercent: number; rescheduleRatePercent: number; byType: Breakdown[]; byStatus: Breakdown[] }
 type Analysis = { periodName: string; byProduct: Breakdown[]; byIndustry: Breakdown[]; byRegion: Breakdown[]; lossReasons: Breakdown[]; stageDwell: { stage: string; dealCount: number; averageDays: number }[]; crossSelling: { customerId: string; customerName: string; categories: string[]; categoryCount: number }[] }
-type Customers = { periodName: string; customers: { id: string; name: string; ownerName: string | null; countryCode: string | null; postalCode: string | null; regionCode: string | null; latitude: number | null; longitude: number | null; lifetimeRevenue: number; lastContactAt: string | null; openDealCount: number; needsReview: boolean; externalUrl: string | null }[]; unmappedCount: number; regions: Breakdown[] }
+type Customers = { periodName: string; customers: { id: string; name: string; ownerName: string | null; countryCode: string | null; postalCode: string | null; city: string | null; regionCode: string | null; addressLine1: string | null; houseNumber: string | null; latitude: number | null; longitude: number | null; lifetimeRevenue: number; lastContactAt: string | null; openDealCount: number; needsReview: boolean; externalUrl: string | null }[]; unmappedCount: number; regions: Breakdown[] }
 type Goals = { periodName: string; timeSharePercent: number; members: { ownerId: string; name: string; target: number; achieved: number; attainmentPercent: number; timeSharePercent: number; pace: number; status: string }[] }
 type Cleanup = { duplicates: { id: string; customerA: string; customerB: string; score: number; confidence: string; status: string; matchDetailsJson: string | null }[]; qualityFindings: Breakdown[]; openFindingCount: number }
 type Service = { periodName: string; totalCases: number; openCases: number; overdueCases: number; urgentCases: number; byStatus: Breakdown[]; byPriority: Breakdown[]; urgentItems: { id: string; subject: string; status: string; priority: string; openedAt: string | null; dueAt: string | null; customerName: string | null; externalUrl: string | null }[] }
@@ -64,8 +65,13 @@ export function ReportsPage({ forceEdit = false }: { forceEdit?: boolean }) {
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ nodes: draftNodes }),
       })
-      const payload = await response.json() as LayoutResponse & { message?: string }
-      if (!response.ok) throw new Error(payload.message ?? `Reportseite konnte nicht gespeichert werden (HTTP ${response.status}).`)
+      const responseText = await response.text()
+      let payload: (LayoutResponse & { message?: string }) | null = null
+      if (responseText) {
+        try { payload = JSON.parse(responseText) as LayoutResponse & { message?: string } } catch { /* use the status below */ }
+      }
+      if (!response.ok) throw new Error(payload?.message ?? `Reportseite konnte nicht gespeichert werden (HTTP ${response.status}).`)
+      if (!payload?.nodes) throw new Error('Die gespeicherte Reportseite wurde vom Backend nicht bestätigt.')
       setDashboard(current => current ? { ...current, layout: payload } : current)
       setDraftNodes(payload.nodes)
       setEditing(false)
@@ -83,7 +89,7 @@ export function ReportsPage({ forceEdit = false }: { forceEdit?: boolean }) {
         <div>
           <p className="sales-eyebrow">SALESPLATTFORM · REPORT-DASHBOARD</p>
           <h1>Vertriebsübersicht</h1>
-          <p className="sales-lead">Jeder Report ist eine eigene Komponente. Das Standardlayout zeigt die gesamte fachliche Kette; ein Tenant-Administrator kann diese Seite direkt mit Grids, Tabs, Akkordeons, Überschriften und Texten gestalten.</p>
+          <p className="sales-lead">Jeder Report ist eine eigene Komponente. Das Standardlayout zeigt die gesamte fachliche Kette; ein Tenant-Administrator kann diese Seite direkt mit Grids, Tabs, Akkordeons, Überschriften und Texten gestalten. Die Arbeitsliste bleibt eine separate Seite.</p>
         </div>
         <div className="report-toolbar">
           <label>Zeitraum
@@ -112,30 +118,36 @@ export function ReportsPage({ forceEdit = false }: { forceEdit?: boolean }) {
 }
 
 function LayoutRenderer({ nodes, dashboard }: { nodes: LayoutNode[]; dashboard: Dashboard }) {
-  return <div className="dashboard-page-layout">{nodes.filter(node => node.visible).map(node => <LayoutNodeView key={node.id} node={node} dashboard={dashboard} />)}</div>
+  return <div className="dashboard-page-layout">{nodes.filter(node => node.visible && node.allowed).map(node => <div className="dashboard-layout-item" style={{ gridColumn: `span ${layoutSpan(node.columns)}` }} key={node.id}><LayoutNodeView node={node} dashboard={dashboard} /></div>)}</div>
 }
 
 function LayoutNodeView({ node, dashboard }: { node: LayoutNode; dashboard: Dashboard }) {
   if (!node.visible || !node.allowed) return null
   if (node.type === 'heading') return <section className="dashboard-heading-block"><h2>{node.title}</h2></section>
   if (node.type === 'text') return <p className="dashboard-text-block">{node.text}</p>
-  if (node.type === 'grid') return <div className="dashboard-grid-node" style={{ gridTemplateColumns: `repeat(${Math.max(1, Math.min(node.columns, 4))}, minmax(0, 1fr))` }}>{node.children.filter(child => child.visible).map(child => <div className="dashboard-grid-item" style={{ gridColumn: `span ${Math.min(child.columns, Math.max(1, node.columns))}` }} key={child.id}><LayoutNodeView node={child} dashboard={dashboard} /></div>)}</div>
-  if (node.type === 'accordion') return <section className="dashboard-accordion"><details open><summary>{node.title || 'Abschnitt'}</summary><div className="dashboard-accordion-content">{node.children.map(child => <LayoutNodeView key={child.id} node={child} dashboard={dashboard} />)}</div></details></section>
+  if (node.type === 'grid') {
+    const gridColumns = layoutSpan(node.gridColumns ?? 12)
+    return <div className="dashboard-grid-node" style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }}>{node.children.filter(child => child.visible && child.allowed).map(child => <div className="dashboard-grid-item" style={{ gridColumn: `span ${gridSpan(child.columns, gridColumns)}` }} key={child.id}><LayoutNodeView node={child} dashboard={dashboard} /></div>)}</div>
+  }
+  if (node.type === 'accordion') return <section className="dashboard-accordion"><details open><summary>{node.title || 'Abschnitt'}</summary><div className="dashboard-accordion-content"><LayoutChildren nodes={node.children} dashboard={dashboard} /></div></details></section>
   if (node.type === 'tabs') return <DashboardTabs node={node} dashboard={dashboard} />
   if (node.type !== 'report' || !node.reportKey) return null
   const definition = dashboard.layout.availableReports.find(report => report.key === node.reportKey)
-  return <section className={`webpart-slot webpart-span-${Math.min(node.columns, 2)}`}><div className="webpart-label"><span>{node.title ?? definition?.title ?? node.reportKey}</span><small>{definition?.description}</small></div>{renderWebpart(node.reportKey, dashboard)}</section>
+  return <section className="webpart-slot"><div className="webpart-label"><span>{node.title ?? definition?.title ?? node.reportKey}</span><small>{definition?.description}</small></div>{renderWebpart(node.reportKey, dashboard)}</section>
+}
+
+function LayoutChildren({ nodes, dashboard }: { nodes: LayoutNode[]; dashboard: Dashboard }) {
+  return <div className="dashboard-child-layout">{nodes.filter(node => node.visible && node.allowed).map(node => <div className="dashboard-layout-item" style={{ gridColumn: `span ${layoutSpan(node.columns)}` }} key={node.id}><LayoutNodeView node={node} dashboard={dashboard} /></div>)}</div>
 }
 
 function DashboardTabs({ node, dashboard }: { node: LayoutNode; dashboard: Dashboard }) {
   const [active, setActive] = useState(0)
   const index = Math.min(active, Math.max(0, node.children.length - 1))
-  return <section className="dashboard-tabs"><div className="dashboard-tab-buttons">{node.children.map((child, childIndex) => <button className={childIndex === index ? 'is-active' : ''} type="button" key={child.id} onClick={() => setActive(childIndex)}>{child.title || `Tab ${childIndex + 1}`}</button>)}</div>{node.children[index] && <div className="dashboard-tab-content"><LayoutNodeView node={node.children[index]} dashboard={dashboard} /></div>}</section>
+  return <section className="dashboard-tabs"><div className="dashboard-tab-buttons">{node.children.map((child, childIndex) => <button className={childIndex === index ? 'is-active' : ''} type="button" key={child.id} onClick={() => setActive(childIndex)}>{child.title || `Tab ${childIndex + 1}`}</button>)}</div>{node.children[index] && <div className="dashboard-tab-content"><LayoutChildren nodes={[node.children[index]]} dashboard={dashboard} /></div>}</section>
 }
 
 function renderWebpart(key: string, dashboard: Dashboard) {
   switch (key) {
-    case 'worklist': return <WorklistWidget compact />
     case 'cockpit': return dashboard.cockpit ? <CockpitWebpart report={dashboard.cockpit} /> : null
     case 'team': return dashboard.team ? <TeamWebpart report={dashboard.team} /> : null
     case 'meetings': return dashboard.meetings ? <MeetingsWebpart report={dashboard.meetings} /> : null
@@ -147,6 +159,14 @@ function renderWebpart(key: string, dashboard: Dashboard) {
     case 'commercial': return <CommercialWebpart report={dashboard.commercial} />
     default: return null
   }
+}
+
+function layoutSpan(value: number | null | undefined) {
+  return Math.max(1, Math.min(12, value ?? 12))
+}
+
+function gridSpan(value: number | null | undefined, gridColumns: number) {
+  return Math.max(1, Math.min(gridColumns, Math.ceil(layoutSpan(value) * gridColumns / 12)))
 }
 
 function WebpartCard({ children }: { children: ReactNode }) {
@@ -187,8 +207,213 @@ function AnalysisWebpart({ report }: { report: Analysis }) {
 }
 
 function CustomersWebpart({ report }: { report: Customers }) {
-  const mapped = report.customers.filter(customer => customer.latitude !== null && customer.longitude !== null)
-  return <WebpartCard><div className="card-heading"><div><p className="sales-eyebrow">KUNDENSTAMM · KARTE</p><h2>Kunden und Gebiete</h2></div><span className="worklist-refresh">{report.customers.length} Kunden · {report.unmappedCount} nicht verortbar</span></div><div className="customer-map"><div className="customer-map-grid">{mapped.slice(0, 80).map(customer => <span className="customer-dot" title={`${customer.name} · ${money(customer.lifetimeRevenue)}`} key={customer.id} style={{ left: `${Math.min(96, Math.max(2, ((customer.longitude ?? 0) + 180) / 360 * 100))}%`, top: `${Math.min(96, Math.max(2, (90 - (customer.latitude ?? 0)) / 180 * 100))}%` }} />)}</div><div className="customer-map-copy"><strong>Weltweite Kundenverteilung</strong><span>Startet im deutschsprachigen Raum; Punktgröße und Detailkarte folgen mit dem Kartendienst.</span><small>{mapped.length} Kunden mit Koordinaten</small></div></div><div className="table-wrap"><table><thead><tr><th>Kunde</th><th>Betreuer</th><th>Land / PLZ</th><th>Umsatz</th><th>Offene Deals</th><th></th></tr></thead><tbody>{report.customers.slice(0, 25).map(customer => <tr key={customer.id}><td><strong>{customer.name}</strong>{customer.needsReview && <small className="table-note">Prüfen</small>}</td><td>{customer.ownerName ?? '–'}</td><td>{customer.countryCode ?? '–'} / {customer.postalCode ?? '–'}</td><td>{money(customer.lifetimeRevenue)}</td><td>{customer.openDealCount}</td><td>{customer.externalUrl && <a href={customer.externalUrl} target="_blank" rel="noopener noreferrer">CRM ↗</a>}</td></tr>)}</tbody></table></div></WebpartCard>
+  const points = useMemo(() => report.customers.map(customer => toCustomerMapPoint(customer)).filter((point): point is CustomerMapPoint => point !== null), [report.customers])
+  const exactPoints = points.filter(point => !point.isFallback).length
+  const fallbackPoints = points.length - exactPoints
+
+  return <WebpartCard>
+    <div className="card-heading"><div><p className="sales-eyebrow">KUNDENSTAMM · KARTE</p><h2>Kunden und Gebiete</h2></div><span className="worklist-refresh">{report.customers.length} Kunden · {report.unmappedCount} ohne exakte Koordinaten</span></div>
+    <div className="customer-map">
+      <div className="customer-map-grid">
+        <CustomerLeafletMap points={points} />
+        {points.length === 0 && <div className="customer-map-empty">Für die Kunden sind noch keine verwertbaren Standortdaten vorhanden.</div>}
+      </div>
+      <div className="customer-map-copy"><strong>Deutschland als Startausschnitt</strong><span>Die Karte ist interaktiv. Mit den Zoom-Schaltflächen oder dem Mausrad kann der Ausschnitt verändert werden; „Deutschland“ setzt den Startausschnitt zurück und „Alle Standorte“ passt ihn an alle vorhandenen Kunden an. Exakte Koordinaten werden bevorzugt, ansonsten werden die verfügbaren Standortdaten als Näherung dargestellt.</span><small>{points.length} Kartenpositionen · {exactPoints} exakte Standorte · {fallbackPoints} Standort-Näherungen · {report.customers.length - points.length} ohne Kartenposition</small></div>
+    </div>
+    <div className="table-wrap"><table><thead><tr><th>Kunde</th><th>Betreuer</th><th>Standort</th><th>Umsatz</th><th>Offene Deals</th><th></th></tr></thead><tbody>{report.customers.slice(0, 25).map(customer => <tr key={customer.id}><td><strong>{customer.name}</strong>{customer.needsReview && <small className="table-note">Prüfen</small>}</td><td>{customer.ownerName ?? '–'}</td><td>{formatCustomerLocation(customer)}</td><td>{money(customer.lifetimeRevenue)}</td><td>{customer.openDealCount}</td><td>{customer.externalUrl && <a href={customer.externalUrl} target="_blank" rel="noopener noreferrer">CRM ↗</a>}</td></tr>)}</tbody></table></div>
+  </WebpartCard>
+}
+
+type CustomerMapPoint = {
+  customer: Customers['customers'][number]
+  latitude: number
+  longitude: number
+  isFallback: boolean
+  locationBasis: 'exact' | 'city' | 'postal' | 'country'
+}
+
+const GERMANY_MAP_CENTER: [number, number] = [51.1657, 10.4515]
+const GERMANY_MAP_ZOOM = 6
+
+function CustomerLeafletMap({ points }: { points: CustomerMapPoint[] }) {
+  const mapElementRef = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<L.Map | null>(null)
+  const markerLayerRef = useRef<L.LayerGroup | null>(null)
+
+  useEffect(() => {
+    if (!mapElementRef.current || mapRef.current) return
+
+    const map = L.map(mapElementRef.current, { zoomControl: true, scrollWheelZoom: true })
+      .setView(GERMANY_MAP_CENTER, GERMANY_MAP_ZOOM)
+    const markerLayer = L.layerGroup().addTo(map)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>',
+    }).addTo(map)
+
+    mapRef.current = map
+    markerLayerRef.current = markerLayer
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => map.invalidateSize())
+    resizeObserver?.observe(mapElementRef.current)
+    window.setTimeout(() => map.invalidateSize(), 0)
+
+    return () => {
+      resizeObserver?.disconnect()
+      markerLayerRef.current = null
+      mapRef.current = null
+      map.remove()
+    }
+  }, [])
+
+  useEffect(() => {
+    const map = mapRef.current
+    const markerLayer = markerLayerRef.current
+    if (!map || !markerLayer) return
+
+    markerLayer.clearLayers()
+    for (const point of points) {
+      L.circleMarker([point.latitude, point.longitude], {
+        radius: point.isFallback ? 6 : 7,
+        color: point.isFallback ? '#fff0bd' : '#d7fbff',
+        weight: 2,
+        fillColor: point.isFallback ? '#f5c96b' : '#71e4ef',
+        fillOpacity: 0.9,
+      })
+        .bindPopup(createCustomerPopup(point))
+        .addTo(markerLayer)
+    }
+    map.invalidateSize()
+  }, [points])
+
+  const showGermany = () => mapRef.current?.setView(GERMANY_MAP_CENTER, GERMANY_MAP_ZOOM)
+  const showAllLocations = () => {
+    const map = mapRef.current
+    if (!map || points.length === 0) return showGermany()
+    const bounds = L.latLngBounds(points.map(point => [point.latitude, point.longitude] as [number, number]))
+    map.fitBounds(bounds, { padding: [24, 24], maxZoom: 12 })
+  }
+
+  return <>
+    <div className="customer-map-controls" role="group" aria-label="Kartenausschnitt ändern">
+      <button type="button" onClick={showGermany}>Deutschland</button>
+      <button type="button" onClick={showAllLocations}>Alle Standorte</button>
+    </div>
+    <div className="customer-map-leaflet" ref={mapElementRef} role="application" aria-label="Interaktive Kundenkarte" />
+  </>
+}
+
+function createCustomerPopup(point: CustomerMapPoint) {
+  const root = document.createElement('div')
+  const title = document.createElement('strong')
+  title.textContent = point.customer.name
+  root.append(title)
+
+  const location = document.createElement('div')
+  location.textContent = formatCustomerLocation(point.customer)
+  root.append(location)
+
+  const details = document.createElement('small')
+  details.textContent = `${point.locationBasis === 'exact' ? 'Exakter Standort' : `Standort-Näherung (${point.locationBasis})`} · ${money(point.customer.lifetimeRevenue)}`
+  root.append(details)
+
+  if (point.customer.externalUrl) {
+    const link = document.createElement('a')
+    link.href = point.customer.externalUrl
+    link.target = '_blank'
+    link.rel = 'noopener noreferrer'
+    link.textContent = 'CRM öffnen ↗'
+    root.append(link)
+  }
+  return root
+}
+
+const countryCentres: Record<string, { latitude: number; longitude: number }> = {
+  AT: { latitude: 47.6, longitude: 14.1 },
+  AU: { latitude: -25.3, longitude: 133.8 },
+  BE: { latitude: 50.8, longitude: 4.5 },
+  CA: { latitude: 56.1, longitude: -106.3 },
+  CH: { latitude: 46.8, longitude: 8.2 },
+  DE: { latitude: 51.2, longitude: 10.4 },
+  ES: { latitude: 40.4, longitude: -3.7 },
+  FR: { latitude: 46.2, longitude: 2.2 },
+  GB: { latitude: 55.4, longitude: -3.4 },
+  IT: { latitude: 41.9, longitude: 12.6 },
+  NL: { latitude: 52.1, longitude: 5.3 },
+  PL: { latitude: 52.1, longitude: 19.1 },
+  US: { latitude: 37.1, longitude: -95.7 },
+}
+
+const cityCentres: Record<string, { latitude: number; longitude: number }> = {
+  amsterdam: { latitude: 52.4, longitude: 4.9 },
+  basel: { latitude: 47.6, longitude: 7.6 },
+  berlin: { latitude: 52.5, longitude: 13.4 },
+  bonn: { latitude: 50.7, longitude: 7.1 },
+  bremen: { latitude: 53.1, longitude: 8.8 },
+  dresden: { latitude: 51.1, longitude: 13.7 },
+  dusseldorf: { latitude: 51.2, longitude: 6.8 },
+  dortmund: { latitude: 51.5, longitude: 7.5 },
+  essen: { latitude: 51.5, longitude: 7.0 },
+  frankfurt: { latitude: 50.1, longitude: 8.7 },
+  frankfurtammain: { latitude: 50.1, longitude: 8.7 },
+  hamburg: { latitude: 53.6, longitude: 10.0 },
+  hannover: { latitude: 52.4, longitude: 9.7 },
+  koln: { latitude: 50.9, longitude: 6.96 },
+  koeln: { latitude: 50.9, longitude: 6.96 },
+  leipzig: { latitude: 51.3, longitude: 12.4 },
+  london: { latitude: 51.5, longitude: -0.1 },
+  madrid: { latitude: 40.4, longitude: -3.7 },
+  mailand: { latitude: 45.5, longitude: 9.2 },
+  munchen: { latitude: 48.1, longitude: 11.6 },
+  muenchen: { latitude: 48.1, longitude: 11.6 },
+  nurnberg: { latitude: 49.5, longitude: 11.1 },
+  paris: { latitude: 48.9, longitude: 2.3 },
+  salzburg: { latitude: 47.8, longitude: 13.0 },
+  stuttgart: { latitude: 48.8, longitude: 9.2 },
+  wien: { latitude: 48.2, longitude: 16.4 },
+  zurich: { latitude: 47.4, longitude: 8.5 },
+}
+
+const germanPostalCentres: Record<string, { latitude: number; longitude: number }> = {
+  '0': { latitude: 51.1, longitude: 12.4 },
+  '1': { latitude: 52.5, longitude: 13.4 },
+  '2': { latitude: 53.6, longitude: 10.0 },
+  '3': { latitude: 52.4, longitude: 9.7 },
+  '4': { latitude: 51.2, longitude: 6.8 },
+  '5': { latitude: 50.9, longitude: 6.9 },
+  '6': { latitude: 50.1, longitude: 8.7 },
+  '7': { latitude: 48.8, longitude: 9.2 },
+  '8': { latitude: 48.1, longitude: 11.6 },
+  '9': { latitude: 49.5, longitude: 11.1 },
+}
+
+function toCustomerMapPoint(customer: Customers['customers'][number]): CustomerMapPoint | null {
+  if (customer.latitude !== null && customer.longitude !== null) {
+    return { customer, latitude: customer.latitude, longitude: customer.longitude, isFallback: false, locationBasis: 'exact' }
+  }
+  const city = customer.city ? cityCentres[normalizeLocationKey(customer.city)] : undefined
+  if (city) return { customer, ...city, isFallback: true, locationBasis: 'city' }
+  const country = normalizeCountryCode(customer.countryCode)
+  const postalValue = customer.postalCode?.trim() ?? ''
+  const postal = (country === 'DE' || /^\d{5}$/.test(postalValue)) ? germanPostalCentres[postalValue.charAt(0)] : undefined
+  if (postal) return { customer, ...postal, isFallback: true, locationBasis: 'postal' }
+  const centre = country ? countryCentres[country] : undefined
+  return centre ? { customer, ...centre, isFallback: true, locationBasis: 'country' } : null
+}
+
+function normalizeLocationKey(value: string) {
+  return value.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().replace(/ /g, '')
+}
+
+function normalizeCountryCode(value: string | null) {
+  const normalized = value?.trim().toUpperCase()
+  if (!normalized) return null
+  return ({ DEUTSCHLAND: 'DE', GERMANY: 'DE', ÖSTERREICH: 'AT', AUSTRIA: 'AT', SCHWEIZ: 'CH', SWITZERLAND: 'CH' } as Record<string, string>)[normalized] ?? normalized
+}
+
+function formatCustomerLocation(customer: Customers['customers'][number]) {
+  const street = [customer.addressLine1, customer.houseNumber].filter(Boolean).join(' ')
+  const city = [customer.postalCode, customer.city].filter(Boolean).join(' ')
+  return [street, city, customer.regionCode, customer.countryCode].filter(Boolean).join(', ') || 'Standort unbekannt'
 }
 
 function GoalsWebpart({ report }: { report: Goals }) {

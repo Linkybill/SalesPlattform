@@ -95,6 +95,104 @@ namespace SalesPlattform.Backend.Data.Migrations
                     b.ToTable("hello_world_records", (string)null);
                 });
 
+            modelBuilder.Entity("SalesPlattform.Backend.Data.IntegrationApiUsageEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("ConnectionKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<long>("DurationMilliseconds")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<long>("EstimatedUnits")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("HttpMethod")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("ProviderKey")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<int?>("ProviderUnitsLimit")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ProviderUnitsRemaining")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("RecordsAffected")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RequestedBy")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<bool>("Retryable")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid?>("RunId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("StatusCode")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Succeeded")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("UsageUnit")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Origin", "OccurredAt");
+
+                    b.HasIndex("TenantId", "RunId", "OccurredAt");
+
+                    b.HasIndex("TenantId", "ProviderKey", "ConnectionKey", "OccurredAt");
+
+                    b.ToTable("integration_api_usage_events", (string)null);
+                });
+
             modelBuilder.Entity("SalesPlattform.Backend.Data.IntegrationConnection", b =>
                 {
                     b.Property<Guid>("Id")
@@ -180,6 +278,9 @@ namespace SalesPlattform.Backend.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)");
+
+                    b.Property<string>("LastOutboundTaskProjectionJson")
+                        .HasColumnType("jsonb");
 
                     b.Property<DateTimeOffset>("LastSeenAt")
                         .HasColumnType("timestamp with time zone");
@@ -488,6 +589,80 @@ namespace SalesPlattform.Backend.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("integration_stage_mappings", (string)null);
+                });
+
+            modelBuilder.Entity("SalesPlattform.Backend.Data.IntegrationSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ChannelId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ConnectionKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("EventsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LastCheckedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("LastRenewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Module")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("NotifyUrl")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("ProviderKey")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("VerificationTokenHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "ProviderKey", "ChannelId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "Status", "ExpiresAt");
+
+                    b.HasIndex("TenantId", "ProviderKey", "ConnectionKey", "Module")
+                        .IsUnique();
+
+                    b.ToTable("integration_subscriptions", (string)null);
                 });
 
             modelBuilder.Entity("SalesPlattform.Backend.Data.IntegrationSyncCursor", b =>
@@ -1280,88 +1455,6 @@ namespace SalesPlattform.Backend.Data.Migrations
                     b.ToTable("sales_communication_templates", (string)null);
                 });
 
-            modelBuilder.Entity("SalesPlattform.Backend.Data.SalesContact", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("CustomerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Email")
-                        .HasMaxLength(320)
-                        .HasColumnType("character varying(320)");
-
-                    b.Property<string>("FirstName")
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsPrimary")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("JobTitle")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("LastName")
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)");
-
-                    b.Property<DateTimeOffset?>("LastSeenAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("MobilePhone")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<string>("NormalizedEmail")
-                        .HasMaxLength(320)
-                        .HasColumnType("character varying(320)");
-
-                    b.Property<string>("NormalizedPhone")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("Phone")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("RoleType")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<DateTimeOffset?>("SourceCreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset?>("SourceDeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset?>("SourceModifiedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CustomerId");
-
-                    b.HasIndex("TenantId", "NormalizedEmail");
-
-                    b.HasIndex("TenantId", "NormalizedPhone");
-
-                    b.ToTable("sales_contacts", (string)null);
-                });
-
             modelBuilder.Entity("SalesPlattform.Backend.Data.SalesContract", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1555,55 +1648,6 @@ namespace SalesPlattform.Backend.Data.Migrations
                     b.HasIndex("TenantId", "TaxNumber");
 
                     b.ToTable("sales_customers", (string)null);
-                });
-
-            modelBuilder.Entity("SalesPlattform.Backend.Data.SalesCustomerRelationship", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ChildCustomerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Notes")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
-
-                    b.Property<Guid>("ParentCustomerId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("RelationshipType")
-                        .IsRequired()
-                        .HasMaxLength(80)
-                        .HasColumnType("character varying(80)");
-
-                    b.Property<string>("Source")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset?>("ValidFrom")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTimeOffset?>("ValidTo")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ChildCustomerId");
-
-                    b.HasIndex("ParentCustomerId");
-
-                    b.HasIndex("TenantId", "ParentCustomerId", "ChildCustomerId", "RelationshipType")
-                        .IsUnique();
-
-                    b.ToTable("sales_customer_relationships", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_sales_customer_relationships_not_self", "\"ParentCustomerId\" <> \"ChildCustomerId\"");
-                        });
                 });
 
             modelBuilder.Entity("SalesPlattform.Backend.Data.SalesCustomerStatusHistory", b =>
@@ -2279,9 +2323,6 @@ namespace SalesPlattform.Backend.Data.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
 
-                    b.Property<Guid?>("ContactId")
-                        .HasColumnType("uuid");
-
                     b.Property<Guid?>("CustomerId")
                         .HasColumnType("uuid");
 
@@ -2355,8 +2396,6 @@ namespace SalesPlattform.Backend.Data.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("ContactId");
 
                     b.HasIndex("CustomerId");
 
@@ -2539,9 +2578,6 @@ namespace SalesPlattform.Backend.Data.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
-                    b.Property<Guid?>("ContactId")
-                        .HasColumnType("uuid");
-
                     b.Property<string>("Currency")
                         .HasMaxLength(10)
                         .HasColumnType("character varying(10)");
@@ -2597,8 +2633,6 @@ namespace SalesPlattform.Backend.Data.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("ContactId");
 
                     b.HasIndex("CustomerId");
 
@@ -3248,8 +3282,9 @@ namespace SalesPlattform.Backend.Data.Migrations
 
                     b.HasIndex("WorkItemId");
 
-                    b.HasIndex("TenantId", "RuleRunId", "TargetType", "TargetId")
-                        .IsUnique();
+                    b.HasIndex("TenantId", "RuleRunId", "RuleDefinitionId", "TargetType", "TargetId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_sales_rule_evaluations_rule_target");
 
                     b.ToTable("sales_rule_evaluations", (string)null);
                 });
@@ -3303,9 +3338,6 @@ namespace SalesPlattform.Backend.Data.Migrations
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid?>("ContactId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid?>("CustomerId")
@@ -3371,8 +3403,6 @@ namespace SalesPlattform.Backend.Data.Migrations
                         .HasColumnType("uuid");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("ContactId");
 
                     b.HasIndex("CustomerId");
 
@@ -3848,6 +3878,60 @@ namespace SalesPlattform.Backend.Data.Migrations
                     b.ToTable("sales_working_hours", (string)null);
                 });
 
+            modelBuilder.Entity("SalesPlattform.Backend.Data.ZohoSchemaCache", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AvailableModulesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("ConnectionKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("ExternalOrganizationId")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("FetchedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FieldsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("LayoutsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("PipelinesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("ProviderKey")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("RelatedListsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "ProviderKey", "ConnectionKey")
+                        .IsUnique();
+
+                    b.ToTable("zoho_schema_cache", (string)null);
+                });
+
             modelBuilder.Entity("SalesPlattform.Backend.Data.IntegrationEntityLink", b =>
                 {
                     b.HasOne("SalesPlattform.Backend.Data.SalesWorkItem", null)
@@ -4006,16 +4090,6 @@ namespace SalesPlattform.Backend.Data.Migrations
                     b.Navigation("Appointment");
                 });
 
-            modelBuilder.Entity("SalesPlattform.Backend.Data.SalesContact", b =>
-                {
-                    b.HasOne("SalesPlattform.Backend.Data.SalesCustomer", "Customer")
-                        .WithMany("Contacts")
-                        .HasForeignKey("CustomerId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Customer");
-                });
-
             modelBuilder.Entity("SalesPlattform.Backend.Data.SalesContract", b =>
                 {
                     b.HasOne("SalesPlattform.Backend.Data.SalesCustomer", "Customer")
@@ -4056,25 +4130,6 @@ namespace SalesPlattform.Backend.Data.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Owner");
-                });
-
-            modelBuilder.Entity("SalesPlattform.Backend.Data.SalesCustomerRelationship", b =>
-                {
-                    b.HasOne("SalesPlattform.Backend.Data.SalesCustomer", "ChildCustomer")
-                        .WithMany("ChildRelationships")
-                        .HasForeignKey("ChildCustomerId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SalesPlattform.Backend.Data.SalesCustomer", "ParentCustomer")
-                        .WithMany("ParentRelationships")
-                        .HasForeignKey("ParentCustomerId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("ChildCustomer");
-
-                    b.Navigation("ParentCustomer");
                 });
 
             modelBuilder.Entity("SalesPlattform.Backend.Data.SalesCustomerStatusHistory", b =>
@@ -4275,11 +4330,6 @@ namespace SalesPlattform.Backend.Data.Migrations
 
             modelBuilder.Entity("SalesPlattform.Backend.Data.SalesLead", b =>
                 {
-                    b.HasOne("SalesPlattform.Backend.Data.SalesContact", "Contact")
-                        .WithMany()
-                        .HasForeignKey("ContactId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("SalesPlattform.Backend.Data.SalesCustomer", "Customer")
                         .WithMany("Leads")
                         .HasForeignKey("CustomerId")
@@ -4289,8 +4339,6 @@ namespace SalesPlattform.Backend.Data.Migrations
                         .WithMany("Leads")
                         .HasForeignKey("OwnerId")
                         .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Contact");
 
                     b.Navigation("Customer");
 
@@ -4335,11 +4383,6 @@ namespace SalesPlattform.Backend.Data.Migrations
 
             modelBuilder.Entity("SalesPlattform.Backend.Data.SalesOffer", b =>
                 {
-                    b.HasOne("SalesPlattform.Backend.Data.SalesContact", "Contact")
-                        .WithMany()
-                        .HasForeignKey("ContactId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("SalesPlattform.Backend.Data.SalesCustomer", "Customer")
                         .WithMany()
                         .HasForeignKey("CustomerId")
@@ -4354,8 +4397,6 @@ namespace SalesPlattform.Backend.Data.Migrations
                         .WithMany()
                         .HasForeignKey("OwnerId")
                         .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Contact");
 
                     b.Navigation("Customer");
 
@@ -4513,11 +4554,6 @@ namespace SalesPlattform.Backend.Data.Migrations
 
             modelBuilder.Entity("SalesPlattform.Backend.Data.SalesServiceCase", b =>
                 {
-                    b.HasOne("SalesPlattform.Backend.Data.SalesContact", "Contact")
-                        .WithMany()
-                        .HasForeignKey("ContactId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("SalesPlattform.Backend.Data.SalesCustomer", "Customer")
                         .WithMany()
                         .HasForeignKey("CustomerId")
@@ -4532,8 +4568,6 @@ namespace SalesPlattform.Backend.Data.Migrations
                         .WithMany()
                         .HasForeignKey("OwnerId")
                         .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Contact");
 
                     b.Navigation("Customer");
 
@@ -4676,17 +4710,11 @@ namespace SalesPlattform.Backend.Data.Migrations
 
             modelBuilder.Entity("SalesPlattform.Backend.Data.SalesCustomer", b =>
                 {
-                    b.Navigation("ChildRelationships");
-
-                    b.Navigation("Contacts");
-
                     b.Navigation("Contracts");
 
                     b.Navigation("Deals");
 
                     b.Navigation("Leads");
-
-                    b.Navigation("ParentRelationships");
 
                     b.Navigation("StatusHistory");
                 });

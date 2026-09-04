@@ -29,12 +29,12 @@ mehr abhängig.
   Begründungen und Audit-Snapshots vorgesehen; fachliche Kernfelder bleiben
   typisierte Spalten.
 
-## Fachliche Beziehungen
+## Technische CRM-Zuordnungen
 
 ```text
-Owner ───────< Customer ───────< Contact
-   │              │  │
-   │              │  └────────< Lead
+Owner ───────< Customer
+   │              │
+   │              └────────< Lead
    │              └───────────< Deal >──── Pipeline ───< PipelineStage
    │                              │  │
    │                              │  └──────── Product >── ProductCategory
@@ -43,8 +43,8 @@ Owner ───────< Customer ───────< Contact
    └──── Team / TeamMember
 
 Deal ───< DealStageHistory
-Customer / Lead / Deal / Contact ───< ActivityRelation >── Activity
-Customer / Lead / Deal / Contact ───< AppointmentRelation >── Appointment
+Customer / Lead / Deal ───< ActivityRelation >── Activity
+Customer / Lead / Deal ───< AppointmentRelation >── Appointment
 
 CRM Connection ───< ExternalEntityLink ───> kanonische Entität
 CRM Connection ───< SyncRun ───< SyncRunItem / SyncError
@@ -63,9 +63,7 @@ sales_owners
 sales_teams
 sales_team_members
 sales_customers
-sales_customer_relationships
 sales_customer_status_history
-sales_contacts
 sales_leads
 sales_product_categories
 sales_products
@@ -237,20 +235,6 @@ SourceDeletedAt        timestamptz NULL
 kann beim Import konfiguriert Deutschland vorbelegt und `NeedsReview` gesetzt
 werden. Nicht geocodierbare Kunden bleiben sichtbar und werden gezählt.
 
-#### `SalesCustomerRelationship` → `sales_customer_relationships`
-
-Für Konzern, Tochter, Holding und ähnliche Organisationsbeziehungen. Die
-Beziehung ist im Pflichtenheft noch offen, das Modell hält sie deshalb
-gerichtet und erweiterbar vor.
-
-```text
-Id, ParentCustomerId, ChildCustomerId, RelationshipType,
-ValidFrom, ValidTo, Source, Notes
-```
-
-Ein Kunde darf nicht mit sich selbst verknüpft werden. Die fachlichen
-Beziehungstypen werden erst nach der offenen Konzernentscheidung festgelegt.
-
 #### `SalesCustomerStatusHistory` → `sales_customer_status_history`
 
 Benötigt für Kundenbestand, Churn und Lifetime-Auswertungen.
@@ -259,31 +243,7 @@ Benötigt für Kundenbestand, Churn und Lifetime-Auswertungen.
 Id, CustomerId, Status, ValidFrom, ValidTo, SourceModifiedAt
 ```
 
-### Kontakte und Leads
-
-#### `SalesContact` → `sales_contacts`
-
-```text
-Id                     uuid PK
-CustomerId             uuid NULL FK sales_customers
-Name                   varchar(300) NOT NULL
-FirstName              varchar(150) NULL
-LastName               varchar(150) NULL
-Email                  varchar(320) NULL
-Phone                  varchar(100) NULL
-MobilePhone            varchar(100) NULL
-JobTitle               varchar(200) NULL
-IsPrimary              boolean NOT NULL
-IsActive               boolean NOT NULL
-SourceCreatedAt        timestamptz NULL
-SourceModifiedAt       timestamptz NULL
-LastSeenAt             timestamptz NULL
-SourceDeletedAt        timestamptz NULL
-```
-
-E-Mail und Telefonnummer werden zusätzlich normalisiert bzw. indexierbar
-gespeichert, damit die Dublettenprüfung nicht von Originalformatierungen
-abhängt.
+### Leads
 
 #### `SalesLead` → `sales_leads`
 
@@ -292,7 +252,6 @@ Ein Lead kann bereits einem Kunden zugeordnet sein, muss es aber nicht.
 ```text
 Id                     uuid PK
 CustomerId             uuid NULL FK sales_customers
-ContactId              uuid NULL FK sales_contacts
 OwnerId                uuid NULL FK sales_owners
 Name                   varchar(300) NOT NULL
 CompanyName            varchar(300) NULL
@@ -474,7 +433,7 @@ erhalten.
 
 #### `SalesActivityRelation` → `sales_activity_relations`
 
-Aktivitäten können einen Lead, Kontakt, Kunden und/oder Deal betreffen. Eine
+Aktivitäten können einen Lead, Kunden und/oder Deal betreffen. Eine
 polymorphe Relation verhindert unbrauchbare `RelatedExternalId`-Felder in der
 Fachdomäne.
 
@@ -482,8 +441,8 @@ Fachdomäne.
 Id, ActivityId, TargetType, TargetId, RelationRole
 ```
 
-`TargetType` ist eine kontrollierte interne Menge (`customer`, `contact`,
-`lead`, `deal`, `contract`, `service-case`, `offer`, `order`, `invoice`), keine
+`TargetType` ist eine kontrollierte interne Menge (`customer`, `lead`, `deal`,
+`contract`, `service-case`, `offer`, `order`, `invoice`), keine
 Zoho-Modulbezeichnung.
 
 #### `SalesAppointment` → `sales_appointments`
@@ -523,12 +482,12 @@ Reportseite Zoho direkt abfragen muss.
 
 ```text
 SalesServiceCase → sales_service_cases
-Id, TenantId, CustomerId, ContactId, DealId, OwnerId, Subject, Description,
+Id, TenantId, CustomerId, DealId, OwnerId, Subject, Description,
 Status, Priority, Origin, Reason, OpenedAt, DueAt, ResolvedAt,
 SourceCreatedAt, SourceModifiedAt, LastSeenAt, SourceDeletedAt, IsActive
 
 SalesOffer → sales_offers
-Id, TenantId, CustomerId, ContactId, DealId, OwnerId, Name, OfferNumber,
+Id, TenantId, CustomerId, DealId, OwnerId, Name, OfferNumber,
 Status, Amount, Currency, IssuedAt, SentAt, ValidUntil,
 SourceCreatedAt, SourceModifiedAt, LastSeenAt, SourceDeletedAt, IsActive
 
@@ -543,10 +502,10 @@ Status, Amount, OpenAmount, Currency, IssuedAt, DueAt, PaidAt,
 SourceCreatedAt, SourceModifiedAt, LastSeenAt, SourceDeletedAt, IsActive
 ```
 
-Die Beziehungen sind nullable, weil CRM-Daten unvollständig sein können. Ein
-fehlender Parent erzeugt einen Datenqualitätsfall, löscht aber weder die
-Historie noch den Datensatz. `SalesContact.RoleType` hält zusätzlich die
-fachliche Kontaktrolle wie Entscheider, Einkauf oder Rechnungswesen fest.
+Kontakte und Ansprechpartnerbeziehungen sind bewusst kein Bestandteil des
+kanonischen SalesPlattform-Modells. Aktivitäten werden nur zu den fachlich
+benötigten Zieltypen Kunde, Lead und Deal sowie den übrigen Vorgangstypen
+zugeordnet.
 
 ## Regelwerk, Arbeitsliste und Ziele
 
@@ -902,9 +861,9 @@ dem Namen zu matchen.
 - Externe Identitäten sind eindeutig nach
   `(TenantId, ProviderKey, ConnectionKey, EntityType, ExternalId)`.
 - Interne kanonische IDs sind niemals externe IDs.
-- Owner-, Pipeline-, Stage-, Produkt- und Kundenbeziehungen werden als
-  typisierte FKs modelliert; polymorphe Zuordnungen gibt es nur in den
-  ausdrücklichen Relationstabellen.
+- Owner-, Pipeline-, Stage- und Produktzuordnungen werden als typisierte FKs
+  modelliert; polymorphe CRM-Zuordnungen gibt es nur in den ausdrücklichen
+  Aktivitäts-, Termin- und Vorgangsrelationstabellen.
 - Häufige Arbeitslisten erhalten Indizes auf `(TenantId, Status, DueAt)`,
   `(TenantId, OwnerId, Status)` und `(TenantId, PriorityScore)`.
 - Deals erhalten Indizes auf Kunde, Pipeline/Stufe, ClosingAt,
@@ -922,8 +881,7 @@ dem Namen zu matchen.
 | CRM-Bereich | Kanonische Zielentitäten | Besondere Behandlung |
 |---|---|---|
 | Accounts | Customer, Owner, CustomerStatusHistory | Adresse normalisieren, Geocoding-Befund erzeugen |
-| Contacts | Contact, Customer | E-Mail/Telefon normalisieren |
-| Leads | Lead, Owner, ActivityRelation | Kontakt-/Response-Felder und Zähler normalisieren |
+| Leads | Lead, Owner, ActivityRelation | Response-Felder und Zähler normalisieren |
 | Deals | Deal, Customer, Owner, Pipeline, Stage, Product, Contract | fehlende Pflichtfelder als Datenqualität markieren |
 | Stage History | DealStageHistory | beim ersten Full-Sync vollständig übernehmen |
 | Activities/Calls | Activity, ActivityRelation | Gesprächsklassifikation und zwei Anrufzähler ableiten |
@@ -952,7 +910,7 @@ separater Plattformjob.
 3. Die fünf Pipelines und ihre Stufen/Wahrscheinlichkeiten.
 4. Fachliche Rollenmatrix und Identity-Platform-Rollen.
 5. Geschäftsjahr, Zeitzone, Arbeitszeit und Feiertagskalender.
-6. Behandlung von Verträgen, Konzernbeziehungen und eingehenden Anrufen.
+6. Behandlung von Verträgen und eingehenden Anrufen.
 7. Aufbewahrung von Rohdaten, History, Snapshots und Auditdaten.
 
 ### Technische Reihenfolge

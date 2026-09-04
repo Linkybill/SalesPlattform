@@ -46,13 +46,12 @@ Stand: 2026-09-02.
   Datensätzen. Die Abschlussdetails enthalten zusätzlich die geschriebenen
   Records als strukturiertes JSON für die Jobdetailansicht.
 - E-Mails bleiben Bestandteil desselben CRM-Sync-Laufs. Sie werden als
-  Related-List der Elternobjekte Accounts, Kontakte, Leads und Deals gelesen;
+  Related-List der Elternobjekte Accounts, Leads und Deals gelesen;
   es gibt keinen separaten E-Mail-Sync-Job.
 - Nach dem CRM-Sync wird die Arbeitsliste automatisch neu bewertet. Ein
   Vollimport bewertet alle Ziele; ein Incremental-Crawl übergibt nur die
   geänderten kanonischen Datensätze und folgt deren Integration-Links sowie
-  Aktivitäts-, Kontakt-, Kunden- und Deal-Beziehungen zu den betroffenen
-  Regelzielen.
+  Aktivitäts- und CRM-Zuordnungen zu den betroffenen Regelzielen.
 - Vollimport und inkrementeller Crawl sind über die zentrale, mandantenbezogene
   Exklusivgruppe `crm-synchronization` gekoppelt und können nicht gleichzeitig
   laufen.
@@ -81,7 +80,7 @@ Stand: 2026-09-02.
   über „AppSettings“ der SalesPlattform gepflegt. Die Sales-App liest die
   effektiven Werte nur noch serverseitig für die Regelbewertung.
 - Die aktuell integrierten Paketstände sind `@hammer2fall/identity-platform-react`
-  `0.1.43` im Frontend und `IdentityPlatform.Shared` `0.1.41` im Backend.
+  `0.1.45` im Frontend und `IdentityPlatform.Shared` `0.1.45` im Backend.
   Die Jobdefinition enthält neben Zeitplan und Aktivierung auch
   `ConcurrencyGroup` und `ConcurrencyScope`; Vollimport und Crawl verwenden
   gemeinsam `crm-synchronization`.
@@ -107,6 +106,12 @@ Stand: 2026-09-02.
   werden die täglichen KPI-, Pipeline-, Aktivitäts- und Kundenstatus-Snapshots
   aktualisiert und Regelbenachrichtigungen direkt versendet. Dafür gibt es
   keine separaten Sales-Jobs oder eigenen Zeitpläne.
+
+Die Regelbewertung nach dem CRM-Teil ist eine eigene Live-Phase. Der
+Plattformfortschritt zeigt die gepr��ften Regeltreffer, bestehende Vorg��nge und
+die verbleibende Menge; aktuelle Regelziele und das Speichern der Ergebnisse
+werden als Job-Logs protokolliert. CRM-Aufgaben-Abgleich, Kennzahlen und
+Benachrichtigungen bleiben bis zum tats��chlichen Abschluss sichtbar.
 
 ## Erste fachliche Umsetzung: Arbeitsliste
 
@@ -161,6 +166,13 @@ Rückschreiben ist begrenzt, explizit aktiviert und abschaltbar.
 Das Domainmodell bleibt unabhängig vom Anbieter. Zoho ist der erste Adapter;
 Pipedrive und weitere Anbieter werden später nach demselben Muster ergänzt.
 Details stehen in [`06-integrationsarchitektur.md`](./06-integrationsarchitektur.md).
+
+Zoho-Änderungen können zusätzlich zum Incremental-Crawl über einen
+provider-spezifischen Subscription-Adapter eingehen. Der gemeinsame Job
+`CRM-Hooks verwalten` erneuert die Hooks und verarbeitet ausschließlich die von
+Zoho gemeldeten Datensätze. Für die fachliche Wirkung werden anschließend die
+betroffenen Regeln, CRM-Task-Spiegelung, Kennzahlen und Benachrichtigungen
+aktualisiert; ein Hook startet keinen Vollimport.
 
 ## Fachliche Hauptansichten
 

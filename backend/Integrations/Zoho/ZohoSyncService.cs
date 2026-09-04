@@ -14,7 +14,8 @@ namespace SalesPlattform.Backend.Integrations.Zoho;
 public sealed class ZohoSyncService(
     PlatformTenantDbContextFactory<SalesPlattformDbContext> dbFactory,
     ZohoCrmAdapter adapter,
-    ZohoCrmRecordMapper recordMapper,
+    ICrmRecordMapper recordMapper,
+    ZohoSchemaCacheService schemaCache,
     ISalesCrmRepositoryFactory repositoryFactory,
     ZohoConnectionStore connectionStore,
     ZohoConfigurationService configuration,
@@ -24,7 +25,7 @@ public sealed class ZohoSyncService(
 {
     // Related lists are still part of the same CRM run. A small, bounded
     // amount of parallelism keeps Zoho/API limits under control while avoiding
-    // one sequential network round-trip per Account/Contact/Lead/Deal.
+    // one sequential network round-trip per Account/Lead/Deal.
     private const int RelatedFetchConcurrency = 4;
     private const int RelatedWriteBatchSize = 100;
 
@@ -237,7 +238,11 @@ public sealed class ZohoSyncService(
         {
             var modules = NormalizeModules(JsonSerializer.Deserialize<string[]>(run.RequestedModulesJson));
             var isIncremental = string.Equals(run.Mode, CrmSyncModes.Incremental, StringComparison.OrdinalIgnoreCase);
-            var availableModules = await adapter.GetModulesAsync(cancellationToken);
+            var schema = await schemaCache.GetCachedAsync(cancellationToken)
+                ?? throw new InvalidOperationException(
+                    "Für den Zoho-Sync ist noch kein lokaler Zoho-Schema-Cache vorhanden. "
+                    + "Bitte zuerst den manuellen Job 'Zoho-Schema cachen' ausführen.");
+            var availableModules = schema.AvailableModules;
             var sourceRecords = new Dictionary<string, IReadOnlyCollection<CrmExternalRecord>>(
                 StringComparer.OrdinalIgnoreCase);
             var changes = new HashSet<CrmSynchronizationChange>();
@@ -274,6 +279,30 @@ public sealed class ZohoSyncService(
                     continue;
                 }
 
+                if (module.Equals("Activities", StringComparison.OrdinalIgnoreCase))
+                {
+                    runItem.Status = "skipped";
+                    runItem.Error = "Zoho liefert 'Activities' nur als Sammelmodul. Calls, Tasks und Events werden separat synchronisiert.";
+                    runItem.FinishedAt = DateTimeOffset.UtcNow;
+                    await repository.SaveChangesAsync(cancellationToken);
+                    await NotifyAsync(publish, run);
+                    continue;
+                }
+
+                if (module.Equals("Analytics", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Zoho may expose Analytics in the module catalog even
+                    // though it is not a CRM record module. It is excluded
+                    // from the cached selectable modules, but stale/custom
+                    // requests must also be ignored safely.
+                    runItem.Status = "skipped";
+                    runItem.Error = null;
+                    runItem.FinishedAt = DateTimeOffset.UtcNow;
+                    await repository.SaveChangesAsync(cancellationToken);
+                    await NotifyAsync(publish, run);
+                    continue;
+                }
+
                 if (IsRelatedModule(module))
                 {
                     // E-mails and stage history are related lists in Zoho. They
@@ -298,8 +327,14 @@ public sealed class ZohoSyncService(
                     // arriving while this module is being read are therefore
                     // picked up by the next run (with a small overlap).
                     var watermark = DateTimeOffset.UtcNow;
-                    var fields = await ResolveFieldsAsync(module, cancellationToken);
-                    var records = (await adapter.GetRecordsAsync(module, fields, modifiedSince, cancellationToken)).ToArray();
+                    var fields = ResolveFields(module, schema);
+                    var records = (module.Equals(
+                        "Pipelines",
+                        StringComparison.OrdinalIgnoreCase)
+                        ? adapter.GetPipelineRecordsFromCache(schema)
+                        : module.Equals("PipelineStages", StringComparison.OrdinalIgnoreCase)
+                            ? adapter.GetPipelineStageRecordsFromCache(schema)
+                            : await adapter.GetRecordsAsync(module, fields, modifiedSince, cancellationToken)).ToArray();
                     sourceRecords[module] = records;
                     run.RecordsRead += records.Length;
                     runItem.RecordsRead = records.Length;
@@ -430,18 +465,13 @@ public sealed class ZohoSyncService(
                 run,
                 modules,
                 isIncremental,
+                schema,
                 sourceRecords,
                 repository,
                 publish,
                 changes,
                 callConversationThresholdSeconds,
                 cancellationToken);
-            await repository.BackfillLeadActivityMarkersAsync(cancellationToken);
-            await repository.RecalculateLeadCallCountersAsync(
-                changes,
-                callConversationThresholdSeconds,
-                cancellationToken);
-
             run.Status = run.RecordsFailed == 0 ? "succeeded" : "completed_with_errors";
             run.CurrentModule = null;
             run.FinishedAt = DateTimeOffset.UtcNow;
@@ -481,12 +511,13 @@ public sealed class ZohoSyncService(
                 ? requestedModules
                 :
                 [
-                    "Users", "Accounts", "Contacts", "Leads", "Products", "Pipelines",
+                    "Users", "Accounts", "Leads", "Products", "Pipelines",
                     "PipelineStages", "Deals", "Cases", "Quotes", "Sales_Orders", "Invoices",
                     "DealStageHistory", "Calls", "Tasks", "Events", "Emails"
                 ])
             .Select(module => module.Trim())
             .Where(module => module.Length > 0)
+            .Where(module => !module.Equals("Contacts", StringComparison.OrdinalIgnoreCase))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         if (modules.Length == 0)
@@ -517,10 +548,12 @@ public sealed class ZohoSyncService(
     }
 
     private static bool IsSyntheticModule(string module)
-        => module.Equals("Pipelines", StringComparison.OrdinalIgnoreCase)
+        => module.Equals("Activities", StringComparison.OrdinalIgnoreCase)
+            || module.Equals("Pipelines", StringComparison.OrdinalIgnoreCase)
             || module.Equals("PipelineStages", StringComparison.OrdinalIgnoreCase)
             || module.Equals("DealStageHistory", StringComparison.OrdinalIgnoreCase)
-            || module.Equals("Emails", StringComparison.OrdinalIgnoreCase);
+            || module.Equals("Emails", StringComparison.OrdinalIgnoreCase)
+            || module.Equals("Analytics", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsOptionalModule(string module)
         => module.Equals("Cases", StringComparison.OrdinalIgnoreCase)
@@ -583,7 +616,6 @@ public sealed class ZohoSyncService(
         {
             "users" => CrmEntityTypes.Owner,
             "accounts" => CrmEntityTypes.Customer,
-            "contacts" => CrmEntityTypes.Contact,
             "leads" => CrmEntityTypes.Lead,
             "products" => CrmEntityTypes.Product,
             "deals" => CrmEntityTypes.Deal,
@@ -608,6 +640,7 @@ public sealed class ZohoSyncService(
         IntegrationSyncRun run,
         IReadOnlyCollection<string> modules,
         bool isIncremental,
+        ZohoSchemaCacheSnapshot schema,
         IReadOnlyDictionary<string, IReadOnlyCollection<CrmExternalRecord>> sourceRecords,
         ISalesCrmRepository repository,
         Func<ZohoSynchronizationSnapshot, Task> publish,
@@ -620,9 +653,10 @@ public sealed class ZohoSyncService(
             await ImportRelatedModuleAsync(
                 run,
                 "Emails",
-                ["Accounts", "Contacts", "Leads", "Deals"],
+                ["Accounts", "Leads", "Deals"],
                 "Emails",
                 isIncremental,
+                schema,
                 sourceRecords,
                 repository,
                 publish,
@@ -639,6 +673,7 @@ public sealed class ZohoSyncService(
                 ["Deals"],
                 "Stage_History",
                 isIncremental,
+                schema,
                 sourceRecords,
                 repository,
                 publish,
@@ -654,6 +689,7 @@ public sealed class ZohoSyncService(
         IReadOnlyCollection<string> parentModules,
         string relatedList,
         bool isIncremental,
+        ZohoSchemaCacheSnapshot schema,
         IReadOnlyDictionary<string, IReadOnlyCollection<CrmExternalRecord>> sourceRecords,
         ISalesCrmRepository repository,
         Func<ZohoSynchronizationSnapshot, Task> publish,
@@ -678,6 +714,9 @@ public sealed class ZohoSyncService(
             : null;
         var watermark = DateTimeOffset.UtcNow;
         var fields = recordMapper.GetPreferredFields(module);
+        var relatedListApiName = schema.ResolveRelatedListApiName(
+            parentModules.First(),
+            relatedList);
 
         var parentWorkItems = parentModules
             .SelectMany(parentModule => sourceRecords.TryGetValue(parentModule, out var parents)
@@ -698,6 +737,7 @@ public sealed class ZohoSyncService(
         var fetchTask = ProduceRelatedRecordsAsync(
             parentWorkItems,
             relatedList,
+            relatedListApiName,
             fields,
             modifiedSince,
             resultChannel.Writer,
@@ -801,6 +841,7 @@ public sealed class ZohoSyncService(
     private async Task ProduceRelatedRecordsAsync(
         IReadOnlyCollection<RelatedParentWorkItem> parents,
         string relatedList,
+        string relatedListApiName,
         IReadOnlyCollection<string> fields,
         DateTimeOffset? modifiedSince,
         ChannelWriter<RelatedParentResult> writer,
@@ -825,7 +866,8 @@ public sealed class ZohoSyncService(
                             relatedList,
                             fields,
                             modifiedSince,
-                            token);
+                            token,
+                            relatedListApiName);
                         await writer.WriteAsync(
                             new RelatedParentResult(parent, records, null),
                             token);
@@ -998,11 +1040,11 @@ public sealed class ZohoSyncService(
         }
     }
 
-    private async Task<IReadOnlyCollection<string>> ResolveFieldsAsync(
+    private IReadOnlyCollection<string> ResolveFields(
         string module,
-        CancellationToken cancellationToken)
+        ZohoSchemaCacheSnapshot schema)
     {
-        var metadata = await adapter.GetFieldsAsync(module, cancellationToken);
+        var metadata = schema.GetFields(module);
         var actualNames = metadata
             .Select(field => field.ApiName)
             .Where(name => !string.IsNullOrWhiteSpace(name))

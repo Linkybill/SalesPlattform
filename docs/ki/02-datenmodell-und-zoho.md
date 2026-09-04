@@ -80,14 +80,14 @@ folgende Datenbereiche gelesen und in das kanonische Modell übernommen:
 
 - CRM-Benutzer als Owner,
 - Accounts als Kundenorganisationen,
-- Kontakte und Leads,
+- Leads,
 - Produkte und aus Produktkategorien abgeleitete Kategorien,
 - Deal-Pipelines und Pipeline-Stufen,
 - Deals einschließlich Produkt-, Kunde-, Besitzer-, Betrag-, Laufzeit- und
   Verlustinformationen,
 - vollständige Deal-Stage-Historie über die Zoho-Related-List,
 - Calls, Tasks und Termine/Events,
-- E-Mails über die Related-Lists der Accounts, Kontakte, Leads und Deals.
+- E-Mails über die Related-Lists der Accounts, Leads und Deals.
 - Servicefälle/Beschwerden aus `Cases`, Angebote aus `Quotes`, Aufträge aus
   `Sales_Orders` und Rechnungen aus `Invoices`. Diese Module sind optional:
   fehlt ein Modul im Zoho-Tenant, wird es übersprungen und der übrige Lauf
@@ -103,7 +103,7 @@ verwenden weiterhin die Zoho-ID selbst. Ein Full-Crawl löscht keine lokalen
 Datensätze und legt bei jedem Lauf keine neuen internen IDs an.
 Der Zoho-Adapter ergänzt für alle direkt adressierbaren CRM-Entitäten außerdem
 die optionale provider-spezifische `ExternalUrl` in
-`integration_entity_links`. Das gilt für Benutzer, Accounts, Kontakte, Leads,
+`integration_entity_links`. Das gilt für Benutzer, Accounts, Leads,
 Produkte, Deals, Calls, Tasks, Termine, E-Mails, Servicefälle, Angebote,
 Aufträge und Rechnungen. Arbeitsliste und Reports können damit direkt zum
 Ursprungsdatensatz springen. Abgeleitete interne Entitäten wie Pipeline-
@@ -133,7 +133,7 @@ Der feste Job `crm-incremental-crawl` läuft im Modus `incremental`:
 - wird eine CRM-Aufgabe gelöscht, wird der aktuelle lokale Arbeitsvorgang
   geschlossen, historisch begründet und als neue Vorgangsinstanz derselben
   Kette erneut angelegt. Die neue Instanz erhält eine neue CRM-Task und damit
-  eine neue Remote-ID. Wird dagegen ein Lead, Kunde, Deal oder Kontakt
+  eine neue Remote-ID. Wird dagegen ein Lead, Kunde oder Deal
   gelöscht, werden betroffene offene Arbeitsvorgänge mit
   `target-deleted-in-crm` geschlossen; es wird kein fachlich sinnloser
   Nachfolger ohne Ziel erzeugt;

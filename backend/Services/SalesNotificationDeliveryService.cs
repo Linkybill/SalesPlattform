@@ -17,6 +17,8 @@ public sealed class SalesNotificationDeliveryService(
     private const string Sent = "sent";
     private const string Failed = "failed";
     private const int BatchSize = 50;
+    private const decimal ProgressStart = 96m;
+    private const decimal ProgressEnd = 100m;
 
     public async Task<SalesNotificationDeliveryResult> ProcessAsync(
         PlatformJobExecutionContext context,
@@ -145,7 +147,9 @@ public sealed class SalesNotificationDeliveryService(
                 new PlatformJobProgress(
                     Step: "Benachrichtigungen",
                     Message: $"{index + 1} von {candidates.Length} Benachrichtigungen verarbeitet.",
-                    ProgressPercent: candidates.Length == 0 ? 100 : (index + 1) * 100m / candidates.Length,
+                    ProgressPercent: candidates.Length == 0
+                        ? ProgressEnd
+                        : ProgressStart + (index + 1) * (ProgressEnd - ProgressStart) / candidates.Length,
                     ItemsProcessed: index + 1,
                     ItemsTotal: candidates.Length,
                     ItemsFailed: failed),

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useApplicationContext } from '@hammer2fall/identity-platform-react'
 import { tenantApplicationPath } from './identityPlatformConfig'
+import { usageRoute } from './salesRoutes'
 
 type ZohoStatus = {
   connected: boolean
@@ -8,6 +9,45 @@ type ZohoStatus = {
   lastTokenRefreshAt: string | null
   lastSyncAt: string | null
   apiDomain: string | null
+}
+
+type CrmApiUsageBreakdown = {
+  category: string
+  operation: string
+  httpMethod: string
+  endpoint: string
+  usageUnit: string
+  requests: number
+  successfulRequests: number
+  failedRequests: number
+  estimatedUnits: number
+}
+
+type CrmApiUsageProvider = {
+  providerKey: string
+  connectionKey: string
+  requests: number
+  successfulRequests: number
+  failedRequests: number
+  retryableRequests: number
+  estimatedUnits: number
+  unitsByName: Record<string, number>
+  latestProviderUnitsRemaining: number | null
+  latestProviderUnitsLimit: number | null
+  latestProviderUnitName: string | null
+  latestProviderObservationAt: string | null
+  breakdown: CrmApiUsageBreakdown[]
+}
+
+type CrmApiUsageReport = {
+  fromUtc: string
+  toUtc: string
+  requests: number
+  successfulRequests: number
+  failedRequests: number
+  retryableRequests: number
+  unitsByName: Record<string, number>
+  providers: CrmApiUsageProvider[]
 }
 
 type ApiErrorPayload = {
@@ -33,6 +73,12 @@ function getApiErrorMessage(payload: ApiErrorPayload | null, fallback: string): 
   return payload?.message ?? payload?.detail ?? payload?.title ?? fallback
 }
 
+function formatUnits(units: Record<string, number>): string {
+  return Object.entries(units)
+    .map(([unit, value]) => `${value.toLocaleString('de-DE')} ${unit}`)
+    .join(' · ') || '0'
+}
+
 export function ImportPage() {
   const {
     activeTenant,
@@ -45,6 +91,9 @@ export function ImportPage() {
   const [zohoLoading, setZohoLoading] = useState(false)
   const [zohoMessage, setZohoMessage] = useState<string | null>(null)
   const [zohoError, setZohoError] = useState<string | null>(null)
+  const [usage, setUsage] = useState<CrmApiUsageReport | null>(null)
+  const [usageLoading, setUsageLoading] = useState(false)
+  const [usageError, setUsageError] = useState<string | null>(null)
   const canManageImport = activeTenant?.isTenantAdmin === true
 
   const loadZohoStatus = useCallback(async () => {
@@ -58,6 +107,24 @@ export function ImportPage() {
       setZohoStatus(payload)
     } catch (reason) {
       setZohoError(reason instanceof Error ? reason.message : 'Der Zoho-Status ist nicht erreichbar.')
+    }
+  }, [activeTenantId, authorizedFetch, canManageImport, user])
+
+  const loadUsage = useCallback(async () => {
+    if (!user || !activeTenantId || !canManageImport) return
+    setUsageLoading(true)
+    try {
+      const response = await authorizedFetch('/api/integrations/usage?hours=24')
+      const payload = await readJson<CrmApiUsageReport & ApiErrorPayload>(response)
+      if (!response.ok || !payload) {
+        throw new Error(getApiErrorMessage(payload, `API-Verbrauch antwortete mit HTTP ${response.status}.`))
+      }
+      setUsage(payload)
+      setUsageError(null)
+    } catch (reason) {
+      setUsageError(reason instanceof Error ? reason.message : 'Der API-Verbrauch ist nicht erreichbar.')
+    } finally {
+      setUsageLoading(false)
     }
   }, [activeTenantId, authorizedFetch, canManageImport, user])
 
@@ -90,12 +157,13 @@ export function ImportPage() {
       }
       setZohoMessage(`Verbindung aktiv. ${payload?.availableModules?.length ?? 0} Zoho-Module gefunden.`)
       await loadZohoStatus()
+      await loadUsage()
     } catch (reason) {
       setZohoError(reason instanceof Error ? reason.message : 'Der Zoho-Verbindungstest ist fehlgeschlagen.')
     } finally {
       setZohoLoading(false)
     }
-  }, [authorizedFetch, loadZohoStatus])
+  }, [authorizedFetch, loadUsage, loadZohoStatus])
 
   useEffect(() => {
     if (!user || !activeTenantId || !canManageImport) return
@@ -109,10 +177,12 @@ export function ImportPage() {
       setZohoError(oauthErrorDescription ?? oauthError)
       window.history.replaceState({}, document.title, window.location.pathname)
       void loadZohoStatus()
+      void loadUsage()
       return
     }
     if (!code || !state) {
       void loadZohoStatus()
+      void loadUsage()
       return
     }
 
@@ -131,6 +201,7 @@ export function ImportPage() {
         }
         setZohoMessage(`Zoho ist verbunden (${payload?.apiDomain ?? 'API-Domain erkannt'}).`)
         await loadZohoStatus()
+        await loadUsage()
       } catch (reason) {
         setZohoError(reason instanceof Error ? reason.message : 'Die Zoho-Verbindung konnte nicht abgeschlossen werden.')
       } finally {
@@ -138,7 +209,7 @@ export function ImportPage() {
         setZohoLoading(false)
       }
     })()
-  }, [activeTenantId, authorizedFetch, canManageImport, loadZohoStatus, user])
+  }, [activeTenantId, authorizedFetch, canManageImport, loadUsage, loadZohoStatus, user])
 
   if (!canManageImport) {
     return (
@@ -213,6 +284,65 @@ export function ImportPage() {
 
         {(zohoError || platformError) && <div className="message error-message">{zohoError ?? platformError}</div>}
         {zohoMessage && <div className="message success-message">{zohoMessage}</div>}
+      </section>
+
+      <section className="sales-card integration-card">
+        <div className="card-heading">
+          <div>
+            <p className="sales-eyebrow">CRM-API-VERBRAUCH · LETZTE 24 STUNDEN</p>
+            <h2>Verbrauch der Integration</h2>
+          </div>
+          <div className="button-row">
+            <button className="secondary-button" type="button" onClick={() => void loadUsage()} disabled={usageLoading}>
+              {usageLoading ? 'Wird geladen …' : 'Verbrauch aktualisieren'}
+            </button>
+            <button className="secondary-button" type="button" onClick={() => window.location.assign(usageRoute)}>
+              Vollständige Usage öffnen
+            </button>
+          </div>
+        </div>
+        <p>
+          Hier werden alle tatsächlichen CRM-HTTP-Versuche dieser SalesPlattform erfasst.
+          Einheiten sind die providerabhängige Bewertung; bei Zoho wird zusätzlich der vom CRM gelieferte Restwert gespeichert.
+        </p>
+        {usageError && <div className="message error-message">{usageError}</div>}
+        {usage && (
+          <>
+            <div className="usage-summary-grid">
+              <div className="report-kpi"><span>Requests</span><strong>{usage.requests.toLocaleString('de-DE')}</strong><small>{usage.successfulRequests.toLocaleString('de-DE')} erfolgreich</small></div>
+              <div className="report-kpi"><span>Verbrauchseinheiten</span><strong>{formatUnits(usage.unitsByName)}</strong><small>je Provider unterschiedlich</small></div>
+              <div className="report-kpi"><span>Fehlgeschlagen</span><strong>{usage.failedRequests.toLocaleString('de-DE')}</strong><small>{usage.retryableRequests.toLocaleString('de-DE')} retryfähig</small></div>
+            </div>
+            {usage.providers.map(provider => (
+              <div className="usage-provider" key={`${provider.providerKey}:${provider.connectionKey}`}>
+                <div className="usage-provider-heading">
+                  <strong>{provider.providerKey} · {provider.connectionKey}</strong>
+                  <span>{provider.requests.toLocaleString('de-DE')} Requests · {formatUnits(provider.unitsByName)}</span>
+                </div>
+                {provider.latestProviderUnitsRemaining !== null && (
+                  <p className="usage-provider-remaining">
+                    Vom Provider gemeldetes Restguthaben: <strong>{provider.latestProviderUnitsRemaining.toLocaleString('de-DE')}</strong>
+                    {provider.latestProviderObservationAt && ` (${new Date(provider.latestProviderObservationAt).toLocaleString('de-DE')})`}
+                  </p>
+                )}
+                {provider.latestProviderUnitsRemaining === null && provider.providerKey === 'zoho' && (
+                  <p className="usage-provider-remaining">
+                    Zoho liefert das Restguthaben erst ab 50&nbsp;% Verbrauch. Bis dahin zeigt diese Seite die exakt gezählten Requests und die Zoho-Kostenschätzung.
+                  </p>
+                )}
+                <div className="usage-breakdown-list">
+                  {provider.breakdown.slice(0, 8).map(item => (
+                    <div className="usage-breakdown-row" key={`${item.httpMethod}:${item.endpoint}`}>
+                      <span><code>{item.httpMethod}</code> {item.endpoint}<small>{item.category}</small></span>
+                      <strong>{item.requests.toLocaleString('de-DE')} · {item.estimatedUnits.toLocaleString('de-DE')} {item.usageUnit}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {usage.providers.length === 0 && <div className="worklist-empty"><strong>Noch keine CRM-API-Aufrufe erfasst</strong><span>Nach dem nächsten CRM-Aufruf wird die Aufschlüsselung hier angezeigt.</span></div>}
+          </>
+        )}
       </section>
     </main>
   )

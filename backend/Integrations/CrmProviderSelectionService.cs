@@ -60,3 +60,29 @@ public sealed class CrmSynchronizationAdapterRegistry(
                 $"Für die CRM-Integration '{provider}' ist kein Adapter im Backend registriert.");
     }
 }
+
+/// <summary>
+/// Resolves the provider-neutral CRM adapter used for outbound operations as
+/// well as inbound synchronization. Keeping this registry separate from the
+/// synchronization registry lets a provider implement only the capabilities
+/// it supports without leaking provider types into the business layer.
+/// </summary>
+public sealed class CrmAdapterRegistry(
+    IEnumerable<ICrmAdapter> adapters,
+    CrmProviderSelectionService selection)
+{
+    private readonly IReadOnlyDictionary<string, ICrmAdapter> registered = adapters
+        .ToDictionary(adapter => adapter.ProviderKey, StringComparer.OrdinalIgnoreCase);
+
+    public IReadOnlyCollection<ICrmAdapter> All => registered.Values.ToArray();
+
+    public ICrmAdapter Resolve(string providerKey)
+        => registered.TryGetValue(providerKey, out var adapter)
+            ? adapter
+            : throw new InvalidOperationException(
+                $"Für den CRM-Provider '{providerKey}' ist kein CRM-Adapter registriert.");
+
+    public async Task<ICrmAdapter> ResolveCurrentAsync(
+        CancellationToken cancellationToken = default)
+        => Resolve(await selection.GetSelectedProviderAsync(cancellationToken));
+}

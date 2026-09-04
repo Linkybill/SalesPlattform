@@ -2,13 +2,14 @@ import type { UserAuthorisationRoute } from '@hammer2fall/identity-platform-reac
 import { tenantApplicationPath } from './identityPlatformConfig'
 
 const applicationRouteBase = tenantApplicationPath.routerBasePath.replace(/\/+$/, '') || '/'
+export const usageRoute = `${applicationRouteBase === '/' ? '' : applicationRouteBase}/usage`
 
 export const salesRoutes: readonly UserAuthorisationRoute[] = [
   {
     id: 'dashboard',
     route: applicationRouteBase,
-    title: 'Dashboard',
-    icon: <HomeIcon />,
+    title: 'Reports',
+    icon: <LayoutIcon />,
     visibleForRoles: ['sales-user', 'sales-manager', 'sales-management', 'sales-backoffice'],
   },
   {
@@ -27,10 +28,10 @@ export const salesRoutes: readonly UserAuthorisationRoute[] = [
     tenantAdminOnly: true,
   },
   {
-    id: 'owner-mapping',
-    route: `${applicationRouteBase === '/' ? '' : applicationRouteBase}/settings`,
-    title: 'CRM-Zuordnung',
-    icon: <SettingsIcon />,
+    id: 'usage',
+    route: usageRoute,
+    title: 'Usage',
+    icon: <UsageIcon />,
     visibleForRoles: ['sales-user', 'sales-manager', 'sales-management', 'sales-backoffice'],
     tenantAdminOnly: true,
   },
@@ -43,7 +44,7 @@ export const salesRoutes: readonly UserAuthorisationRoute[] = [
   },
 ]
 
-export type SalesRouteId = 'dashboard' | 'worklist' | 'import' | 'owner-mapping' | 'dashboard-layout'
+export type SalesRouteId = 'dashboard' | 'worklist' | 'import' | 'usage' | 'dashboard-layout'
 
 export function resolveSalesRoute(pathname: string): SalesRouteId {
   const importRoute = salesRoutes.find(route => route.id === 'import')
@@ -57,11 +58,8 @@ export function resolveSalesRoute(pathname: string): SalesRouteId {
   }
   const importPath = normalizePathname(new URL(importRoute.route, window.location.origin).pathname)
   if (currentPath === importPath || currentPath.startsWith(`${importPath}/`)) return 'import'
-  const ownerMappingRoute = salesRoutes.find(route => route.id === 'owner-mapping')
-  if (ownerMappingRoute) {
-    const ownerMappingPath = normalizePathname(new URL(ownerMappingRoute.route, window.location.origin).pathname)
-    if (currentPath === ownerMappingPath || currentPath.startsWith(`${ownerMappingPath}/`)) return 'owner-mapping'
-  }
+  const usagePath = normalizePathname(new URL(usageRoute, window.location.origin).pathname)
+  if (currentPath === usagePath || currentPath.startsWith(`${usagePath}/`)) return 'usage'
   const worklistRoute = salesRoutes.find(route => route.id === 'worklist')
   if (worklistRoute) {
     const worklistPath = normalizePathname(new URL(worklistRoute.route, window.location.origin).pathname)
@@ -74,15 +72,6 @@ function normalizePathname(pathname: string): string {
   return pathname.replace(/\/+$/, '') || '/'
 }
 
-function HomeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="m3 10 9-7 9 7" />
-      <path d="M5 9.5V21h14V9.5M9 21v-6h6v6" />
-    </svg>
-  )
-}
-
 function ImportIcon() {
   return (
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -92,11 +81,10 @@ function ImportIcon() {
   )
 }
 
-function SettingsIcon() {
+function UsageIcon() {
   return (
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z" />
-      <path d="m19.4 15 .1.1a1.8 1.8 0 0 1-2.5 2.5l-.1-.1a1.8 1.8 0 0 0-3 .6v.2a1.8 1.8 0 0 1-3.6 0v-.2a1.8 1.8 0 0 0-3-.6l-.1.1a1.8 1.8 0 1 1-2.5-2.5l.1-.1a1.8 1.8 0 0 0-.6-3h-.2a1.8 1.8 0 0 1 0-3.6h.2a1.8 1.8 0 0 0 .6-3l-.1-.1a1.8 1.8 0 1 1 2.5-2.5l.1.1a1.8 1.8 0 0 0 3-.6v-.2a1.8 1.8 0 0 1 3.6 0v.2a1.8 1.8 0 0 0 3 .6l.1-.1a1.8 1.8 0 1 1 2.5 2.5l-.1.1a1.8 1.8 0 0 0 .6 3h.2a1.8 1.8 0 0 1 0 3.6h-.2a1.8 1.8 0 0 0-.6 3Z" />
+      <path d="M5 19V9m7 10V5m7 14v-7" /><path d="M3 19h18" />
     </svg>
   )
 }

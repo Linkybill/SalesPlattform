@@ -4,6 +4,7 @@ using IdentityPlatform.Shared.ApplicationSettings;
 using Microsoft.Extensions.Options;
 using SalesPlattform.Backend.Integrations;
 using SalesPlattform.Backend.Integrations.Abstractions;
+using SalesPlattform.Backend.Services;
 
 namespace SalesPlattform.Backend.Integrations.Zoho;
 
@@ -15,7 +16,8 @@ public sealed record ZohoTenantConfiguration(
     string RedirectUri,
     string FrontendCallbackUrl,
     IReadOnlyCollection<string> Scopes,
-    int OAuthStateLifetimeMinutes);
+    int OAuthStateLifetimeMinutes,
+    string ChangeDetectionMode);
 
 /// <summary>
 /// Resolves Zoho settings through the shared application-settings resolver.
@@ -70,6 +72,8 @@ public sealed class ZohoConfigurationService(
             cancellationToken)
             ?? throw new InvalidOperationException("Die Einstellung 'zoho.clientSecret' ist für diesen Mandanten nicht konfiguriert.");
         var dataCenter = ReadString(local, "zoho.datacenter") ?? "eu";
+        var changeDetectionMode = NormalizeChangeDetectionMode(
+            ReadString(local, SalesApplicationSettingsService.ChangeDetectionModeKey));
         var (accountsUrl, apiUrl) = ResolveDataCenter(dataCenter);
         options.ValidateForOAuth();
         return new ZohoTenantConfiguration(
@@ -80,7 +84,8 @@ public sealed class ZohoConfigurationService(
             options.RedirectUri,
             options.FrontendCallbackUrl,
             options.GetScopes(),
-            options.OAuthStateLifetimeMinutes);
+            options.OAuthStateLifetimeMinutes,
+            changeDetectionMode);
     }
 
     public async Task<ZohoTenantConfiguration> ResolveAsync(
@@ -112,6 +117,8 @@ public sealed class ZohoConfigurationService(
             cancellationToken)
             ?? throw new InvalidOperationException("Die Einstellung 'zoho.clientSecret' ist für diesen Mandanten nicht konfiguriert.");
         var dataCenter = ReadString(effective, "zoho.datacenter") ?? "eu";
+        var changeDetectionMode = NormalizeChangeDetectionMode(
+            ReadString(effective, SalesApplicationSettingsService.ChangeDetectionModeKey));
         await MirrorBackgroundSettingsAsync(settings, effective, userId, cancellationToken);
         var (accountsUrl, apiUrl) = ResolveDataCenter(dataCenter);
         options.ValidateForOAuth();
@@ -123,7 +130,8 @@ public sealed class ZohoConfigurationService(
             options.RedirectUri,
             options.FrontendCallbackUrl,
             options.GetScopes(),
-            options.OAuthStateLifetimeMinutes);
+            options.OAuthStateLifetimeMinutes,
+            changeDetectionMode);
     }
 
     private async Task MirrorBackgroundSettingsAsync(
@@ -137,7 +145,13 @@ public sealed class ZohoConfigurationService(
         // so keep the non-secret CRM connection values in the app-owned tenant
         // database as well. The client secret is handled exclusively by the
         // secret store and is never copied through this method.
-        foreach (var key in new[] { "crm.integration", "zoho.datacenter", "zoho.clientId" })
+        foreach (var key in new[]
+                 {
+                     "crm.integration",
+                     "zoho.datacenter",
+                     "zoho.clientId",
+                     SalesApplicationSettingsService.ChangeDetectionModeKey
+                 })
         {
             var setting = effective.Settings.FirstOrDefault(item =>
                 string.Equals(item.Definition.Key, key, StringComparison.OrdinalIgnoreCase));
@@ -199,4 +213,9 @@ public sealed class ZohoConfigurationService(
             "cn" => ("https://accounts.zoho.com.cn", "https://www.zohoapis.com.cn"),
             _ => throw new InvalidOperationException($"Der Zoho-Datacenter '{value}' wird nicht unterstützt.")
         };
+
+    private static string NormalizeChangeDetectionMode(string? value)
+        => string.Equals(value, CrmChangeDetectionModes.CrawlOnly, StringComparison.OrdinalIgnoreCase)
+            ? CrmChangeDetectionModes.CrawlOnly
+            : CrmChangeDetectionModes.HooksPlusCrawl;
 }

@@ -106,14 +106,70 @@
       }
     },
     {
+      "key": "crm.changeDetectionMode",
+      "name": "CRM-Änderungserkennung",
+      "description": "Steuert, wie Änderungen erkannt werden. Hooks verarbeiten einzelne betroffene Datensätze kostensparend; der Incremental-Crawl bleibt als Sicherheitsnetz aktiv.",
+      "category": "CRM-Integration",
+      "type": "enum",
+      "defaultValue": "hooks-plus-crawl",
+      "scopes": ["tenantApp"],
+      "options": [
+        { "value": "hooks-plus-crawl", "label": "Hooks plus Incremental-Crawl" },
+        { "value": "crawl-only", "label": "Nur Incremental-Crawl" }
+      ],
+      "dependsOn": {
+        "scope": "tenantApp",
+        "settingKey": "crm.integration",
+        "value": "zoho"
+      }
+    },
+    {
       "key": "crm.ownerMappings",
       "name": "CRM-Benutzerzuordnungen",
-      "description": "Tenantbezogene Zuordnung von Identity-Platform-Benutzern zu CRM-Besitzern. Komfortabel über SalesPlattform > Einstellungen pflegen.",
-      "category": "Arbeitsliste",
-      "type": "string",
-      "defaultValue": "[]",
+      "description": "Ordnet Plattform-Benutzer ihrem CRM-Vertreter zu. Die Liste wird im Tenant-Portal unter AppSettings gepflegt; der CRM-Vertreter wird über seine E-Mail-Adresse gefunden.",
+      "category": "Arbeitsliste · Zuständigkeit",
+      "type": "json",
+      "defaultValue": [],
       "scopes": ["tenantApp"],
-      "validation": { "maxLength": 50000 }
+      "validation": { "maxItems": 500 },
+      "editor": {
+        "type": "list",
+        "uniqueBy": "platformUserEmail",
+        "requiredAnyOf": ["crmOwnerEmail", "crmOwnerId"],
+        "addLabel": "Vertreterzuordnung hinzufügen",
+        "removeLabel": "Zuordnung entfernen",
+        "fields": [
+          {
+            "key": "platformUserEmail",
+            "label": "Plattform-Benutzer (E-Mail)",
+            "type": "string",
+            "required": true,
+            "placeholder": "name@unternehmen.de",
+            "description": "E-Mail-Adresse des Benutzers im Identity-Portal."
+          },
+          {
+            "key": "platformUserSubject",
+            "label": "Plattform-Benutzer-ID (optional)",
+            "type": "string",
+            "placeholder": "sub aus dem Identity-Token",
+            "description": "Optional; die E-Mail-Adresse reicht für die Zuordnung."
+          },
+          {
+            "key": "crmOwnerId",
+            "label": "CRM-Vertreter-ID (Legacy-kompatibel)",
+            "type": "string",
+            "placeholder": "interne CRM-ID",
+            "description": "Wird für bestehende Zuordnungen unterstützt. Neue Zuordnungen sollten die E-Mail-Adresse verwenden."
+          },
+          {
+            "key": "crmOwnerEmail",
+            "label": "CRM-Vertreter (E-Mail, bevorzugt)",
+            "type": "string",
+            "placeholder": "vertreter@unternehmen.de",
+            "description": "Muss zu einem aktiven, synchronisierten CRM-Vertreter passen."
+          }
+        ]
+      }
     },
     {
       "key": "sales.callConversationThresholdSeconds",

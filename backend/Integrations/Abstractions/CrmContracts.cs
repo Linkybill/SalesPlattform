@@ -17,7 +17,6 @@ public static class CrmEntityTypes
 {
     public const string Owner = "owner";
     public const string Customer = "customer";
-    public const string Contact = "contact";
     public const string Lead = "lead";
     public const string ProductCategory = "product-category";
     public const string Deal = "deal";
@@ -33,6 +32,13 @@ public static class CrmEntityTypes
     public const string Order = "order";
     public const string Invoice = "invoice";
 }
+
+/// <summary>
+/// Provider-neutral signal for a quota/rate-limit response. A provider
+/// adapter may derive its own exception from this type; business services can
+/// then stop an outbound batch without depending on that provider's SDK.
+/// </summary>
+public class CrmApiRateLimitException(string message) : InvalidOperationException(message);
 
 public sealed record CrmConnectionTestResult(
     string Provider,
@@ -104,6 +110,12 @@ public interface ICrmAdapter
         DateTimeOffset? modifiedSince = null,
         CancellationToken cancellationToken = default);
 
+    Task<CrmExternalRecord?> GetRecordAsync(
+        string module,
+        string externalId,
+        IReadOnlyCollection<string> fields,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<CrmDeletedRecord>> GetDeletedRecordsAsync(
         string module,
         DateTimeOffset? deletedSince = null,
@@ -113,11 +125,17 @@ public interface ICrmAdapter
         CrmTaskWriteRequest request,
         CancellationToken cancellationToken = default);
 
+    Task UpdateTaskAsync(
+        string externalId,
+        CrmTaskWriteRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyCollection<CrmExternalRecord>> GetRelatedRecordsAsync(
         string parentModule,
         string parentExternalId,
         string relatedList,
         IReadOnlyCollection<string> fields,
         DateTimeOffset? modifiedSince = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        string? resolvedRelatedListApiName = null);
 }

@@ -31,8 +31,7 @@ builder.Services.AddAuthorization(authorization =>
             .RequireAuthenticatedUser());
 });
 
-builder.Services.AddPlatformTenantDatabase<SalesPlattformDbContext>(
-    "20260902170000_AddCrmServiceAndCommercialRecords");
+builder.Services.AddPlatformTenantDatabase<SalesPlattformDbContext>();
 builder.Services.AddHttpClient<PlatformJobLivenessClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddApplicationSettings<SalesPlattformDbContext>(builder.Configuration, options =>
@@ -50,6 +49,14 @@ builder.Services.AddScoped<ISalesMailDeliveryProvider, SmtpSalesMailDeliveryProv
 builder.Services.AddScoped<SalesNotificationOutboxService>();
 builder.Services.AddScoped<SalesNotificationDeliveryService>();
 builder.Services.AddScoped<CrmTaskMirrorService>();
+builder.Services.AddScoped<CrmBusinessChangeProcessor>();
+builder.Services.AddScoped<ICrmBusinessChangeProcessor>(services =>
+    services.GetRequiredService<CrmBusinessChangeProcessor>());
+builder.Services.AddScoped<CrmApiUsageRecorder>();
+builder.Services.AddScoped<ICrmApiUsageRecorder>(services =>
+    services.GetRequiredService<CrmApiUsageRecorder>());
+builder.Services.AddScoped<CrmApiUsageService>();
+builder.Services.AddSingleton<ICrmApiUsageCostModel, ZohoCrmApiUsageCostModel>();
 builder.Services.AddScoped<SalesDashboardLayoutService>();
 builder.Services.AddScoped<SalesReportService>();
 builder.Services.AddScoped<SalesSnapshotService>();
@@ -57,12 +64,20 @@ builder.Services.AddOptions<ZohoOptions>()
     .Bind(builder.Configuration.GetSection("Zoho"));
 builder.Services.AddScoped<ZohoConfigurationService>();
 builder.Services.AddScoped<ZohoLegacySecretMigrationService>();
+builder.Services.AddScoped<ZohoSchemaCacheService>();
 builder.Services.AddScoped<ZohoConnectionStore>();
 builder.Services.AddSingleton<ZohoAccessTokenCache>();
 builder.Services.AddScoped<ZohoTokenService>();
 builder.Services.AddScoped<ZohoOAuthService>();
 builder.Services.AddScoped<ZohoCrmAdapter>();
+builder.Services.AddScoped<ICrmAdapter>(services =>
+    services.GetRequiredService<ZohoCrmAdapter>());
+builder.Services.AddScoped<CrmAdapterRegistry>();
+builder.Services.AddScoped<ZohoCrmHookUpdateService>();
+builder.Services.AddScoped<ZohoWebhookReceiver>();
 builder.Services.AddSingleton<ZohoCrmRecordMapper>();
+builder.Services.AddSingleton<ICrmRecordMapper>(services =>
+    services.GetRequiredService<ZohoCrmRecordMapper>());
 builder.Services.AddSingleton<ISalesCrmRepositoryFactory, SalesCrmRepositoryFactory>();
 builder.Services.AddScoped<ZohoSyncService>();
 builder.Services.AddScoped<ICrmSynchronizationAdapter>(services =>
@@ -70,6 +85,9 @@ builder.Services.AddScoped<ICrmSynchronizationAdapter>(services =>
 builder.Services.AddScoped<CrmProviderSelectionService>();
 builder.Services.AddScoped<CrmSynchronizationAdapterRegistry>();
 builder.Services.AddScoped<CrmSynchronizationService>();
+builder.Services.AddScoped<ICrmHookUpdateService>(services =>
+    services.GetRequiredService<ZohoCrmHookUpdateService>());
+builder.Services.AddScoped<CrmHookUpdateServiceRegistry>();
 builder.Services
     .AddIdentityPlatformJobs(builder.Configuration)
     .AddJob<CrmFullImportJob>(new PlatformJobDefinition(
@@ -91,14 +109,36 @@ builder.Services
         DefaultTimeZoneId: "Europe/Berlin",
         AllowManualStart: true,
         ComponentKey: "backend",
-        ConcurrencyGroup: "crm-synchronization"));
+        ConcurrencyGroup: "crm-synchronization"))
+    .AddJob<ZohoSchemaCacheJob>(new PlatformJobDefinition(
+        Key: "zoho-schema-cache",
+        Name: "Zoho-Schema cachen",
+        Description: "Lädt Zoho-Module und Felddefinitionen einmalig in den lokalen Schema-Cache. Dieser Job ist ausschließlich manuell startbar.",
+        ScheduleMode: PlatformJobScheduleMode.Manual,
+        AllowManualStart: true,
+        ComponentKey: "backend",
+        ConcurrencyGroup: "crm-synchronization"))
+    .AddJob<CrmHookUpdateJob>(new PlatformJobDefinition(
+        // Keep the persisted key stable so existing tenant schedules continue
+        // to point to the same Platform job after the service refactor.
+        Key: "crm-subscription-maintenance",
+        Name: "CRM-Hooks erneuern",
+        Description: "Führt die registrierten CRM-Hook-Services aus; jeder Provider erneuert seine Hooks und verarbeitet gemeldete Änderungen gezielt.",
+        ScheduleMode: PlatformJobScheduleMode.Fixed,
+        DefaultCronExpression: "*/5 * * * *",
+        DefaultTimeZoneId: "Europe/Berlin",
+        AllowManualStart: true,
+        ComponentKey: "backend",
+        ConcurrencyGroup: "crm-hook-processing"));
 
 var app = builder.Build();
 
 app.UseIdentityPlatform();
+app.UseCrmApiUsage();
 app.MapIdentityPlatformEndpoints();
 app.MapApplicationSettingsEndpoints();
 app.MapZohoIntegrationEndpoints();
+app.MapCrmApiUsageEndpoints();
 
 app.MapGet("/api/reports/dashboard", async (
     ClaimsPrincipal user,

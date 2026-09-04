@@ -7,16 +7,24 @@ namespace SalesPlattform.Backend.Integrations;
 
 public sealed class CrmSynchronizationService(
     CrmSynchronizationAdapterRegistry adapters,
-    WorklistService worklist,
-    CrmTaskMirrorService taskMirror,
-    SalesSnapshotService snapshots,
-    SalesNotificationDeliveryService notificationDelivery)
+    CrmBusinessChangeProcessor businessChanges,
+    ICrmApiUsageRecorder apiUsage,
+    ILogger<CrmSynchronizationService> logger)
 {
+    private const decimal CrmSynchronizationProgressEnd = 65m;
+
     public async Task<PlatformJobResult> ExecuteAsync(
         string mode,
         PlatformJobExecutionContext context,
         CancellationToken cancellationToken = default)
     {
+        using var usageScope = apiUsage.BeginScope(
+            context.TenantId,
+            context.RunId,
+            context.RequestedBy ?? "system:platform-job",
+            CrmApiUsageOrigins.Job);
+        try
+        {
         await context.Logger.InfoAsync(
             "CRM-Synchronisation wird vorbereitet.",
             "Initialisierung",
@@ -76,49 +84,34 @@ public sealed class CrmSynchronizationService(
             throw;
         }
 
-        var evaluation = await worklist.EvaluateAfterSyncAsync(
-            context.TenantId,
-            result.Mode,
-            result.ChangedRecords,
-            context.RequestedBy,
+        var business = await businessChanges.ProcessAsync(
+            context,
+            new CrmBusinessChangeRequest(
+                result.ProviderKey,
+                "default",
+                result.Mode,
+                result.ChangedRecords,
+                context.RequestedBy),
             cancellationToken);
-        await taskMirror.EnsureActiveTasksAsync(context.TenantId, cancellationToken);
-        await context.Logger.InfoAsync(
-            evaluation.FullEvaluation
-                ? $"Arbeitsliste nach dem CRM-Vollimport vollständig bewertet: {evaluation.EvaluatedCount} Treffer."
-                : $"Arbeitsliste nach dem CRM-Incremental-Sync gezielt bewertet: {evaluation.EvaluatedCount} Treffer, {evaluation.ResolvedCount} Vorgänge automatisch aufgelöst.",
-            "Regelbewertung",
-            JsonSerializer.SerializeToElement(new
-            {
-                mode = result.Mode,
-                fullEvaluation = evaluation.FullEvaluation,
-                changedRecords = result.ChangedRecords.Count,
-                evaluation.EvaluatedCount,
-                evaluation.CreatedCount,
-                evaluation.ResolvedCount
-            }),
-            cancellationToken);
+        var evaluation = business.Evaluation;
+        var taskMirrorResult = business.TaskMirror;
+        var notifications = business.Notifications;
+        var completionDetails = JsonSerializer.SerializeToElement(new
+        {
+            phase = "completed",
+            sync = result.Details,
+            business
+        });
 
-        var snapshot = await snapshots.CreateDailyAsync(context, cancellationToken);
-        await context.Logger.InfoAsync(
-            $"Kennzahlen nach dem CRM-{(result.Mode.Equals("full", StringComparison.OrdinalIgnoreCase) ? "Vollimport" : "Incremental-Sync")} aktualisiert: {snapshot.DealCount} Deals, {snapshot.OpenDealCount} offene Deals, {snapshot.ActivityCount} Aktivitäten.",
-            "Kennzahlen",
-            JsonSerializer.SerializeToElement(new
-            {
-                mode = result.Mode,
-                snapshotDate = snapshot.SnapshotDate,
-                snapshot.DealCount,
-                snapshot.OpenDealCount,
-                snapshot.ActivityCount,
-                refreshed = snapshot.AlreadyPresent
-            }),
-            cancellationToken);
-
-        var notifications = await notificationDelivery.ProcessAsync(context, cancellationToken);
-        await context.Logger.InfoAsync(
-            $"Benachrichtigungen unmittelbar im CRM-Sync verarbeitet: {notifications.Sent} versendet, {notifications.Failed} fehlgeschlagen, {notifications.Skipped} übersprungen/unterdrückt.",
-            "Benachrichtigungen",
-            JsonSerializer.SerializeToElement(notifications),
+        await context.Progress.ReportAsync(
+            new PlatformJobProgress(
+                Step: "Abschluss",
+                Message: "CRM-Synchronisation und Nachverarbeitung abgeschlossen.",
+                ProgressPercent: 100m,
+                ItemsProcessed: result.RecordsWritten,
+                ItemsTotal: result.RecordsRead,
+                ItemsFailed: result.RecordsFailed + taskMirrorResult.Failed + notifications.Failed,
+                Details: completionDetails),
             cancellationToken);
 
         var completionMessage = result.Message
@@ -130,7 +123,7 @@ public sealed class CrmSynchronizationService(
             await context.Logger.WarningAsync(
                 completionMessage,
                 "Abschluss",
-                result.Details,
+                completionDetails,
                 cancellationToken);
         }
         else
@@ -138,14 +131,34 @@ public sealed class CrmSynchronizationService(
             await context.Logger.InfoAsync(
                 completionMessage,
                 "Abschluss",
-                result.Details,
+                completionDetails,
                 cancellationToken);
         }
 
-        var hasWarnings = result.HasWarnings || notifications.Failed > 0;
+        var hasWarnings = result.HasWarnings
+            || taskMirrorResult.HasWarnings
+            || notifications.Failed > 0;
         return hasWarnings
-            ? PlatformJobResult.SuccessWithWarnings(result.Message, result.Details)
-            : PlatformJobResult.Success(result.Message, result.Details);
+            ? PlatformJobResult.SuccessWithWarnings(result.Message, completionDetails)
+            : PlatformJobResult.Success(result.Message, completionDetails);
+        }
+        finally
+        {
+            var summary = apiUsage.GetPendingSummary();
+            await context.Logger.InfoAsync(
+                $"CRM-API-Verbrauch erfasst: {summary.Requests} Requests, {summary.EstimatedUnits} Einheiten, {summary.FailedRequests} fehlgeschlagen.",
+                "API-Verbrauch",
+                JsonSerializer.SerializeToElement(summary),
+                CancellationToken.None);
+            try
+            {
+                await apiUsage.FlushAsync(CancellationToken.None);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                logger.LogWarning(exception, "CRM-API-Verbrauch für den Lauf {RunId} konnte nicht gespeichert werden.", context.RunId);
+            }
+        }
     }
 
     private sealed class PlatformProgressSink(
@@ -190,11 +203,19 @@ public sealed class CrmSynchronizationService(
             lastStep = progress.Step;
             lastMessage = progress.Message;
             lastFailed = progress.RecordsFailed;
+            var recordsProcessed = progress.RecordsWritten + progress.RecordsFailed;
+            var progressPercent = progress.RecordsRead > 0
+                ? Math.Clamp(
+                    recordsProcessed * CrmSynchronizationProgressEnd / progress.RecordsRead,
+                    0,
+                    CrmSynchronizationProgressEnd)
+                : 0m;
             await reporter.ReportAsync(
                 new PlatformJobProgress(
                     Step: progress.Step,
                     Message: progress.Message,
-                    ItemsProcessed: progress.RecordsWritten,
+                    ProgressPercent: progressPercent,
+                    ItemsProcessed: recordsProcessed,
                     ItemsTotal: progress.RecordsRead,
                     ItemsFailed: progress.RecordsFailed,
                     Details: progress.Details),

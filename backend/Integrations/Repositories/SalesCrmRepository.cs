@@ -162,9 +162,6 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
             case CrmCanonicalCustomer customer:
                 await UpsertCustomerAsync(customer, cancellationToken);
                 break;
-            case CrmCanonicalContact contact:
-                await UpsertContactAsync(contact, cancellationToken);
-                break;
             case CrmCanonicalLead lead:
                 await UpsertLeadAsync(lead, cancellationToken);
                 break;
@@ -285,10 +282,6 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
             case CrmEntityTypes.Customer:
                 var customer = await db.SalesCustomers.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
                 if (customer is not null) { customer.IsActive = false; customer.SourceDeletedAt = record.DeletedAt; }
-                break;
-            case CrmEntityTypes.Contact:
-                var contact = await db.SalesContacts.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
-                if (contact is not null) { contact.IsActive = false; contact.SourceDeletedAt = record.DeletedAt; }
                 break;
             case CrmEntityTypes.Lead:
                 var lead = await db.SalesLeads.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
@@ -608,6 +601,12 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         customer.CountryCode = record.CountryCode;
         customer.AddressLine1 = record.AddressLine1;
         customer.HouseNumber = record.HouseNumber;
+        if (record.Latitude.HasValue && record.Longitude.HasValue)
+        {
+            customer.Latitude = record.Latitude;
+            customer.Longitude = record.Longitude;
+            customer.GeocodingStatus = "crm";
+        }
         customer.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
         if (isNewCustomer || previousOwnerId != customer.OwnerId || !customer.OwnerAssignedAt.HasValue)
             customer.OwnerAssignedAt = record.ModifiedAt ?? record.CreatedAt ?? DateTimeOffset.UtcNow;
@@ -633,38 +632,6 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         }
     }
 
-    private async Task UpsertContactAsync(CrmCanonicalContact record, CancellationToken cancellationToken)
-    {
-        var link = await FindLinkAsync(record, cancellationToken);
-        var contact = link is null
-            ? new SalesContact { Id = Guid.NewGuid(), Name = record.Name }
-            : await db.SalesContacts.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
-                ?? throw MissingEntity("Kontakt", link.InternalEntityId);
-        if (link is null)
-        {
-            db.SalesContacts.Add(contact);
-            db.IntegrationEntityLinks.Add(NewLink(record, CrmEntityTypes.Contact, contact.Id));
-        }
-
-        contact.Name = record.Name;
-        contact.FirstName = record.FirstName;
-        contact.LastName = record.LastName;
-        contact.CustomerId = await FindInternalIdAsync(record, CrmEntityTypes.Customer, record.CustomerExternalId, cancellationToken);
-        contact.Email = record.Email;
-        contact.NormalizedEmail = NormalizeEmail(record.Email);
-        contact.Phone = record.Phone;
-        contact.NormalizedPhone = NormalizePhone(record.Phone);
-            contact.MobilePhone = record.MobilePhone;
-            contact.JobTitle = record.JobTitle;
-            contact.RoleType = record.RoleType;
-            contact.IsPrimary = record.IsPrimary;
-        contact.IsActive = true;
-        contact.SourceCreatedAt = record.CreatedAt;
-        contact.SourceModifiedAt = record.ModifiedAt;
-        contact.LastSeenAt = DateTimeOffset.UtcNow;
-        SetLinkSeen(link, record);
-    }
-
     private async Task UpsertLeadAsync(CrmCanonicalLead record, CancellationToken cancellationToken)
     {
         var link = await FindLinkAsync(record, cancellationToken);
@@ -681,7 +648,6 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         lead.Name = record.Name;
         lead.CompanyName = record.CompanyName;
         lead.CustomerId = await FindInternalIdAsync(record, CrmEntityTypes.Customer, record.CustomerExternalId, cancellationToken);
-        lead.ContactId = await FindInternalIdAsync(record, CrmEntityTypes.Contact, record.ContactExternalId, cancellationToken);
         lead.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
         lead.Email = record.Email;
         lead.NormalizedEmail = NormalizeEmail(record.Email);
@@ -1120,7 +1086,6 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         serviceCase.Origin = record.Origin;
         serviceCase.Reason = record.Reason;
         serviceCase.CustomerId = await FindInternalIdAsync(record, CrmEntityTypes.Customer, record.CustomerExternalId, cancellationToken);
-        serviceCase.ContactId = await FindInternalIdAsync(record, CrmEntityTypes.Contact, record.ContactExternalId, cancellationToken);
         serviceCase.DealId = await FindInternalIdAsync(record, CrmEntityTypes.Deal, record.DealExternalId, cancellationToken);
         serviceCase.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
         serviceCase.OpenedAt = record.OpenedAt;
@@ -1152,7 +1117,6 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         offer.Amount = record.Amount;
         offer.Currency = record.Currency;
         offer.CustomerId = await FindInternalIdAsync(record, CrmEntityTypes.Customer, record.CustomerExternalId, cancellationToken);
-        offer.ContactId = await FindInternalIdAsync(record, CrmEntityTypes.Contact, record.ContactExternalId, cancellationToken);
         offer.DealId = await FindInternalIdAsync(record, CrmEntityTypes.Deal, record.DealExternalId, cancellationToken);
         offer.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
         offer.IssuedAt = record.IssuedAt;
@@ -1273,7 +1237,6 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         {
             relation.EntityType,
             CrmEntityTypes.Customer,
-            CrmEntityTypes.Contact,
             CrmEntityTypes.Lead,
             CrmEntityTypes.Deal
         }.Distinct(StringComparer.OrdinalIgnoreCase);

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Globalization;
 using System.Text;
@@ -7,12 +8,21 @@ using SalesPlattform.Backend.Integrations.Abstractions;
 
 namespace SalesPlattform.Backend.Integrations.Zoho;
 
+public sealed record ZohoModuleMetadata(
+    string ApiName,
+    bool ApiSupported,
+    string? GeneratedType);
+
+public sealed record ZohoNotificationRegistration(
+    string ChannelId,
+    DateTimeOffset? ExpiresAt);
+
 public sealed class ZohoCrmAdapter(
     IHttpClientFactory httpClientFactory,
     ZohoTokenService tokenService,
+    ICrmApiUsageRecorder apiUsage,
     ILogger<ZohoCrmAdapter> logger) : ICrmAdapter
 {
-    private IReadOnlyCollection<JsonElement>? pipelinePayloadCache;
     private bool organizationLookupCompleted;
     private string? organizationDomain;
     private string? crmWebBaseUrl;
@@ -22,12 +32,27 @@ public sealed class ZohoCrmAdapter(
     public async Task<CrmConnectionTestResult> TestConnectionAsync(
         CancellationToken cancellationToken = default)
     {
-        var modules = await GetModulesAsync(cancellationToken);
+        // A connection test verifies authentication only. Module and field
+        // metadata belongs to the explicit schema-cache job and must not be
+        // fetched implicitly here.
         var token = await tokenService.GetAccessTokenAsync(cancellationToken);
-        return new CrmConnectionTestResult(ProviderKey, true, token.ApiDomain, modules);
+        return new CrmConnectionTestResult(ProviderKey, true, token.ApiDomain, []);
     }
 
     public async Task<IReadOnlyCollection<string>> GetModulesAsync(
+        CancellationToken cancellationToken = default)
+        => (await GetModuleMetadataAsync(cancellationToken))
+            .Select(module => module.ApiName)
+            .ToArray();
+
+    /// <summary>
+    /// Reads the module catalog once and keeps the capability flags supplied
+    /// by Zoho. The schema cache uses these flags to decide which metadata
+    /// requests are legal before it sends any fields/layouts/related-list
+    /// request. In particular, modules with api_supported=false must never be
+    /// sent to a metadata endpoint.
+    /// </summary>
+    public async Task<IReadOnlyCollection<ZohoModuleMetadata>> GetModuleMetadataAsync(
         CancellationToken cancellationToken = default)
     {
         using var response = await SendAsync(
@@ -41,26 +66,45 @@ public sealed class ZohoCrmAdapter(
             return [];
         }
 
-        return modules.EnumerateArray()
-            .Select(module => module.TryGetProperty("api_name", out var apiName)
-                ? apiName.GetString()
-                : null)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .Select(name => name!)
-            .Append("Users")
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Order(StringComparer.OrdinalIgnoreCase)
+        var result = modules.EnumerateArray()
+            .Select(module =>
+            {
+                var apiName = module.TryGetProperty("api_name", out var apiNameValue)
+                    ? apiNameValue.GetString()
+                    : null;
+                var apiSupported = module.TryGetProperty("api_supported", out var apiSupportedValue)
+                    && apiSupportedValue.ValueKind is JsonValueKind.True or JsonValueKind.False
+                        ? apiSupportedValue.GetBoolean()
+                        // Older Zoho responses did not always include the
+                        // capability flag. Keep those modules eligible and
+                        // let the explicit endpoint capability matrix decide.
+                        : true;
+                var generatedType = module.TryGetProperty("generated_type", out var generatedTypeValue)
+                    && generatedTypeValue.ValueKind == JsonValueKind.String
+                        ? generatedTypeValue.GetString()
+                        : null;
+                return new ZohoModuleMetadata(apiName ?? string.Empty, apiSupported, generatedType);
+            })
+            .Where(module => !string.IsNullOrWhiteSpace(module.ApiName))
+            .Append(new ZohoModuleMetadata("Users", true, "default"))
+            .Where(module => module.ApiName.Length > 0)
+            .DistinctBy(module => module.ApiName, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(module => module.ApiName, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+
+        return result;
     }
 
     public async Task<IReadOnlyCollection<CrmFieldMetadata>> GetFieldsAsync(
         string module,
         CancellationToken cancellationToken = default)
     {
-        if (module.Equals("Users", StringComparison.OrdinalIgnoreCase)
+        if (module.Equals("Activities", StringComparison.OrdinalIgnoreCase)
+            || module.Equals("Users", StringComparison.OrdinalIgnoreCase)
             || module.Equals("Pipelines", StringComparison.OrdinalIgnoreCase)
             || module.Equals("PipelineStages", StringComparison.OrdinalIgnoreCase)
-            || module.Equals("DealStageHistory", StringComparison.OrdinalIgnoreCase))
+            || module.Equals("DealStageHistory", StringComparison.OrdinalIgnoreCase)
+            || module.Equals("Analytics", StringComparison.OrdinalIgnoreCase))
         {
             return [];
         }
@@ -76,13 +120,138 @@ public sealed class ZohoCrmAdapter(
             return [];
         }
 
-        return fields.EnumerateArray()
+        var result = fields.EnumerateArray()
             .Select(field => new CrmFieldMetadata(
                 GetString(field, "api_name") ?? string.Empty,
                 GetString(field, "field_label") ?? GetString(field, "display_label"),
                 GetString(field, "data_type")))
             .Where(field => !string.IsNullOrWhiteSpace(field.ApiName))
             .ToArray();
+
+        return result;
+    }
+
+    public async Task<IReadOnlyCollection<JsonElement>> GetLayoutsAsync(
+        string module,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAsync(
+            HttpMethod.Get,
+            $"/crm/v8/settings/layouts?module={Uri.EscapeDataString(module)}",
+            cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            return [];
+        using var document = await ParseDocumentAsync(response, cancellationToken);
+        return GetArray(document.RootElement, "layouts")
+            .Select(layout => layout.Clone())
+            .ToArray();
+    }
+
+    public async Task<IReadOnlyCollection<JsonElement>> GetRelatedListsAsync(
+        string module,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAsync(
+            HttpMethod.Get,
+            $"/crm/v8/settings/related_lists?module={Uri.EscapeDataString(module)}",
+            cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            return [];
+        using var document = await ParseDocumentAsync(response, cancellationToken);
+        return GetArray(document.RootElement, "related_lists")
+            .Concat(GetArray(document.RootElement, "relatedLists"))
+            .Select(relatedList => relatedList.Clone())
+            .ToArray();
+    }
+
+    public async Task<IReadOnlyCollection<JsonElement>> GetPipelinesAsync(
+        string module,
+        IReadOnlyCollection<JsonElement> layouts,
+        CancellationToken cancellationToken = default)
+    {
+        if (!module.Equals("Deals", StringComparison.OrdinalIgnoreCase))
+            return [];
+
+        var layoutIds = layouts
+            .Select(layout => GetString(layout, "id"))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id!)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var pipelines = new List<JsonElement>();
+        foreach (var layoutId in layoutIds)
+        {
+            using var response = await SendAsync(
+                HttpMethod.Get,
+                $"/crm/v8/settings/pipeline?layout_id={Uri.EscapeDataString(layoutId)}",
+                cancellationToken);
+            if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+                continue;
+
+            using var document = await ParseDocumentAsync(response, cancellationToken);
+            if (!document.RootElement.TryGetProperty("pipeline", out var pipeline)
+                || pipeline.ValueKind != JsonValueKind.Array)
+            {
+                throw new InvalidOperationException(
+                    $"Zoho liefert für das Deals-Layout '{layoutId}' keine 'pipeline'-Liste. "
+                    + "Die Antwort ist leer oder hat ein unerwartetes Format.");
+            }
+
+            pipelines.AddRange(pipeline.EnumerateArray().Select(item => item.Clone()));
+        }
+
+        var result = DistinctPipelines(pipelines);
+        return result.Length > 0
+            ? result
+            : await GetPipelinePayloadsFromDealsAsync(cancellationToken);
+    }
+
+    public IReadOnlyCollection<CrmExternalRecord> GetPipelineRecordsFromCache(
+        ZohoSchemaCacheSnapshot schema)
+        => schema.GetPipelines()
+            .Select(pipeline => new CrmExternalRecord(
+                ProviderKey,
+                "Pipelines",
+                GetString(pipeline, "id")
+                    ?? GetString(pipeline, "actual_value", "display_value")
+                    ?? Guid.NewGuid().ToString("N"),
+                pipeline.Clone(),
+                null))
+            .ToArray();
+
+    public IReadOnlyCollection<CrmExternalRecord> GetPipelineStageRecordsFromCache(
+        ZohoSchemaCacheSnapshot schema)
+    {
+        var result = new List<CrmExternalRecord>();
+        foreach (var pipeline in schema.GetPipelines())
+        {
+            var pipelineId = GetString(pipeline, "id")
+                ?? GetString(pipeline, "actual_value", "display_value")
+                ?? "default";
+            var pipelineName = GetString(pipeline, "display_value", "actual_value") ?? pipelineId;
+            if (!pipeline.TryGetProperty("maps", out var maps) || maps.ValueKind != JsonValueKind.Array)
+                continue;
+
+            foreach (var map in maps.EnumerateArray())
+            {
+                var stageId = GetString(map, "id")
+                    ?? GetString(map, "actual_value")
+                    ?? GetString(map, "display_value");
+                if (string.IsNullOrWhiteSpace(stageId)) continue;
+                var node = JsonNode.Parse(map.GetRawText())?.AsObject() ?? new JsonObject();
+                node["pipeline_id"] = pipelineId;
+                node["pipeline_name"] = pipelineName;
+                var payload = node.AsObject().Deserialize<JsonElement>();
+                result.Add(new CrmExternalRecord(
+                    ProviderKey,
+                    "PipelineStages",
+                    $"{pipelineId}:{stageId}",
+                    payload,
+                    null));
+            }
+        }
+
+        return result;
     }
 
     public async Task<IReadOnlyCollection<CrmExternalRecord>> GetRecordsAsync(
@@ -95,9 +264,11 @@ public sealed class ZohoCrmAdapter(
         if (module.Equals("Users", StringComparison.OrdinalIgnoreCase))
             return await GetUsersAsync(modifiedSince, cancellationToken);
         if (module.Equals("Pipelines", StringComparison.OrdinalIgnoreCase))
-            return await GetPipelineRecordsAsync(cancellationToken);
+            throw new InvalidOperationException(
+                "Zoho-Pipelines müssen aus dem lokalen Schema-Cache gelesen werden.");
         if (module.Equals("PipelineStages", StringComparison.OrdinalIgnoreCase))
-            return await GetPipelineStageRecordsAsync(cancellationToken);
+            throw new InvalidOperationException(
+                "Zoho-PipelineStages müssen aus dem lokalen Schema-Cache gelesen werden.");
         if (fields.Count == 0)
             throw new ArgumentException("Mindestens ein Zoho-Feld ist erforderlich.", nameof(fields));
 
@@ -107,6 +278,113 @@ public sealed class ZohoCrmAdapter(
             $"/crm/v8/{Uri.EscapeDataString(module)}",
             cancellationToken,
             modifiedSince: modifiedSince);
+    }
+
+    public async Task<CrmExternalRecord?> GetRecordAsync(
+        string module,
+        string externalId,
+        IReadOnlyCollection<string> fields,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(module))
+            throw new ArgumentException("Das Zoho-Modul ist erforderlich.", nameof(module));
+        if (string.IsNullOrWhiteSpace(externalId))
+            throw new ArgumentException("Die Zoho-Remote-ID ist erforderlich.", nameof(externalId));
+
+        await EnsureOrganizationContextAsync(cancellationToken);
+        var rawExternalId = externalId.Contains(':', StringComparison.Ordinal)
+            ? externalId[(externalId.LastIndexOf(':') + 1)..]
+            : externalId;
+        var path = $"/crm/v8/{Uri.EscapeDataString(module)}/{Uri.EscapeDataString(rawExternalId)}";
+        if (fields.Count > 0)
+            path += $"?fields={Uri.EscapeDataString(string.Join(',', fields.Take(50)))}";
+
+        using var response = await SendAsync(HttpMethod.Get, path, cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            return null;
+        using var document = await ParseDocumentAsync(response, cancellationToken);
+        return ParseRecords(document.RootElement, module, null).FirstOrDefault();
+    }
+
+    public async Task<ZohoNotificationRegistration> RegisterNotificationsAsync(
+        string notifyUrl,
+        string token,
+        string channelId,
+        string module,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(notifyUrl))
+            throw new ArgumentException("Für Zoho-Notifications ist eine erreichbare Notify-URL erforderlich.", nameof(notifyUrl));
+        if (string.IsNullOrWhiteSpace(token) || token.Length > 50)
+            throw new ArgumentException("Der Zoho-Verification-Token muss zwischen 1 und 50 Zeichen lang sein.", nameof(token));
+        if (!long.TryParse(channelId, NumberStyles.None, CultureInfo.InvariantCulture, out _))
+            throw new ArgumentException("Die Zoho-Channel-ID muss numerisch sein.", nameof(channelId));
+
+        var watch = new JsonObject
+        {
+            ["token"] = token,
+            ["notify_url"] = notifyUrl,
+            ["channel_id"] = channelId,
+            ["channel_expiry"] = DateTimeOffset.UtcNow
+                .AddDays(6)
+                .AddHours(23)
+                .ToString("O", CultureInfo.InvariantCulture),
+            ["return_affected_field_values"] = true,
+            ["notify_on_related_action"] = false
+        };
+        var events = new JsonArray();
+        foreach (var operation in NotificationOperations(module))
+            events.Add(operation);
+        watch["events"] = events;
+        var payload = new JsonObject { ["watch"] = new JsonArray(watch) };
+        using var content = new StringContent(
+            payload.ToJsonString(),
+            Encoding.UTF8,
+            "application/json");
+        using var response = await SendAsync(
+            HttpMethod.Post,
+            "/crm/v8/actions/watch",
+            cancellationToken,
+            content: content,
+            recordsAffected: 1);
+        using var document = await ParseDocumentAsync(response, cancellationToken);
+        foreach (var watchResult in GetArray(document.RootElement, "watch"))
+        {
+            var details = watchResult.TryGetProperty("details", out var detailsValue)
+                ? detailsValue
+                : default;
+            foreach (var eventDetails in GetArray(details, "events"))
+            {
+                var returnedChannelId = GetString(eventDetails, "channel_id");
+                if (string.IsNullOrWhiteSpace(returnedChannelId))
+                    continue;
+                var expiryText = GetString(eventDetails, "channel_expiry");
+                return new ZohoNotificationRegistration(
+                    returnedChannelId,
+                    DateTimeOffset.TryParse(
+                        expiryText,
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.RoundtripKind,
+                        out var expiresAt)
+                        ? expiresAt.ToUniversalTime()
+                        : null);
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Zoho hat für das Modul '{module}' keine Notification-Subscription bestätigt.");
+    }
+
+    public async Task DisableNotificationsAsync(
+        string channelId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(channelId))
+            return;
+        using var response = await SendAsync(
+            HttpMethod.Delete,
+            $"/crm/v8/actions/watch?channel_ids={Uri.EscapeDataString(channelId)}",
+            cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<CrmDeletedRecord>> GetDeletedRecordsAsync(
@@ -150,7 +428,7 @@ public sealed class ZohoCrmAdapter(
                     ProviderKey,
                     module,
                     CanonicalEntityType(module),
-                    CanonicalExternalId(module, id),
+                    CanonicalizeExternalId(module, id),
                     deletedAt.Value));
             }
 
@@ -166,32 +444,10 @@ public sealed class ZohoCrmAdapter(
         CrmTaskWriteRequest request,
         CancellationToken cancellationToken = default)
     {
-        var task = new JsonObject
+        var payload = new JsonObject
         {
-            ["Subject"] = request.Subject,
-            ["Status"] = "Not Started",
-            ["Priority"] = "High"
+            ["data"] = new JsonArray(BuildTaskPayload(request, includeWorkflowDefaults: true))
         };
-        if (request.DueAt.HasValue)
-            task["Due_Date"] = request.DueAt.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        if (!string.IsNullOrWhiteSpace(request.Description))
-            task["Description"] = request.Description;
-        if (!string.IsNullOrWhiteSpace(request.OwnerExternalId))
-            task["Owner"] = new JsonObject { ["id"] = request.OwnerExternalId };
-
-        if (!string.IsNullOrWhiteSpace(request.TargetExternalId))
-        {
-            var targetField = request.TargetEntityType?.ToLowerInvariant() switch
-            {
-                "lead" or "contact" => "Who_Id",
-                "customer" or "deal" => "What_Id",
-                _ => null
-            };
-            if (targetField is not null)
-                task[targetField] = new JsonObject { ["id"] = request.TargetExternalId };
-        }
-
-        var payload = new JsonObject { ["data"] = new JsonArray(task) };
         using var content = new StringContent(
             payload.ToJsonString(),
             Encoding.UTF8,
@@ -200,7 +456,8 @@ public sealed class ZohoCrmAdapter(
             HttpMethod.Post,
             "/crm/v8/Tasks",
             cancellationToken,
-            content: content);
+            content: content,
+            recordsAffected: 1);
         using var document = await ParseDocumentAsync(response, cancellationToken);
         var result = GetArray(document.RootElement, "data").FirstOrDefault();
         var externalId = result.ValueKind == JsonValueKind.Object
@@ -216,9 +473,101 @@ public sealed class ZohoCrmAdapter(
         return new CrmTaskWriteResult(
             ProviderKey,
             "default",
-            CanonicalExternalId("Tasks", externalId),
+            CanonicalizeExternalId("Tasks", externalId),
             result.Clone(),
             BuildRecordUrl("Tasks", externalId, result));
+    }
+
+    public async Task UpdateTaskAsync(
+        string externalId,
+        CrmTaskWriteRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var rawExternalId = externalId.Contains(':', StringComparison.Ordinal)
+            ? externalId[(externalId.LastIndexOf(':') + 1)..]
+            : externalId;
+        if (string.IsNullOrWhiteSpace(rawExternalId))
+            throw new ArgumentException("Für die CRM-Aufgabe fehlt die Remote-ID.", nameof(externalId));
+
+        var payload = new JsonObject
+        {
+            // Status and priority are deliberately omitted on updates. A user
+            // may have completed or reprioritized the CRM task since creation.
+            ["data"] = new JsonArray(BuildTaskPayload(request, includeWorkflowDefaults: false))
+        };
+        using var content = new StringContent(
+            payload.ToJsonString(),
+            Encoding.UTF8,
+            "application/json");
+        using var response = await SendAsync(
+            HttpMethod.Put,
+            $"/crm/v8/Tasks/{Uri.EscapeDataString(rawExternalId)}",
+            cancellationToken,
+            content: content,
+            recordsAffected: 1);
+    }
+
+    private static IReadOnlyCollection<string> NotificationOperations(string module)
+        => module.Equals("Users", StringComparison.OrdinalIgnoreCase)
+            ? [$"{module}.all"]
+            : [$"{module}.create", $"{module}.edit", $"{module}.delete"];
+
+    private static JsonObject BuildTaskPayload(
+        CrmTaskWriteRequest request,
+        bool includeWorkflowDefaults)
+    {
+        var task = new JsonObject
+        {
+            ["Subject"] = request.Subject
+        };
+        if (includeWorkflowDefaults)
+        {
+            task["Status"] = "Not Started";
+            task["Priority"] = "High";
+        }
+        if (request.DueAt.HasValue)
+            task["Due_Date"] = request.DueAt.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        if (!string.IsNullOrWhiteSpace(request.Description))
+            task["Description"] = request.Description;
+        if (!string.IsNullOrWhiteSpace(request.OwnerExternalId))
+            task["Owner"] = new JsonObject { ["id"] = NormalizeZohoRecordId(request.OwnerExternalId) };
+
+        if (!string.IsNullOrWhiteSpace(request.TargetExternalId))
+        {
+            var targetType = request.TargetEntityType?.Trim().ToLowerInvariant();
+            var targetModule = targetType switch
+            {
+                "lead" => "Leads",
+                "customer" => "Accounts",
+                "deal" => "Deals",
+                "service-case" => "Cases",
+                "offer" => "Quotes",
+                "order" => "Sales_Orders",
+                "invoice" => "Invoices",
+                _ => null
+            };
+            if (targetModule is not null)
+            {
+                var isParticipant = targetModule is "Leads";
+                task[isParticipant ? "Who_Id" : "What_Id"] =
+                    new JsonObject { ["id"] = NormalizeZohoRecordId(request.TargetExternalId) };
+                // Zoho requires the concrete related module for every Task
+                // relationship. This is also mandatory for Who_Id (Leads),
+                // not only for What_Id relationships.
+                task["$se_module"] = targetModule;
+            }
+        }
+
+        return task;
+    }
+
+    private static string NormalizeZohoRecordId(string externalId)
+    {
+        var value = externalId.Trim();
+        var separator = value.LastIndexOf(':');
+        return separator >= 0 && separator < value.Length - 1
+            ? value[(separator + 1)..]
+            : value;
     }
 
     public async Task<IReadOnlyCollection<CrmExternalRecord>> GetRelatedRecordsAsync(
@@ -227,7 +576,8 @@ public sealed class ZohoCrmAdapter(
         string relatedList,
         IReadOnlyCollection<string> fields,
         DateTimeOffset? modifiedSince = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? resolvedRelatedListApiName = null)
     {
         await EnsureOrganizationContextAsync(cancellationToken);
         if (fields.Count == 0)
@@ -237,7 +587,9 @@ public sealed class ZohoCrmAdapter(
             return await GetRelatedEmailsAsync(parentModule, parentExternalId, modifiedSince, cancellationToken);
 
         var relatedListApiName = relatedList.Equals("Stage_History", StringComparison.OrdinalIgnoreCase)
-            ? await ResolveStageHistoryRelatedListAsync(cancellationToken)
+            ? resolvedRelatedListApiName
+                ?? throw new InvalidOperationException(
+                    "Die Zoho-Stage-History muss über den lokalen Schema-Cache aufgelöst werden.")
             : relatedList;
         var records = await GetPagedRecordsAsync(
             relatedList,
@@ -319,117 +671,13 @@ public sealed class ZohoCrmAdapter(
         return records;
     }
 
-    private async Task<IReadOnlyCollection<CrmExternalRecord>> GetPipelineRecordsAsync(
-        CancellationToken cancellationToken)
-    {
-        var pipelines = await GetPipelinePayloadsAsync(cancellationToken);
-        return pipelines
-            .Select(pipeline => new CrmExternalRecord(
-                ProviderKey,
-                "Pipelines",
-                GetString(pipeline, "id")
-                    ?? GetString(pipeline, "actual_value", "display_value")
-                    ?? Guid.NewGuid().ToString("N"),
-                pipeline.Clone(),
-                null))
-            .ToArray();
-    }
-
-    private async Task<IReadOnlyCollection<CrmExternalRecord>> GetPipelineStageRecordsAsync(
-        CancellationToken cancellationToken)
-    {
-        var result = new List<CrmExternalRecord>();
-        foreach (var pipeline in await GetPipelinePayloadsAsync(cancellationToken))
-        {
-            var pipelineId = GetString(pipeline, "id")
-                ?? GetString(pipeline, "actual_value", "display_value")
-                ?? "default";
-            var pipelineName = GetString(pipeline, "display_value", "actual_value") ?? pipelineId;
-            if (!pipeline.TryGetProperty("maps", out var maps) || maps.ValueKind != JsonValueKind.Array)
-                continue;
-
-            foreach (var map in maps.EnumerateArray())
-            {
-                var stageId = GetString(map, "id")
-                    ?? GetString(map, "actual_value")
-                    ?? GetString(map, "display_value");
-                if (string.IsNullOrWhiteSpace(stageId)) continue;
-                var node = JsonNode.Parse(map.GetRawText())?.AsObject() ?? new JsonObject();
-                node["pipeline_id"] = pipelineId;
-                node["pipeline_name"] = pipelineName;
-                var payload = node.AsObject().Deserialize<JsonElement>();
-                result.Add(new CrmExternalRecord(
-                    ProviderKey,
-                    "PipelineStages",
-                    $"{pipelineId}:{stageId}",
-                    payload,
-                    null));
-            }
-        }
-
-        return result;
-    }
-
-    private async Task<IReadOnlyCollection<JsonElement>> GetPipelinePayloadsAsync(
-        CancellationToken cancellationToken)
-    {
-        if (pipelinePayloadCache is not null)
-            return pipelinePayloadCache.Select(item => item.Clone()).ToArray();
-
-        using var layoutsResponse = await SendAsync(
-            HttpMethod.Get,
-            "/crm/v8/settings/layouts?module=Deals",
-            cancellationToken);
-        if (layoutsResponse.StatusCode == System.Net.HttpStatusCode.NoContent)
-        {
-            pipelinePayloadCache = await GetPipelinePayloadsFromDealsAsync(cancellationToken);
-            return pipelinePayloadCache.Select(item => item.Clone()).ToArray();
-        }
-
-        using var layoutsDocument = await ParseDocumentAsync(layoutsResponse, cancellationToken);
-        var layoutIds = GetArray(layoutsDocument.RootElement, "layouts")
-            .Select(layout => GetString(layout, "id"))
-            .Where(id => !string.IsNullOrWhiteSpace(id))
-            .Select(id => id!)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        if (layoutIds.Length == 0)
-            throw new InvalidOperationException("Zoho liefert kein Layout für das Deals-Modul.");
-
-        var pipelines = new List<JsonElement>();
-        foreach (var layoutId in layoutIds)
-        {
-            using var pipelineResponse = await SendAsync(
-                HttpMethod.Get,
-                $"/crm/v8/settings/pipeline?layout_id={Uri.EscapeDataString(layoutId)}",
-                cancellationToken);
-            if (pipelineResponse.StatusCode == System.Net.HttpStatusCode.NoContent)
-                continue;
-
-            using var pipelineDocument = await ParseDocumentAsync(pipelineResponse, cancellationToken);
-            if (!pipelineDocument.RootElement.TryGetProperty("pipeline", out var pipeline)
-                || pipeline.ValueKind != JsonValueKind.Array)
-            {
-                throw new InvalidOperationException(
-                    $"Zoho liefert für das Deals-Layout '{layoutId}' keine 'pipeline'-Liste. "
-                    + "Die Antwort ist leer oder hat ein unerwartetes Format.");
-            }
-
-            pipelines.AddRange(pipeline.EnumerateArray().Select(item => item.Clone()));
-        }
-
-        var result = pipelines
+    private static JsonElement[] DistinctPipelines(IEnumerable<JsonElement> pipelines)
+        => pipelines
             .GroupBy(
                 item => GetString(item, "id", "actual_value", "display_value") ?? item.GetRawText(),
                 StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First())
+            .Select(group => group.First().Clone())
             .ToArray();
-        if (result.Length == 0)
-            result = (await GetPipelinePayloadsFromDealsAsync(cancellationToken)).ToArray();
-
-        pipelinePayloadCache = result;
-        return result.Select(item => item.Clone()).ToArray();
-    }
 
     private async Task<IReadOnlyCollection<JsonElement>> GetPipelinePayloadsFromDealsAsync(
         CancellationToken cancellationToken)
@@ -522,26 +770,6 @@ public sealed class ZohoCrmAdapter(
         return null;
     }
 
-    private async Task<string> ResolveStageHistoryRelatedListAsync(
-        CancellationToken cancellationToken)
-    {
-        using var response = await SendAsync(
-            HttpMethod.Get,
-            "/crm/v8/settings/related_lists?module=Deals",
-            cancellationToken);
-        using var document = await ParseDocumentAsync(response, cancellationToken);
-        var history = GetArray(document.RootElement, "related_lists")
-            .Concat(GetArray(document.RootElement, "relatedLists"))
-            .FirstOrDefault(item =>
-            {
-                var apiName = GetString(item, "api_name") ?? string.Empty;
-                var label = GetString(item, "display_label") ?? string.Empty;
-                return (apiName + " " + label).Contains("stage", StringComparison.OrdinalIgnoreCase)
-                    && (apiName + " " + label).Contains("history", StringComparison.OrdinalIgnoreCase);
-            });
-        return GetString(history, "api_name") ?? "DealHistory";
-    }
-
     private async Task<IReadOnlyCollection<CrmExternalRecord>> GetPagedRecordsAsync(
         string module,
         IReadOnlyCollection<string> fields,
@@ -600,7 +828,7 @@ public sealed class ZohoCrmAdapter(
             // reads. Activities and appointments are partitioned by module so
             // a Tasks/id cannot collide with a Calls/id, and the same value is
             // used by the deleted-record endpoint.
-            var externalId = CanonicalExternalId(actualModule, id);
+            var externalId = CanonicalizeExternalId(actualModule, id);
             yield return new CrmExternalRecord(
                 ProviderKey,
                 actualModule,
@@ -665,7 +893,6 @@ public sealed class ZohoCrmAdapter(
         var tab = module.ToLowerInvariant() switch
         {
             "accounts" => "Accounts",
-            "contacts" => "Contacts",
             "leads" => "Leads",
             "deals" => "Potentials",
             "products" => "Products",
@@ -717,10 +944,11 @@ public sealed class ZohoCrmAdapter(
         string path,
         CancellationToken cancellationToken,
         DateTimeOffset? modifiedSince = null,
-        HttpContent? content = null)
+        HttpContent? content = null,
+        int? recordsAffected = null)
     {
         var token = await tokenService.GetAccessTokenAsync(cancellationToken);
-        var request = new HttpRequestMessage(
+        using var request = new HttpRequestMessage(
             method,
             $"{token.ApiDomain.TrimEnd('/')}{path}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Zoho-oauthtoken", token.Value);
@@ -733,10 +961,47 @@ public sealed class ZohoCrmAdapter(
                 "If-Modified-Since",
                 modifiedSince.Value.ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture));
         }
-        var response = await httpClientFactory.CreateClient().SendAsync(
-            request,
-            HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken);
+        var stopwatch = Stopwatch.StartNew();
+        HttpResponseMessage response;
+        try
+        {
+            response = await httpClientFactory.CreateClient().SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            apiUsage.Record(new CrmApiUsageObservation(
+                ProviderKey,
+                "default",
+                method.Method,
+                ZohoCrmApiUsageCostModel.NormalizeEndpoint(path),
+                $"{method.Method} {ZohoCrmApiUsageCostModel.NormalizeEndpoint(path)}",
+                ZohoCrmApiUsageCostModel.Classify(method.Method, path),
+                null,
+                false,
+                false,
+                RecordsAffected: recordsAffected,
+                DurationMilliseconds: stopwatch.ElapsedMilliseconds));
+            throw;
+        }
+
+        var statusCode = (int)response.StatusCode;
+        var normalizedEndpoint = ZohoCrmApiUsageCostModel.NormalizeEndpoint(path);
+        apiUsage.Record(new CrmApiUsageObservation(
+            ProviderKey,
+            "default",
+            method.Method,
+            normalizedEndpoint,
+            $"{method.Method} {normalizedEndpoint}",
+            ZohoCrmApiUsageCostModel.Classify(method.Method, path),
+            statusCode,
+            response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.NoContent,
+            response.StatusCode == System.Net.HttpStatusCode.TooManyRequests || statusCode >= 500,
+            ProviderUnitsRemaining: ReadIntegerHeader(response, "X-API-CREDITS-REMAINING"),
+            RecordsAffected: recordsAffected,
+            DurationMilliseconds: stopwatch.ElapsedMilliseconds));
         if (response.StatusCode == System.Net.HttpStatusCode.NotModified)
         {
             // Incremental requests deliberately send If-Modified-Since. Zoho
@@ -748,13 +1013,37 @@ public sealed class ZohoCrmAdapter(
         if (!response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode.NoContent)
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            var statusCode = (int)response.StatusCode;
+            var errorStatusCode = (int)response.StatusCode;
+            var isRateLimit = response.StatusCode == System.Net.HttpStatusCode.TooManyRequests;
             response.Dispose();
+            if (isRateLimit)
+            {
+                throw new ZohoApiRateLimitException(
+                    $"Zoho CRM antwortete auf {path} mit HTTP {errorStatusCode}: {body}");
+            }
+
+            if (errorStatusCode == 400
+                && body.Contains("NOT_SUPPORTED", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ZohoUnsupportedModuleException(
+                    $"Zoho CRM unterstützt den angeforderten Modul-Endpunkt nicht: {path} (HTTP {errorStatusCode}): {body}");
+            }
+
             throw new InvalidOperationException(
-                $"Zoho CRM antwortete auf {path} mit HTTP {statusCode}: {body}");
+                $"Zoho CRM antwortete auf {path} mit HTTP {errorStatusCode}: {body}");
         }
 
         return response;
+    }
+
+    private static int? ReadIntegerHeader(HttpResponseMessage response, string name)
+    {
+        if (!response.Headers.TryGetValues(name, out var values))
+            return null;
+        var value = values.FirstOrDefault();
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
     }
 
     private static async Task<JsonDocument> ParseDocumentAsync(
@@ -803,7 +1092,6 @@ public sealed class ZohoCrmAdapter(
         => module.ToLowerInvariant() switch
         {
             "accounts" => CrmEntityTypes.Customer,
-            "contacts" => CrmEntityTypes.Contact,
             "leads" => CrmEntityTypes.Lead,
             "deals" => CrmEntityTypes.Deal,
             _ => throw new InvalidOperationException($"Unbekanntes Zoho-Bezugsmodul '{module}'.")
@@ -814,7 +1102,6 @@ public sealed class ZohoCrmAdapter(
         {
             "users" => CrmEntityTypes.Owner,
             "accounts" => CrmEntityTypes.Customer,
-            "contacts" => CrmEntityTypes.Contact,
             "leads" => CrmEntityTypes.Lead,
             "products" => CrmEntityTypes.Product,
             "deals" => CrmEntityTypes.Deal,
@@ -827,7 +1114,7 @@ public sealed class ZohoCrmAdapter(
             _ => module.ToLowerInvariant()
         };
 
-    private static string CanonicalExternalId(string module, string id)
+    public static string CanonicalizeExternalId(string module, string id)
         => module.Equals("Calls", StringComparison.OrdinalIgnoreCase)
             || module.Equals("Tasks", StringComparison.OrdinalIgnoreCase)
             || module.Equals("Events", StringComparison.OrdinalIgnoreCase)

@@ -50,27 +50,10 @@ public sealed record CrmCanonicalCustomer(
     string? RegionCode,
     string? AddressLine1,
     string? HouseNumber,
+    decimal? Latitude,
+    decimal? Longitude,
     string? OwnerExternalId)
     : CrmCanonicalRecord(ProviderKey, ConnectionKey, CrmEntityTypes.Customer, ExternalId, Payload, CreatedAt, ModifiedAt);
-
-public sealed record CrmCanonicalContact(
-    string ProviderKey,
-    string ConnectionKey,
-    string ExternalId,
-    JsonElement Payload,
-    DateTimeOffset? CreatedAt,
-    DateTimeOffset? ModifiedAt,
-    string Name,
-    string? FirstName,
-    string? LastName,
-    string? CustomerExternalId,
-    string? Email,
-    string? Phone,
-    string? MobilePhone,
-    string? JobTitle,
-    string? RoleType,
-    bool IsPrimary)
-    : CrmCanonicalRecord(ProviderKey, ConnectionKey, CrmEntityTypes.Contact, ExternalId, Payload, CreatedAt, ModifiedAt);
 
 public sealed record CrmCanonicalLead(
     string ProviderKey,
@@ -90,7 +73,6 @@ public sealed record CrmCanonicalLead(
     int? CallsSinceConversation,
     int? TotalCallAttempts,
     string? CustomerExternalId,
-    string? ContactExternalId,
     string? OwnerExternalId)
     : CrmCanonicalRecord(ProviderKey, ConnectionKey, CrmEntityTypes.Lead, ExternalId, Payload, CreatedAt, ModifiedAt);
 
@@ -263,7 +245,6 @@ public sealed record CrmCanonicalServiceCase(
     string? Origin,
     string? Reason,
     string? CustomerExternalId,
-    string? ContactExternalId,
     string? DealExternalId,
     string? OwnerExternalId,
     DateTimeOffset? OpenedAt,
@@ -284,7 +265,6 @@ public sealed record CrmCanonicalOffer(
     decimal? Amount,
     string? Currency,
     string? CustomerExternalId,
-    string? ContactExternalId,
     string? DealExternalId,
     string? OwnerExternalId,
     DateTimeOffset? IssuedAt,

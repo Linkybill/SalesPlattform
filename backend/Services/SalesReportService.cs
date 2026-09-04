@@ -314,7 +314,10 @@ public sealed class SalesReportService(
             customer.Owner?.DisplayName ?? model.Owners.FirstOrDefault(owner => owner.Id == customer.OwnerId)?.DisplayName,
             customer.CountryCode,
             customer.PostalCode,
+            customer.City,
             customer.RegionCode,
+            customer.AddressLine1,
+            customer.HouseNumber,
             customer.Latitude,
             customer.Longitude,
             customer.LifetimeRevenue ?? 0m,
@@ -602,7 +605,7 @@ public sealed record SalesAnalysisReport(string PeriodName, IReadOnlyCollection<
 public sealed record StageDwellReport(string Stage, int DealCount, double AverageDays);
 public sealed record CrossSellingReport(Guid CustomerId, string CustomerName, IReadOnlyCollection<string> Categories, int CategoryCount);
 public sealed record SalesCustomerReport(string PeriodName, IReadOnlyCollection<CustomerMapPoint> Customers, int UnmappedCount, IReadOnlyCollection<BreakdownReport> Regions);
-public sealed record CustomerMapPoint(Guid Id, string Name, string? OwnerName, string? CountryCode, string? PostalCode, string? RegionCode, decimal? Latitude, decimal? Longitude, decimal LifetimeRevenue, DateTimeOffset? LastContactAt, int OpenDealCount, bool NeedsReview, string? ExternalUrl);
+public sealed record CustomerMapPoint(Guid Id, string Name, string? OwnerName, string? CountryCode, string? PostalCode, string? City, string? RegionCode, string? AddressLine1, string? HouseNumber, decimal? Latitude, decimal? Longitude, decimal LifetimeRevenue, DateTimeOffset? LastContactAt, int OpenDealCount, bool NeedsReview, string? ExternalUrl);
 public sealed record SalesGoalsReport(string PeriodName, decimal TimeSharePercent, IReadOnlyCollection<GoalPaceReport> Members);
 public sealed record GoalPaceReport(Guid OwnerId, string Name, decimal Target, decimal Achieved, decimal AttainmentPercent, decimal TimeSharePercent, decimal Pace, string Status);
 public sealed record SalesCleanupReport(IReadOnlyCollection<DuplicateCandidateReport> Duplicates, IReadOnlyCollection<BreakdownReport> QualityFindings, int OpenFindingCount);

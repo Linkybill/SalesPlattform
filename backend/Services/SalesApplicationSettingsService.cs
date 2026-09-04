@@ -10,6 +10,7 @@ public sealed class SalesApplicationSettingsService(
     IApplicationSettingsStore settingsStore,
     IOptions<ApplicationSettingsOptions> settingsOptions)
 {
+    public const string ChangeDetectionModeKey = "crm.changeDetectionMode";
     public const string CallConversationThresholdSecondsKey = "sales.callConversationThresholdSeconds";
     public const string CallFollowUpIntervalDaysKey = "sales.rules.callFollowUpIntervalDays";
     public const string CallEmailFollowUpIntervalDaysKey = "sales.rules.callEmailFollowUpIntervalDays";

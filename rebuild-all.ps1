@@ -111,9 +111,46 @@ $zohoRedirectUri = if ([string]::IsNullOrWhiteSpace($env:ZOHO_REDIRECT_URI)) {
 $zohoFrontendCallbackUrl = if ([string]::IsNullOrWhiteSpace($env:ZOHO_FRONTEND_CALLBACK_URL)) {
     'http://localhost:3101/apps/sales-plattform/import'
 } else { $env:ZOHO_FRONTEND_CALLBACK_URL }
-$zohoScopes = if ([string]::IsNullOrWhiteSpace($env:ZOHO_SCOPES)) {
-    'ZohoCRM.modules.READ,ZohoCRM.users.READ,ZohoCRM.org.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ,ZohoCRM.settings.layouts.READ,ZohoCRM.settings.pipeline.READ,ZohoCRM.settings.related_lists.READ,ZohoCRM.modules.emails.READ'
-} else { $env:ZOHO_SCOPES }
+$zohoWebhookUrl = if ([string]::IsNullOrWhiteSpace($env:ZOHO_WEBHOOK_URL)) {
+    ''
+} else { $env:ZOHO_WEBHOOK_URL }
+$defaultZohoScopes = @(
+    'ZohoCRM.modules.accounts.READ'
+    'ZohoCRM.modules.leads.READ'
+    'ZohoCRM.modules.products.READ'
+    'ZohoCRM.modules.deals.READ'
+    'ZohoCRM.modules.cases.READ'
+    'ZohoCRM.modules.quotes.READ'
+    'ZohoCRM.modules.salesorders.READ'
+    'ZohoCRM.modules.invoices.READ'
+    'ZohoCRM.modules.calls.READ'
+    'ZohoCRM.modules.tasks.READ'
+    'ZohoCRM.modules.events.READ'
+    'ZohoCRM.modules.appointments.READ'
+    'ZohoCRM.modules.emails.READ'
+    'ZohoCRM.users.READ'
+    'ZohoCRM.org.READ'
+    'ZohoCRM.settings.modules.READ'
+    'ZohoCRM.settings.fields.READ'
+    'ZohoCRM.settings.layouts.READ'
+    'ZohoCRM.settings.pipeline.READ'
+    'ZohoCRM.settings.related_lists.READ'
+)
+$requiredZohoScopes = @(
+    'ZohoCRM.modules.tasks.CREATE'
+    'ZohoCRM.modules.tasks.UPDATE'
+    'ZohoCRM.notifications.CREATE'
+    'ZohoCRM.notifications.DELETE'
+)
+$configuredZohoScopes = if ([string]::IsNullOrWhiteSpace($env:ZOHO_SCOPES)) {
+    $defaultZohoScopes
+} else {
+    $env:ZOHO_SCOPES -split ','
+}
+$zohoScopes = @($configuredZohoScopes + $requiredZohoScopes |
+    ForEach-Object { $_.Trim() } |
+    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+    Select-Object -Unique) -join ','
 
 function Get-SalesDeployments {
     $output = Invoke-Captured $kubectlCommand get deployments -A `
@@ -376,6 +413,7 @@ foreach ($deployment in $deployments) {
             Zoho__ApiUrl=https://www.zohoapis.eu `
             Zoho__RedirectUri=$zohoRedirectUri `
             Zoho__FrontendCallbackUrl=$zohoFrontendCallbackUrl `
+            Zoho__WebhookUrl=$zohoWebhookUrl `
             Zoho__Scopes=$zohoScopes
     } elseif ($deployment.Component -eq 'frontend') {
         Invoke-Checked $kubectlCommand -n $deployment.Namespace set image deployment/$($deployment.Name) app=$frontendImage

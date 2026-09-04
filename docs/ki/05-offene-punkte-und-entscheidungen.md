@@ -12,9 +12,6 @@
 3. **Basiswerte der Priorisierung:** Die vorgeschlagenen Punkte sind ein
    Startwert und sollen nach einigen Wochen Praxisbetrieb anhand echter
    Abarbeitungsreihenfolgen nachjustiert werden.
-4. **Konzernstrukturen:** Konzern und Tochter sollen möglicherweise als
-   Beziehung statt ausschließlich als „kein Duplikat“ modelliert werden.
-
 ## Geklärte fachliche Leitentscheidungen
 
 - Das Tool erzeugt und verwaltet Wiedervorlagen selbst.
@@ -34,6 +31,9 @@
 - Ein Deal entspricht genau einem Produkt.
 - Die Stage-Historie wird beim ersten Sync vollständig und dauerhaft übernommen.
 - Ziele sind Gesamtziele je Mitarbeiter und Geschäftsjahr und teamweit sichtbar.
+- Eine eigene Fachfunktion für Kontakte, Ansprechpartnerrollen sowie Konzern-,
+  Tochter- und sonstige Kundenbeziehungen wird nicht umgesetzt. Es gibt dafür
+  keine kanonische Entität, keine CRM-Synchronisation und keine UI-Funktion.
 
 ## Neue Architekturentscheidung
 
@@ -91,7 +91,7 @@
   sicheren Missing-ID-Abgleich durch und löschen lokale Fachdaten niemals
   physisch. Bei einer gelöschten CRM-Task wird der lokale Vorgang geschlossen
   und in derselben Vorgangskette neu angelegt; bei einem gelöschten Lead,
-  Kunden, Kontakt oder Deal wird der betroffene Vorgang mit
+  Kunden oder Deal wird der betroffene Vorgang mit
   `target-deleted-in-crm` geschlossen und nicht ersetzt.
 
 ## Noch zu entscheiden, bevor die Fachintegration beginnt

@@ -7,6 +7,7 @@ export type LayoutNode = {
   text: string | null
   reportKey: string | null
   columns: number
+  gridColumns: number | null
   visible: boolean
   allowed: boolean
   children: LayoutNode[]
@@ -27,6 +28,19 @@ type Props = {
 }
 
 const containerTypes = new Set(['grid', 'accordion', 'tabs'])
+const rasterColumns = Array.from({ length: 12 }, (_, index) => index + 1)
+
+function clampColumns(value: number | null | undefined, fallback = 12) {
+  return Math.max(1, Math.min(12, value ?? fallback))
+}
+
+function gridSpan(value: number | null | undefined, gridColumns: number) {
+  return Math.max(1, Math.min(gridColumns, Math.ceil(clampColumns(value) * gridColumns / 12)))
+}
+
+function defaultReportSpan(reportKey: string) {
+  return reportKey === 'meetings' || reportKey === 'service' ? 6 : 12
+}
 
 export function DashboardContentEditor({ nodes, reports, onChange }: Props) {
   const usedReports = useMemo(() => {
@@ -65,7 +79,7 @@ export function DashboardContentEditor({ nodes, reports, onChange }: Props) {
 
   return <section className="content-editor">
     <div className="content-editor-toolbar">
-      <div><p className="sales-eyebrow">SEITENEDITOR</p><h2>Reportseite bearbeiten</h2><p className="sales-card-copy">Komponenten direkt auf der Seite anordnen. Das Modell wird intern als strukturierter Seitenbaum gespeichert.</p></div>
+      <div><p className="sales-eyebrow">SEITENEDITOR</p><h2>Reports-Seite bearbeiten</h2><p className="sales-card-copy">Komponenten direkt auf der Seite anordnen. Das Modell wird intern als strukturierter Seitenbaum gespeichert. Jede Komponente nutzt ein 12-Zellen-Raster und kann darin eine eigene Breite erhalten.</p></div>
       <div className="content-editor-add-buttons"><strong>Komponente hinzufügen</strong><AddButtons onAdd={type => addTo([], type)} reports={reports} usedReports={usedReports} /></div>
     </div>
     <div className="content-editor-tree">
@@ -89,18 +103,28 @@ function NodeEditor({ node, path, siblingCount, reports, usedReports, onUpdate, 
   const isContainer = containerTypes.has(node.type)
   const report = reports.find(candidate => candidate.key === node.reportKey)
   const label = node.type === 'report' ? report?.title ?? node.reportKey ?? 'Report' : typeLabel(node.type)
+  const nodeColumns = clampColumns(node.columns)
+  const gridColumns = clampColumns(node.gridColumns)
 
-  return <article className={`content-editor-node content-editor-node-${node.type}`}>
+  return <article className={`content-editor-node content-editor-node-${node.type}`} style={{ gridColumn: `span ${nodeColumns}` }}>
     <div className="content-editor-node-header">
       <span className="content-editor-node-type">{label}</span>
       <div className="content-editor-node-actions"><button className="ghost-button" type="button" onClick={() => onMove(path, -1)} disabled={path[path.length - 1] === 0} title="Nach oben">↑</button><button className="ghost-button" type="button" onClick={() => onMove(path, 1)} disabled={path[path.length - 1] === siblingCount - 1} title="Nach unten">↓</button><button className="ghost-button danger-button" type="button" onClick={() => onRemove(path)}>Entfernen</button></div>
     </div>
+    <label className="content-editor-field">Breite im übergeordneten Raster<select value={nodeColumns} onChange={event => onUpdate(path, current => ({ ...current, columns: Number(event.target.value) }))}>{rasterColumns.map(value => <option value={value} key={value}>{value} / 12 Zellen</option>)}</select></label>
     {node.type === 'heading' && <label className="content-editor-field">Überschrift<input value={node.title ?? ''} onChange={event => onUpdate(path, current => ({ ...current, title: event.target.value }))} /></label>}
     {node.type === 'text' && <label className="content-editor-field">Text<textarea value={node.text ?? ''} rows={3} onChange={event => onUpdate(path, current => ({ ...current, text: event.target.value }))} /></label>}
     {node.type === 'report' && <div className="content-editor-report-meta"><strong>{report?.title ?? node.reportKey}</strong><span>{report?.description}</span><small>{report?.allowed === false ? 'Für deine Rolle nicht sichtbar' : 'Report-Komponente'}</small></div>}
     {isContainer && <>
       <label className="content-editor-field">{node.type === 'tabs' ? 'Tab-Gruppe' : node.type === 'accordion' ? 'Akkordeon' : 'Grid'}<input value={node.title ?? ''} placeholder={node.type === 'grid' ? 'Optionale Bezeichnung' : 'Bezeichnung'} onChange={event => onUpdate(path, current => ({ ...current, title: event.target.value || null }))} /></label>
-      {node.type === 'grid' && <label className="content-editor-field">Spalten<select value={node.columns} onChange={event => onUpdate(path, current => ({ ...current, columns: Number(event.target.value) }))}><option value={1}>1 Spalte</option><option value={2}>2 Spalten</option><option value={3}>3 Spalten</option><option value={4}>4 Spalten</option></select></label>}
+      {node.type === 'grid' && <>
+        <label className="content-editor-field">Rasterspalten innerhalb dieses Grids<select value={gridColumns} onChange={event => onUpdate(path, current => ({ ...current, gridColumns: Number(event.target.value) }))}>{rasterColumns.map(value => <option value={value} key={value}>{value} / 12 Zellen</option>)}</select></label>
+        <div className="content-editor-grid-preview" style={{ gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` }} aria-label={`Vorschau des ${gridColumns}-Spalten-Rasters`}>
+          {node.children.length === 0
+            ? <span className="content-editor-grid-preview-empty">Noch keine Unterkomponenten</span>
+            : node.children.map(child => <span key={child.id} style={{ gridColumn: `span ${gridSpan(child.columns, gridColumns)}` }}>{child.type === 'report' ? reports.find(candidate => candidate.key === child.reportKey)?.title ?? child.reportKey : typeLabel(child.type)}</span>)}
+        </div>
+      </>}
       <div className="content-editor-add-row"><span>Unterkomponente</span>{node.type === 'tabs' && <button className="ghost-button" type="button" onClick={() => onAdd(path, 'tab')}>Tab hinzufügen</button>}{node.type === 'accordion' && <button className="ghost-button" type="button" onClick={() => onAdd(path, 'section')}>Abschnitt hinzufügen</button>}<AddButtons onAdd={type => onAdd(path, type)} reports={reports} usedReports={usedReports} compact /></div>
       <div className="content-editor-children">
         {node.children.length === 0 && <p className="muted">Leer – füge {node.type === 'tabs' ? 'einen Tab' : node.type === 'accordion' ? 'einen Abschnitt' : 'eine Komponente'} hinzu.</p>}
@@ -108,7 +132,6 @@ function NodeEditor({ node, path, siblingCount, reports, usedReports, onUpdate, 
       </div>
     </>}
     {node.type === 'report' && <label className="content-editor-toggle"><input type="checkbox" checked={node.visible} onChange={event => onUpdate(path, current => ({ ...current, visible: event.target.checked }))} /> auf der Seite anzeigen</label>}
-    {node.type === 'report' && <label className="content-editor-field">Breite<select value={node.columns} onChange={event => onUpdate(path, current => ({ ...current, columns: Number(event.target.value) }))}><option value={1}>1 Spalte</option><option value={2}>2 Spalten</option></select></label>}
   </article>
 }
 
@@ -128,15 +151,15 @@ function createNode(type: string, firstUnusedReport?: ReportDefinition): LayoutN
   const id = `node-${crypto.randomUUID()}`
   if (type.startsWith('report:')) {
     const reportKey = type.slice('report:'.length)
-    return { id, type: 'report', title: firstUnusedReport?.key === reportKey ? firstUnusedReport.title : reportKey, text: null, reportKey, columns: 1, visible: true, allowed: true, children: [] }
+    return { id, type: 'report', title: firstUnusedReport?.key === reportKey ? firstUnusedReport.title : reportKey, text: null, reportKey, columns: defaultReportSpan(reportKey), gridColumns: null, visible: true, allowed: true, children: [] }
   }
-  if (type === 'heading') return { id, type, title: 'Neue Überschrift', text: null, reportKey: null, columns: 2, visible: true, allowed: true, children: [] }
-  if (type === 'text') return { id, type, title: null, text: 'Neuer Text', reportKey: null, columns: 2, visible: true, allowed: true, children: [] }
-  if (type === 'accordion') return { id, type, title: 'Neuer Abschnitt', text: null, reportKey: null, columns: 1, visible: true, allowed: true, children: [{ id: `${id}-section`, type: 'grid', title: 'Abschnitt 1', text: null, reportKey: null, columns: 2, visible: true, allowed: true, children: [] }] }
-  if (type === 'tabs') return { id, type, title: 'Neue Tabs', text: null, reportKey: null, columns: 1, visible: true, allowed: true, children: [{ id: `${id}-tab`, type: 'grid', title: 'Tab 1', text: null, reportKey: null, columns: 2, visible: true, allowed: true, children: [] }] }
-  if (type === 'tab') return { id, type: 'grid', title: 'Neuer Tab', text: null, reportKey: null, columns: 2, visible: true, allowed: true, children: [] }
-  if (type === 'section') return { id, type: 'grid', title: 'Neuer Abschnitt', text: null, reportKey: null, columns: 2, visible: true, allowed: true, children: [] }
-  if (type === 'grid') return { id, type, title: null, text: null, reportKey: null, columns: 2, visible: true, allowed: true, children: [] }
+  if (type === 'heading') return { id, type, title: 'Neue Überschrift', text: null, reportKey: null, columns: 12, gridColumns: null, visible: true, allowed: true, children: [] }
+  if (type === 'text') return { id, type, title: null, text: 'Neuer Text', reportKey: null, columns: 12, gridColumns: null, visible: true, allowed: true, children: [] }
+  if (type === 'accordion') return { id, type, title: 'Neuer Abschnitt', text: null, reportKey: null, columns: 12, gridColumns: null, visible: true, allowed: true, children: [{ id: `${id}-section`, type: 'grid', title: 'Abschnitt 1', text: null, reportKey: null, columns: 12, gridColumns: 12, visible: true, allowed: true, children: [] }] }
+  if (type === 'tabs') return { id, type, title: 'Neue Tabs', text: null, reportKey: null, columns: 12, gridColumns: null, visible: true, allowed: true, children: [{ id: `${id}-tab`, type: 'grid', title: 'Tab 1', text: null, reportKey: null, columns: 12, gridColumns: 12, visible: true, allowed: true, children: [] }] }
+  if (type === 'tab') return { id, type: 'grid', title: 'Neuer Tab', text: null, reportKey: null, columns: 12, gridColumns: 12, visible: true, allowed: true, children: [] }
+  if (type === 'section') return { id, type: 'grid', title: 'Neuer Abschnitt', text: null, reportKey: null, columns: 12, gridColumns: 12, visible: true, allowed: true, children: [] }
+  if (type === 'grid') return { id, type, title: null, text: null, reportKey: null, columns: 12, gridColumns: 12, visible: true, allowed: true, children: [] }
   return null
 }
 

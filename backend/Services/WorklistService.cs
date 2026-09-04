@@ -2,8 +2,10 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Diagnostics;
 using IdentityPlatform.Shared.Authorization;
 using IdentityPlatform.Shared.Database;
+using IdentityPlatform.Shared.Jobs;
 using Microsoft.EntityFrameworkCore;
 using SalesPlattform.Backend.Data;
 using SalesPlattform.Backend.Integrations.Abstractions;
@@ -41,6 +43,8 @@ public sealed class WorklistService(
         string mode,
         IReadOnlyCollection<CrmSynchronizationChange> changes,
         string? requestedBy,
+        IPlatformJobProgressReporter? progressReporter = null,
+        IPlatformJobLogger? jobLogger = null,
         CancellationToken cancellationToken = default)
     {
         await RefreshGate.WaitAsync(cancellationToken);
@@ -50,18 +54,52 @@ public sealed class WorklistService(
             activeContext = session.Context;
             var actor = new ActorInfo(requestedBy, requestedBy);
             var full = string.Equals(mode, CrmSyncModes.Full, StringComparison.OrdinalIgnoreCase);
+            var evaluationProgress = new RuleEvaluationProgress(
+                progressReporter,
+                jobLogger);
+            await evaluationProgress.ReportAsync(
+                0,
+                null,
+                "Regelbewertung wird vorbereitet; betroffene Vorgänge werden ermittelt.",
+                details: new
+                {
+                    phase = "rule-evaluation",
+                    mode,
+                    fullEvaluation = full,
+                    changedRecords = changes.Count
+                },
+                force: true,
+                cancellationToken);
             var scope = full
                 ? await BuildFullEvaluationScopeAsync(changes, cancellationToken)
                 : await BuildEvaluationScopeAsync(changes, cancellationToken);
             await ReplaceDeletedCrmTaskOccurrencesAsync(changes, actor, cancellationToken);
             if (scope.IsEmpty && !scope.IsFullEvaluation)
+            {
+                await evaluationProgress.ReportAsync(
+                    0,
+                    0,
+                    "Regelbewertung abgeschlossen; für die Änderungen waren keine Regeln betroffen.",
+                    details: new
+                    {
+                        phase = "rule-evaluation",
+                        mode,
+                        fullEvaluation = false,
+                        changedRecords = changes.Count,
+                        evaluated = 0,
+                        remaining = 0
+                    },
+                    force: true,
+                    cancellationToken);
                 return new WorklistEvaluationResult(0, 0, 0, false);
+            }
 
             return await RefreshCoreAsync(
                 tenantId,
                 actor,
                 scope,
                 full ? "crm-full-sync" : "crm-incremental-sync",
+                evaluationProgress,
                 cancellationToken);
         }
         finally
@@ -102,6 +140,7 @@ public sealed class WorklistService(
                 .ToArrayAsync(cancellationToken);
 
             var externalUrls = await ResolveExternalUrlsAsync(items, cancellationToken);
+            var rules = await GetRuleNavigationAsync(items, cancellationToken);
 
             var latestRefresh = await db.SalesRuleRuns
                 .AsNoTracking()
@@ -115,6 +154,7 @@ public sealed class WorklistService(
                 latestRefresh,
                 ownerMatched,
                 teamView,
+                rules,
                 items.Select(item => ToDto(item, externalUrls)).ToArray());
         }
         finally
@@ -261,6 +301,7 @@ public sealed class WorklistService(
                 Actor(user),
                 scope: null,
                 "worklist-refresh",
+                evaluationProgress: RuleEvaluationProgress.Disabled,
                 cancellationToken);
         }
         finally
@@ -387,6 +428,7 @@ public sealed class WorklistService(
         ActorInfo actor,
         EvaluationScope? scope,
         string triggerType,
+        RuleEvaluationProgress evaluationProgress,
         CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
@@ -403,13 +445,37 @@ public sealed class WorklistService(
             .AsNoTracking()
             .Select(notification => notification.NotificationKey)
             .ToHashSetAsync(cancellationToken);
-        var candidates = await FindCandidatesAsync(now, scope, ruleConfiguration, cancellationToken);
+        var candidates = (await FindCandidatesAsync(now, scope, ruleConfiguration, cancellationToken)).ToArray();
         var existing = await db.SalesWorkItems
             .Include(item => item.Relations)
             .Where(item => item.SourceRuleCode != null && RuleCodes.Contains(item.SourceRuleCode))
             .ToArrayAsync(cancellationToken);
         if (scope is not null && !scope.IsFullEvaluation)
             existing = existing.Where(scope.Matches).ToArray();
+        var activeExisting = existing
+            .Where(item => item.Status is WorkItemStatuses.Open
+                or WorkItemStatuses.Scheduled
+                or WorkItemStatuses.Snoozed)
+            .ToArray();
+
+        await evaluationProgress.ReportAsync(
+            0,
+            candidates.Length + activeExisting.Length,
+            candidates.Length == 0 && activeExisting.Length == 0
+                ? "Regelbewertung gestartet; es gibt keine zu prüfenden Vorgänge."
+                : $"Regelbewertung gestartet: {candidates.Length:N0} Regeltreffer und {activeExisting.Length:N0} bestehende Vorgänge werden geprüft.",
+            details: new
+            {
+                phase = "rule-evaluation",
+                mode = triggerType,
+                fullEvaluation = scope is null || scope.IsFullEvaluation,
+                candidates = candidates.Length,
+                existing = activeExisting.Length,
+                evaluated = 0,
+                remaining = candidates.Length + activeExisting.Length
+            },
+            force: true,
+            cancellationToken);
 
         var ruleRun = new SalesRuleRun
         {
@@ -425,12 +491,16 @@ public sealed class WorklistService(
         var createdCount = 0;
         var resolvedCount = 0;
         var candidateIds = new HashSet<Guid>();
+        // The database identifies an evaluation by rule and target within a
+        // rule run. Multiple rules may therefore match the same CRM entity,
+        // while an accidental duplicate candidate for one rule is suppressed.
         var evaluationKeys = new HashSet<(string RuleCode, string TargetType, Guid TargetId)>();
         var ownersById = await db.SalesOwners
             .AsNoTracking()
             .ToDictionaryAsync(owner => owner.Id, cancellationToken);
-        foreach (var candidate in candidates)
+        for (var candidateIndex = 0; candidateIndex < candidates.Length; candidateIndex++)
         {
+            var candidate = candidates[candidateIndex];
             var stableId = candidate.Id(tenantId);
             var chainId = existing
                 .FirstOrDefault(existingItem => existingItem.Id == stableId)
@@ -480,6 +550,15 @@ public sealed class WorklistService(
             }
             else if (IsActiveStatus(item.Status))
             {
+                var previousStatus = item.Status;
+                var previousWorkItemType = item.WorkItemType;
+                var previousTitle = item.Title;
+                var previousReason = item.Reason;
+                var previousOwnerId = item.OwnerId;
+                var previousDueAt = item.DueAt;
+                var previousAvailableFrom = item.AvailableFrom;
+                var previousSnoozedUntil = item.SnoozedUntil;
+                var previousRequiresApproval = item.RequiresApproval;
                 var keepScheduled = item.Status == WorkItemStatuses.Scheduled
                     && item.AvailableFrom.HasValue
                     && item.AvailableFrom > now;
@@ -502,7 +581,23 @@ public sealed class WorklistService(
                 item.PriorityCalculatedAt = now;
                 item.SourceRuleRunId = ruleRun.Id;
                 item.RequiresApproval = candidate.RequiresApproval;
-                item.UpdatedAt = now;
+
+                // UpdatedAt drives the CRM task mirror. A rule run also
+                // recalculates priority and records its run id, but those
+                // internal changes must not cause a remote CRM PUT for every
+                // active work item on every incremental/full evaluation.
+                if (previousStatus != item.Status
+                    || !string.Equals(previousWorkItemType, item.WorkItemType, StringComparison.Ordinal)
+                    || !string.Equals(previousTitle, item.Title, StringComparison.Ordinal)
+                    || !string.Equals(previousReason, item.Reason, StringComparison.Ordinal)
+                    || previousOwnerId != item.OwnerId
+                    || previousDueAt != item.DueAt
+                    || previousAvailableFrom != item.AvailableFrom
+                    || previousSnoozedUntil != item.SnoozedUntil
+                    || previousRequiresApproval != item.RequiresApproval)
+                {
+                    item.UpdatedAt = now;
+                }
 
                 if (!item.Relations.Any(relation => relation.TargetType == candidate.TargetType
                     && relation.TargetId == candidate.TargetId))
@@ -536,8 +631,9 @@ public sealed class WorklistService(
                 knownNotificationKeys,
                 now);
 
-            // The existing schema identifies an evaluation by target per run.
-            // Avoid a duplicate when two rules point to the same CRM entity.
+            // Persist one evaluation for each rule/target combination. This
+            // keeps the rule navigation and its counts complete when several
+            // rules match the same CRM entity in one run.
             if (evaluationKeys.Add((candidate.RuleCode, candidate.TargetType, candidate.TargetId)))
             {
                 db.SalesRuleEvaluations.Add(new SalesRuleEvaluation
@@ -560,14 +656,33 @@ public sealed class WorklistService(
                     EvaluatedAt = now
                 });
             }
+
+            await evaluationProgress.ReportAsync(
+                candidateIndex + 1,
+                candidates.Length + activeExisting.Length,
+                $"Regel {candidate.RuleCode} wird geprüft; {Math.Max(0, candidates.Length + activeExisting.Length - candidateIndex - 1):N0} Vorgänge verbleiben.",
+                details: new
+                {
+                    phase = "rule-evaluation",
+                    mode = triggerType,
+                    ruleCode = candidate.RuleCode,
+                    targetType = candidate.TargetType,
+                    targetId = candidate.TargetId,
+                    evaluated = candidateIndex + 1,
+                    total = candidates.Length + activeExisting.Length,
+                    remaining = Math.Max(0, candidates.Length + activeExisting.Length - candidateIndex - 1)
+                },
+                force: candidateIndex == 0 || candidateIndex == candidates.Length - 1,
+                cancellationToken);
         }
 
-        foreach (var item in existing.Where(item => (item.Status is WorkItemStatuses.Open
-                or WorkItemStatuses.Scheduled
-                or WorkItemStatuses.Snoozed
-                )
-            && !candidateIds.Contains(item.Id)))
+        for (var existingIndex = 0; existingIndex < activeExisting.Length; existingIndex++)
         {
+            var item = activeExisting[existingIndex];
+            var remainsMatched = candidateIds.Contains(item.Id);
+            if (!remainsMatched)
+            {
+
             item.Status = WorkItemStatuses.Resolved;
             item.CompletedAt = null;
             item.CompletedBy = null;
@@ -589,15 +704,67 @@ public sealed class WorklistService(
                 actor.Subject,
                 now);
             resolvedCount++;
+            }
+
+            await evaluationProgress.ReportAsync(
+                candidates.Length + existingIndex + 1,
+                candidates.Length + activeExisting.Length,
+                $"Bestehende Vorgänge werden abgeglichen; {Math.Max(0, activeExisting.Length - existingIndex - 1):N0} Vorgänge verbleiben.",
+                details: new
+                {
+                    phase = "rule-evaluation",
+                    mode = triggerType,
+                    action = remainsMatched ? "keep-matching" : "resolve-non-matching",
+                    evaluated = candidates.Length + existingIndex + 1,
+                    total = candidates.Length + activeExisting.Length,
+                    remaining = Math.Max(0, activeExisting.Length - existingIndex - 1),
+                    resolved = resolvedCount
+                },
+                force: existingIndex == activeExisting.Length - 1,
+                cancellationToken);
         }
+
+        await evaluationProgress.ReportAsync(
+            candidates.Length + activeExisting.Length,
+            candidates.Length + activeExisting.Length,
+            "Regelergebnisse werden gespeichert; die Arbeitsliste wird aktualisiert.",
+            details: new
+            {
+                phase = "rule-evaluation",
+                mode = triggerType,
+                action = "persist",
+                evaluated = candidates.Length + activeExisting.Length,
+                total = candidates.Length + activeExisting.Length,
+                remaining = 0
+            },
+            force: true,
+            cancellationToken);
 
         ruleRun.Status = RuleRunStatuses.Succeeded;
         ruleRun.FinishedAt = DateTimeOffset.UtcNow;
-        ruleRun.EvaluatedCount = candidates.Count;
+        ruleRun.EvaluatedCount = candidates.Length;
         ruleRun.CreatedCount = createdCount;
         await db.SaveChangesAsync(cancellationToken);
+        await evaluationProgress.ReportAsync(
+            candidates.Length + activeExisting.Length,
+            candidates.Length + activeExisting.Length,
+            $"Regelbewertung abgeschlossen: {candidates.Length:N0} Treffer, {createdCount:N0} neue Vorgänge, {resolvedCount:N0} Vorgänge aufgelöst.",
+            details: new
+            {
+                phase = "rule-evaluation",
+                mode = triggerType,
+                fullEvaluation = scope is null || scope.IsFullEvaluation,
+                evaluated = candidates.Length + activeExisting.Length,
+                total = candidates.Length + activeExisting.Length,
+                remaining = 0,
+                matched = candidates.Length,
+                created = createdCount,
+                resolved = resolvedCount
+            },
+            force: true,
+            cancellationToken);
         return new WorklistEvaluationResult(
-            candidates.Count,
+            candidates.Length,
             createdCount,
             resolvedCount,
             scope is null || scope.IsFullEvaluation);
@@ -1278,9 +1445,6 @@ public sealed class WorklistService(
                 case CrmEntityTypes.Customer:
                     scope.Add(link.InternalEntityType, link.InternalEntityId, "R-07", "R-08", "R-10", "R-13");
                     break;
-                case CrmEntityTypes.Contact:
-                    scope.Add(link.InternalEntityType, link.InternalEntityId);
-                    break;
                 case CrmEntityTypes.Lead:
                     scope.Add(link.InternalEntityType, link.InternalEntityId, "R-01", "R-02", "R-03", "R-04", "R-07", "R-09");
                     break;
@@ -1328,34 +1492,6 @@ public sealed class WorklistService(
             }
         }
 
-        var contactIds = scope.Ids(CrmEntityTypes.Contact);
-        if (contactIds.Length > 0)
-        {
-            var contacts = await db.SalesContacts
-                .AsNoTracking()
-                .Where(contact => contactIds.Contains(contact.Id))
-                .Select(contact => contact.CustomerId)
-                .ToArrayAsync(cancellationToken);
-            foreach (var customerId in contacts.Where(id => id.HasValue).Select(id => id!.Value))
-                scope.Add(CrmEntityTypes.Customer, customerId, "R-07", "R-08", "R-10", "R-13");
-
-            var contactServiceCases = await db.SalesServiceCases
-                .AsNoTracking()
-                .Where(serviceCase => serviceCase.ContactId.HasValue && contactIds.Contains(serviceCase.ContactId.Value))
-                .Select(serviceCase => serviceCase.Id)
-                .ToArrayAsync(cancellationToken);
-            foreach (var serviceCaseId in contactServiceCases)
-                scope.Add(CrmEntityTypes.ServiceCase, serviceCaseId, "R-15");
-
-            var contactOffers = await db.SalesOffers
-                .AsNoTracking()
-                .Where(offer => offer.ContactId.HasValue && contactIds.Contains(offer.ContactId.Value))
-                .Select(offer => offer.Id)
-                .ToArrayAsync(cancellationToken);
-            foreach (var offerId in contactOffers)
-                scope.Add(CrmEntityTypes.Offer, offerId, "R-16");
-        }
-
         var leadIds = scope.Ids(CrmEntityTypes.Lead);
         if (leadIds.Length > 0)
         {
@@ -1388,26 +1524,7 @@ public sealed class WorklistService(
                     case CrmEntityTypes.Deal:
                         scope.Add(relation.TargetType, relation.TargetId, "R-05", "R-08", "R-11", "R-14");
                         break;
-                    case CrmEntityTypes.Contact:
-                        scope.Add(relation.TargetType, relation.TargetId);
-                        break;
                 }
-            }
-
-            var relationContactIds = activityRelations
-                .Where(relation => relation.TargetType == CrmEntityTypes.Contact)
-                .Select(relation => relation.TargetId)
-                .Distinct()
-                .ToArray();
-            if (relationContactIds.Length > 0)
-            {
-                var relationCustomers = await db.SalesContacts
-                    .AsNoTracking()
-                    .Where(contact => relationContactIds.Contains(contact.Id))
-                    .Select(contact => contact.CustomerId)
-                    .ToArrayAsync(cancellationToken);
-                foreach (var customerId in relationCustomers.Where(id => id.HasValue).Select(id => id!.Value))
-                    scope.Add(CrmEntityTypes.Customer, customerId, "R-07", "R-08", "R-13");
             }
         }
 
@@ -1694,52 +1811,92 @@ public sealed class WorklistService(
         return Math.Round(baseScore + ageBonus + valueBonus, 2);
     }
 
-    private async Task<IReadOnlyDictionary<(string EntityType, Guid EntityId), string>> ResolveExternalUrlsAsync(
+    private async Task<WorklistExternalUrls> ResolveExternalUrlsAsync(
         IReadOnlyCollection<SalesWorkItem> items,
         CancellationToken cancellationToken)
     {
+        if (items.Count == 0)
+            return new WorklistExternalUrls(
+                new Dictionary<(string EntityType, Guid EntityId), string>(),
+                new Dictionary<Guid, string>());
+
+        var tenantIds = items
+            .Select(item => item.TenantId)
+            .Distinct()
+            .ToArray();
         var targets = items
             .SelectMany(item => item.Relations)
             .Select(relation => (relation.TargetType, relation.TargetId))
             .Distinct()
             .ToArray();
-        if (targets.Length == 0)
-            return new Dictionary<(string EntityType, Guid EntityId), string>();
+        var targetUrls = new Dictionary<(string EntityType, Guid EntityId), string>();
+        if (targets.Length > 0)
+        {
+            var targetIds = targets.Select(target => target.TargetId).Distinct().ToArray();
+            var links = await db.IntegrationEntityLinks
+                .AsNoTracking()
+                .Where(link => tenantIds.Contains(link.TenantId)
+                    && link.SourceDeletedAt == null
+                    && link.ExternalUrl != null
+                    && targetIds.Contains(link.InternalEntityId))
+                .Select(link => new
+                {
+                    link.InternalEntityType,
+                    link.InternalEntityId,
+                    link.ExternalUrl,
+                    link.LastSeenAt
+                })
+                .ToArrayAsync(cancellationToken);
 
-        var targetIds = targets.Select(target => target.TargetId).Distinct().ToArray();
-        var links = await db.IntegrationEntityLinks
+            targetUrls = links
+                .Where(link => targets.Contains((link.InternalEntityType, link.InternalEntityId))
+                    && !string.IsNullOrWhiteSpace(link.ExternalUrl))
+                .GroupBy(link => (link.InternalEntityType, link.InternalEntityId))
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.OrderByDescending(link => link.LastSeenAt).First().ExternalUrl!);
+        }
+
+        var workItemIds = items.Select(item => item.Id).ToArray();
+        var taskLinks = await db.IntegrationEntityLinks
             .AsNoTracking()
-            .Where(link => link.SourceDeletedAt == null
-                && link.ExternalUrl != null
-                && targetIds.Contains(link.InternalEntityId))
+            .Where(link => tenantIds.Contains(link.TenantId)
+                && link.WorkItemId.HasValue
+                && workItemIds.Contains(link.WorkItemId.Value)
+                && link.EntityType == CrmEntityTypes.Activity
+                && link.SourceDeletedAt == null
+                && link.ExternalUrl != null)
             .Select(link => new
             {
-                link.InternalEntityType,
-                link.InternalEntityId,
+                WorkItemId = link.WorkItemId!.Value,
                 link.ExternalUrl,
                 link.LastSeenAt
             })
             .ToArrayAsync(cancellationToken);
-
-        return links
-            .Where(link => targets.Contains((link.InternalEntityType, link.InternalEntityId))
-                && !string.IsNullOrWhiteSpace(link.ExternalUrl))
-            .GroupBy(link => (link.InternalEntityType, link.InternalEntityId))
+        var taskUrls = taskLinks
+            .Where(link => !string.IsNullOrWhiteSpace(link.ExternalUrl))
+            .GroupBy(link => link.WorkItemId)
             .ToDictionary(
                 group => group.Key,
                 group => group.OrderByDescending(link => link.LastSeenAt).First().ExternalUrl!);
+
+        return new WorklistExternalUrls(targetUrls, taskUrls);
     }
 
     private static WorklistItemDto ToDto(
         SalesWorkItem item,
-        IReadOnlyDictionary<(string EntityType, Guid EntityId), string>? externalUrls = null)
+        WorklistExternalUrls? externalUrls = null)
     {
         var relation = item.Relations.FirstOrDefault(relation => relation.RelationRole == "primary")
             ?? item.Relations.FirstOrDefault();
         var externalUrl = relation is not null
             && externalUrls is not null
-            && externalUrls.TryGetValue((relation.TargetType, relation.TargetId), out var resolvedUrl)
+            && externalUrls.TargetUrls.TryGetValue((relation.TargetType, relation.TargetId), out var resolvedUrl)
                 ? resolvedUrl
+                : null;
+        var crmTaskUrl = externalUrls is not null
+            && externalUrls.TaskUrls.TryGetValue(item.Id, out var resolvedTaskUrl)
+                ? resolvedTaskUrl
                 : null;
         return new WorklistItemDto(
             item.Id,
@@ -1757,10 +1914,38 @@ public sealed class WorklistService(
             relation?.TargetType,
             relation?.TargetId,
             externalUrl,
+            crmTaskUrl,
             item.CreatedAt,
             item.AvailableFrom,
             item.SnoozedUntil,
             item.RequiresApproval);
+    }
+
+    private sealed record WorklistExternalUrls(
+        IReadOnlyDictionary<(string EntityType, Guid EntityId), string> TargetUrls,
+        IReadOnlyDictionary<Guid, string> TaskUrls);
+
+    private async Task<IReadOnlyCollection<WorklistRuleDto>> GetRuleNavigationAsync(
+        IReadOnlyCollection<SalesWorkItem> items,
+        CancellationToken cancellationToken)
+    {
+        var definitions = await db.SalesRuleDefinitions
+            .AsNoTracking()
+            .Where(rule => RuleCodes.Contains(rule.Code))
+            .ToDictionaryAsync(rule => rule.Code, StringComparer.OrdinalIgnoreCase, cancellationToken);
+
+        return RuleCodes
+            .Select(code =>
+            {
+                var seed = DefaultRules.FirstOrDefault(rule => rule.Code.Equals(code, StringComparison.OrdinalIgnoreCase));
+                var definition = definitions.GetValueOrDefault(code);
+                return new WorklistRuleDto(
+                    code,
+                    definition?.Name ?? seed?.Name ?? code,
+                    definition?.Description ?? seed?.Description,
+                    items.Count(item => string.Equals(item.SourceRuleCode, code, StringComparison.OrdinalIgnoreCase)));
+            })
+            .ToArray();
     }
 
     private static string PriorityBand(decimal score)
@@ -2019,6 +2204,85 @@ public sealed class WorklistService(
             user.FindFirstValue("sub"),
             user.FindFirstValue("name") ?? user.FindFirstValue(ClaimTypes.Name) ?? user.FindFirstValue(ClaimTypes.Email));
 
+    private sealed class RuleEvaluationProgress(
+        IPlatformJobProgressReporter? reporter,
+        IPlatformJobLogger? logger)
+    {
+        private const decimal ProgressStart = 65m;
+        private const decimal ProgressEnd = 85m;
+        private const int MinimumItemDelta = 10;
+        private static readonly TimeSpan MinimumReportInterval = TimeSpan.FromMilliseconds(750);
+        private long lastReportedItems = -1;
+        private long lastReportTimestamp;
+
+        public static RuleEvaluationProgress Disabled { get; } = new(
+            null,
+            null);
+
+        public async Task ReportAsync(
+            int processed,
+            int? total,
+            string message,
+            object? details,
+            bool force,
+            CancellationToken cancellationToken)
+        {
+            if (reporter is null && logger is null)
+                return;
+
+            var nowTimestamp = Stopwatch.GetTimestamp();
+            var elapsed = lastReportTimestamp == 0
+                ? MinimumReportInterval
+                : Stopwatch.GetElapsedTime(lastReportTimestamp);
+            var itemDelta = processed - lastReportedItems;
+            if (!force
+                && processed != total
+                && itemDelta < MinimumItemDelta
+                && elapsed < MinimumReportInterval)
+            {
+                return;
+            }
+
+            var progressPercent = total is null
+                ? ProgressStart
+                : total.Value == 0
+                    ? ProgressEnd
+                    : ProgressStart + Math.Clamp(
+                        processed * (ProgressEnd - ProgressStart) / total.Value,
+                        0,
+                        ProgressEnd - ProgressStart);
+            var detailsJson = details is null
+                ? (JsonElement?)null
+                : JsonSerializer.SerializeToElement(details);
+
+            if (logger is not null)
+            {
+                await logger.InfoAsync(
+                    message,
+                    "Regelbewertung",
+                    detailsJson,
+                    cancellationToken);
+            }
+
+            if (reporter is not null)
+            {
+                await reporter.ReportAsync(
+                    new PlatformJobProgress(
+                        Step: "Regelbewertung",
+                        Message: message,
+                        ProgressPercent: progressPercent,
+                        ItemsProcessed: Math.Max(0, processed),
+                        ItemsTotal: total,
+                        ItemsFailed: 0,
+                        Details: detailsJson),
+                    cancellationToken);
+            }
+
+            lastReportedItems = processed;
+            lastReportTimestamp = nowTimestamp;
+        }
+    }
+
     private sealed class EvaluationScope
     {
         private readonly Dictionary<(string EntityType, Guid EntityId), HashSet<string>> targets = [];
@@ -2188,7 +2452,14 @@ public sealed record WorklistResponse(
     DateTimeOffset? LastRefreshAt,
     bool OwnerMatched,
     bool TeamView,
+    IReadOnlyCollection<WorklistRuleDto> Rules,
     IReadOnlyCollection<WorklistItemDto> Items);
+
+public sealed record WorklistRuleDto(
+    string Code,
+    string Name,
+    string? Description,
+    int ItemCount);
 
 public sealed record WorklistItemDto(
     Guid Id,
@@ -2206,6 +2477,7 @@ public sealed record WorklistItemDto(
     string? TargetType,
     Guid? TargetId,
     string? ExternalUrl,
+    string? CrmTaskUrl,
     DateTimeOffset CreatedAt,
     DateTimeOffset? AvailableFrom,
     DateTimeOffset? SnoozedUntil,
