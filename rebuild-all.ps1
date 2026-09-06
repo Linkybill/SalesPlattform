@@ -256,6 +256,12 @@ function Ensure-SecretEnvironment {
             Optional = $false
         }
         [PSCustomObject]@{
+            Name = 'ServiceAuthentication__ClientSecret'
+            SecretName = 'identity-platform-secrets'
+            Key = 'IDENTITY_PLATFORM_S2S_CLIENT_SECRET'
+            Optional = $false
+        }
+        [PSCustomObject]@{
             Name = 'IdentityPlatform__Database__RegistrationSecret'
             SecretName = 'identity-platform-secrets'
             Key = 'APPLICATION_REGISTRATION_SECRET'
@@ -406,6 +412,11 @@ foreach ($deployment in $deployments) {
             Trust__JwksUrl="$platformApiUrl/internal/trust/jwks" `
             Authentication__Authority="http://${keycloakServiceHost}:8080/realms/identity-platform" `
             Authentication__BackchannelHost=$keycloakServiceHost `
+            ServiceAuthentication__Enabled=true `
+            ServiceAuthentication__Authority="http://${keycloakServiceHost}:8080/realms/identity-platform" `
+            ServiceAuthentication__ClientId=identity-platform-s2s `
+            ServiceAuthentication__Audience=identity-platform-s2s `
+            ServiceAuthentication__Role=service-to-service `
             RabbitMq__Host=$rabbitMqServiceHost `
             SalesNotifications__Mail__Host="$databaseClusterName-mailpit" `
             SalesNotifications__Mail__Port=1025 `

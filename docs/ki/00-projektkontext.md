@@ -79,11 +79,16 @@ Stand: 2026-09-02.
   Sie ist ausschließlich auf `tenantApp` definiert und wird im Tenant Portal
   über „AppSettings“ der SalesPlattform gepflegt. Die Sales-App liest die
   effektiven Werte nur noch serverseitig für die Regelbewertung.
-- Die aktuell integrierten Paketstände sind `@hammer2fall/identity-platform-react`
-  `0.1.45` im Frontend und `IdentityPlatform.Shared` `0.1.45` im Backend.
-  Die Jobdefinition enthält neben Zeitplan und Aktivierung auch
+- Die installierten Paketstände werden ausschließlich aus
+  `frontend/package.json`, `frontend/package-lock.json` und den Backend-
+  `.csproj`-Dateien gelesen. Die Jobdefinition enthält neben Zeitplan und Aktivierung auch
   `ConcurrencyGroup` und `ConcurrencyScope`; Vollimport und Crawl verwenden
   gemeinsam `crm-synchronization`.
+- Interne Platform-API-Aufrufe verwenden die technische Service-Identität aus
+  `ServiceAuthentication`. Das Client-Secret wird ausschließlich als
+  Kubernetes Secret `IDENTITY_PLATFORM_S2S_CLIENT_SECRET` injiziert;
+  `IdentityPlatform:RegistrationSecret` bleibt auf Registrierung und
+  Datenbank-Binding beschränkt.
 - Der lokale K3d-Rollout vom 2026-09-02 ist verifiziert: Identity-Platform-API
   und Deployment-Controller, Aufmaß-Backend/-Frontend sowie Sales-Backend/-Frontend
   sind jeweils `1/1` bereit. Die laufenden Anwendungstags sind Aufmaß `1.0.0`

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using IdentityPlatform.Shared.Authentication;
 using IdentityPlatform.Shared.Database;
 using Microsoft.Extensions.Options;
 
@@ -14,8 +15,6 @@ public sealed class PlatformJobLivenessClient(
     IOptions<PlatformTenantDatabaseOptions> databaseOptions,
     ILogger<PlatformJobLivenessClient> logger)
 {
-    private const string RegistrationSecretHeader = "X-Identity-Platform-Registration-Secret";
-
     public async Task<bool?> IsActiveAsync(
         Guid runId,
         CancellationToken cancellationToken = default)
@@ -24,7 +23,6 @@ public sealed class PlatformJobLivenessClient(
         var path = $"{options.PlatformApiUrl.TrimEnd('/')}/internal/job-runs/{runId:D}/status"
             + $"?applicationKey={Uri.EscapeDataString(options.ApplicationKey)}";
         using var request = new HttpRequestMessage(HttpMethod.Get, path);
-        request.Headers.TryAddWithoutValidation(RegistrationSecretHeader, options.RegistrationSecret);
 
         try
         {

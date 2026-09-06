@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using IdentityPlatform.Shared.ApplicationSettings;
+using IdentityPlatform.Shared.Authentication;
 using IdentityPlatform.Shared.Registration;
 using Microsoft.Extensions.Options;
 
@@ -9,8 +10,8 @@ namespace SalesPlattform.Backend.Integrations.Zoho;
 /// <summary>
 /// Migrates the legacy platform-owned Zoho client secret into the
 /// application-owned tenant database. The legacy endpoint is only reachable
-/// with the application registration secret and is used until the old value
-/// has been removed.
+/// with the application service identity and is used until the old value has
+/// been removed.
 /// </summary>
 public sealed class ZohoLegacySecretMigrationService(
     IApplicationSettingsSecretStore localSecrets,
@@ -39,20 +40,16 @@ public sealed class ZohoLegacySecretMigrationService(
             return localSecret;
         }
 
-        if (string.IsNullOrWhiteSpace(options.PlatformApiUrl)
-            || string.IsNullOrWhiteSpace(options.RegistrationSecret))
+        if (string.IsNullOrWhiteSpace(options.PlatformApiUrl))
         {
             return null;
         }
 
         var legacyUrl = BuildLegacyUrl(context, options);
         using var request = new HttpRequestMessage(HttpMethod.Get, legacyUrl);
-        request.Headers.TryAddWithoutValidation(
-            IdentityPlatformRegistrationConstants.RegistrationSecretHeader,
-            options.RegistrationSecret);
 
         using var response = await httpClientFactory
-            .CreateClient()
+            .CreateClient(IdentityPlatformServiceAuthenticationDefaults.ServiceClientName)
             .SendAsync(request, cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
             return null;
@@ -85,8 +82,7 @@ public sealed class ZohoLegacySecretMigrationService(
         IdentityPlatformApplicationOptions options,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(options.PlatformApiUrl)
-            || string.IsNullOrWhiteSpace(options.RegistrationSecret))
+        if (string.IsNullOrWhiteSpace(options.PlatformApiUrl))
         {
             return;
         }
@@ -96,11 +92,8 @@ public sealed class ZohoLegacySecretMigrationService(
             using var deleteRequest = new HttpRequestMessage(
                 HttpMethod.Delete,
                 BuildLegacyUrl(context, options));
-            deleteRequest.Headers.TryAddWithoutValidation(
-                IdentityPlatformRegistrationConstants.RegistrationSecretHeader,
-                options.RegistrationSecret);
             using var deleteResponse = await httpClientFactory
-                .CreateClient()
+                .CreateClient(IdentityPlatformServiceAuthenticationDefaults.ServiceClientName)
                 .SendAsync(deleteRequest, cancellationToken);
             if (!deleteResponse.IsSuccessStatusCode
                 && deleteResponse.StatusCode != HttpStatusCode.NotFound)

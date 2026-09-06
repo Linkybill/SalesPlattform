@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using IdentityPlatform.Shared.Authentication;
 using SalesPlattform.Backend.Data;
 using SalesPlattform.Backend.Services;
 using IdentityPlatform.Shared.Authorization;
@@ -33,7 +34,8 @@ builder.Services.AddAuthorization(authorization =>
 
 builder.Services.AddPlatformTenantDatabase<SalesPlattformDbContext>();
 builder.Services.AddHttpClient<PlatformJobLivenessClient>(client =>
-    client.Timeout = TimeSpan.FromSeconds(5));
+    client.Timeout = TimeSpan.FromSeconds(5))
+    .AddHttpMessageHandler<IdentityPlatformServiceTokenHandler>();
 builder.Services.AddApplicationSettings<SalesPlattformDbContext>(builder.Configuration, options =>
 {
     options.ApplicationKey = builder.Configuration["IdentityPlatform:ApplicationKey"] ?? "sales-plattform";

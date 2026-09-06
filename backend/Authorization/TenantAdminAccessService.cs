@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using IdentityPlatform.Shared.ApplicationSettings;
+using IdentityPlatform.Shared.Authentication;
 using Microsoft.Extensions.Options;
 
 namespace SalesPlattform.Backend.Authorization;
@@ -33,7 +34,7 @@ public sealed class TenantAdminAccessService(
         request.Headers.Authorization = AuthenticationHeaderValue.Parse(authorization);
 
         using var response = await httpClientFactory
-            .CreateClient()
+            .CreateClient(IdentityPlatformServiceAuthenticationDefaults.ServiceClientName)
             .SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
             return false;

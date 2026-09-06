@@ -116,8 +116,11 @@ Endpunkte noch Zoho-spezifische Einstellungen.
 
 Beim lokalen Docker-Desktop/K3d-Start benötigt das Sales-Backend deshalb kein
 Zoho-spezifisches Secret. Es verwendet nur das vorhandene
-`IdentityPlatform:RegistrationSecret` für die interne Kommunikation mit der
-Plattform. Zusätzlich müssen Zoho-Redirect-URL und
+`ServiceAuthentication` für die interne Kommunikation mit der Plattform; das
+Client-Secret wird als Kubernetes Secret
+`IDENTITY_PLATFORM_S2S_CLIENT_SECRET` injiziert. Das
+`IdentityPlatform:RegistrationSecret` bleibt auf Manifestregistrierung und
+Datenbank-Binding beschränkt. Zusätzlich müssen Zoho-Redirect-URL und
 `FrontendCallbackUrl` auf die echte öffentliche HTTPS-Adresse der Installation
 gesetzt werden; die localhost-Werte im Bootstrap sind nur für den lokalen
 Docker-Desktop/Kubernetes-Betrieb. Client-ID und Client-Secret bleiben dabei

@@ -33,6 +33,21 @@ spec:
               value: sales-plattform
             - name: Authentication__RequireHttpsMetadata
               value: "false"
+            - name: ServiceAuthentication__Enabled
+              value: "true"
+            - name: ServiceAuthentication__Authority
+              value: http://identity-platform-keycloak:8080/realms/identity-platform
+            - name: ServiceAuthentication__ClientId
+              value: identity-platform-s2s
+            - name: ServiceAuthentication__Audience
+              value: identity-platform-s2s
+            - name: ServiceAuthentication__Role
+              value: service-to-service
+            - name: ServiceAuthentication__ClientSecret
+              valueFrom:
+                secretKeyRef:
+                  name: identity-platform-secrets
+                  key: IDENTITY_PLATFORM_S2S_CLIENT_SECRET
             - name: IdentityPlatform__ApplicationKey
               value: sales-plattform
             - name: IdentityPlatform__PlatformApiUrl
