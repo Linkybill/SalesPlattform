@@ -21,15 +21,15 @@ public sealed record ZohoTenantConfiguration(
 
 /// <summary>
 /// Resolves Zoho settings through the shared application-settings resolver.
-/// Tenant-app secrets are decrypted only inside the SalesPlattform backend by
-/// the app-local application-settings store.
+/// Tenant-app secrets are resolved through the platform secret store and are
+/// never copied into the SalesPlattform database.
 /// </summary>
 public sealed class ZohoConfigurationService(
         ApplicationSettingsResolver resolver,
         IApplicationSettingsStore localSettings,
+        IApplicationSettingsSecretStore secrets,
         IOptions<ApplicationSettingsOptions> settingsOptions,
         IOptions<ZohoOptions> zohoOptions,
-        ZohoLegacySecretMigrationService legacySecretMigration,
         IHttpContextAccessor httpContextAccessor)
 {
     private readonly ZohoOptions options = zohoOptions.Value;
@@ -66,9 +66,10 @@ public sealed class ZohoConfigurationService(
             throw new InvalidOperationException("Zoho CRM ist für diesen Mandanten nicht als CRM-Integration ausgewählt.");
 
         var clientId = ReadRequiredString(local, "zoho.clientId");
-        var clientSecret = await legacySecretMigration.GetOrMigrateClientSecretAsync(
+        var clientSecret = await secrets.GetAsync(
             context,
-            userId,
+            "zoho.clientSecret",
+            ApplicationSettingScopes.TenantApp,
             cancellationToken)
             ?? throw new InvalidOperationException("Die Einstellung 'zoho.clientSecret' ist für diesen Mandanten nicht konfiguriert.");
         var dataCenter = ReadString(local, "zoho.datacenter") ?? "eu";
@@ -111,9 +112,10 @@ public sealed class ZohoConfigurationService(
             throw new InvalidOperationException("Zoho CRM ist für diesen Mandanten nicht als CRM-Integration ausgewählt.");
 
         var clientId = ReadRequiredString(effective, "zoho.clientId");
-        var clientSecret = await legacySecretMigration.GetOrMigrateClientSecretAsync(
+        var clientSecret = await secrets.GetAsync(
             settings,
-            userId,
+            "zoho.clientSecret",
+            ApplicationSettingScopes.TenantApp,
             cancellationToken)
             ?? throw new InvalidOperationException("Die Einstellung 'zoho.clientSecret' ist für diesen Mandanten nicht konfiguriert.");
         var dataCenter = ReadString(effective, "zoho.datacenter") ?? "eu";

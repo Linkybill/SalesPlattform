@@ -57,11 +57,6 @@ spec:
                 secretKeyRef:
                   name: identity-platform-secrets
                   key: APPLICATION_REGISTRATION_SECRET
-            - name: IdentityPlatform__ApplicationSettings__ProtectionKey
-              valueFrom:
-                secretKeyRef:
-                  name: sales-plattform-secrets
-                  key: APPLICATION_SETTINGS_PROTECTION_KEY
             - name: IdentityPlatform__Database__ApplicationKey
               value: sales-plattform
             - name: IdentityPlatform__Database__ComponentKey

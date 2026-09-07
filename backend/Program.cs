@@ -65,7 +65,6 @@ builder.Services.AddScoped<SalesSnapshotService>();
 builder.Services.AddOptions<ZohoOptions>()
     .Bind(builder.Configuration.GetSection("Zoho"));
 builder.Services.AddScoped<ZohoConfigurationService>();
-builder.Services.AddScoped<ZohoLegacySecretMigrationService>();
 builder.Services.AddScoped<ZohoSchemaCacheService>();
 builder.Services.AddScoped<ZohoConnectionStore>();
 builder.Services.AddSingleton<ZohoAccessTokenCache>();

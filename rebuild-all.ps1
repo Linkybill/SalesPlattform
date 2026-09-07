@@ -171,35 +171,6 @@ function Get-SalesDeployments {
     }
 }
 
-function Ensure-ApplicationSettingsProtectionSecret {
-    param(
-        [string]$TargetNamespace
-    )
-
-    $secretName = 'sales-plattform-secrets'
-    try {
-        $existing = Invoke-Captured $kubectlCommand get secret -n $TargetNamespace $secretName -o name
-        if (-not [string]::IsNullOrWhiteSpace($existing)) {
-            return
-        }
-    } catch {
-        # The app-local key is provisioned below on the first local rebuild.
-    }
-
-    $bytes = New-Object byte[] 48
-    $randomNumberGenerator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    try {
-        $randomNumberGenerator.GetBytes($bytes)
-    } finally {
-        $randomNumberGenerator.Dispose()
-    }
-    $protectionKey = [Convert]::ToBase64String($bytes)
-    Invoke-Checked $kubectlCommand create secret generic $secretName `
-        -n $TargetNamespace `
-        "--from-literal=APPLICATION_SETTINGS_PROTECTION_KEY=$protectionKey"
-    Write-Host "App-lokalen Application-Settings-Schlüssel in $TargetNamespace/$secretName angelegt." -ForegroundColor DarkGray
-}
-
 function Ensure-SecretEnvironment {
     param(
         [string]$TargetNamespace,
@@ -265,12 +236,6 @@ function Ensure-SecretEnvironment {
             Name = 'IdentityPlatform__Database__RegistrationSecret'
             SecretName = 'identity-platform-secrets'
             Key = 'APPLICATION_REGISTRATION_SECRET'
-            Optional = $false
-        }
-        [PSCustomObject]@{
-            Name = 'IdentityPlatform__ApplicationSettings__ProtectionKey'
-            SecretName = 'sales-plattform-secrets'
-            Key = 'APPLICATION_SETTINGS_PROTECTION_KEY'
             Optional = $false
         }
         [PSCustomObject]@{
@@ -342,10 +307,6 @@ if ($existingDeployments.Count -eq 0) {
 
 if ($deployments.Count -eq 0) {
     throw 'Keine SalesPlattform-Deployments konnten gefunden oder angelegt werden.'
-}
-
-foreach ($namespace in @($deployments | Where-Object Component -eq 'backend' | Select-Object -ExpandProperty Namespace -Unique)) {
-    Ensure-ApplicationSettingsProtectionSecret -TargetNamespace $namespace
 }
 
 Write-Host "Stoppe $($deployments.Count) SalesPlattform-Deployment(s) ..." -ForegroundColor Yellow
