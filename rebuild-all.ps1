@@ -195,7 +195,8 @@ function Ensure-SecretEnvironment {
     $obsoleteZohoNames = @(
         'Zoho__ClientId',
         'Zoho__ClientSecret',
-        'Zoho__TokenProtectionKey'
+        'Zoho__TokenProtectionKey',
+        'IdentityPlatform__ApplicationSettings__ProtectionKey'
     )
     $removeOperations = @()
     for ($index = $envItems.Count - 1; $index -ge 0; $index--) {

@@ -69,10 +69,9 @@ public sealed class SalesMailDeliveryProviderRegistry(
 }
 
 /// <summary>
-/// Reads the notification transport from the tenant app settings. The shared
-/// application-settings store encrypts tenant-app values in the tenant
-/// database; settings marked as secret in the manifest are additionally hidden
-/// by the Tenant Portal editor.
+/// Reads the notification transport from the tenant app settings. Secret
+/// tenant-app values are resolved from Vault; settings marked as secret in the
+/// manifest are additionally hidden by the Tenant Portal editor.
 /// </summary>
 public sealed class SalesMailSettingsService(
     IApplicationSettingsStore settingsStore,
