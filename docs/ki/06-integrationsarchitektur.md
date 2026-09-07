@@ -422,17 +422,14 @@ Die Konfiguration folgt dem Application-Settings-Muster der Identity Platform:
 - `zoho.datacenter`, `zoho.clientId` und `zoho.clientSecret` liegen ebenfalls
   auf `tenantApp`, werden im Tenant-Portal unter `AppSettings` nur bei Auswahl
   von `zoho` eingeblendet und provider-spezifisch gepflegt.
-- `zoho.clientSecret` ist als `secret` definiert und wird verschlüsselt in der
-  tenant-isolierten Sales-Datenbank gespeichert. Das Tenant Portal liest und
-  schreibt diese Einstellung über seine Platform-API; diese proxied intern zum
-  gemeinsamen Settings-Endpunkt des Sales-Backends. Der Secret-Wert wird nie
-  in einer API-Antwort zurückgegeben.
+- `zoho.clientSecret` ist als `secret` definiert und wird ausschließlich im
+  zentralen Vault unter dem Mandantenpfad gespeichert. Das Tenant Portal liest
+  und schreibt diese Einstellung über seine Platform-API; der Secret-Wert wird
+  nie in einer normalen Settings-Antwort zurückgegeben.
 - Der OAuth-Codeaustausch und die Erneuerung von Zoho-Access-Tokens erfolgen in
   der SalesPlattform. Der OAuth-Refresh-Token wird nach erfolgreicher
-  Autorisierung über den gemeinsamen Secret-Store verschlüsselt und
-  tenantbezogen in derselben Sales-Datenbank abgelegt. Die SalesPlattform
-  besitzt dafür einen eigenen `TokenProtectionKey`, der ausschließlich als
-  Kubernetes Secret injiziert wird.
+  Autorisierung ebenfalls über den zentralen Vault tenantbezogen abgelegt. Es
+  gibt dafür keinen app-eigenen `TokenProtectionKey`.
 - Der zentrale Credential-Dienst kennt nur Provider- und Verbindungs-Schlüssel;
   er kennt keine Zoho-URLs, Zoho-Settings und führt keine provider-spezifischen
   Tokenaufrufe aus. Das Zoho-Client-Secret wird von der SalesPlattform für den
