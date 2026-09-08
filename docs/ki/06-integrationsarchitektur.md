@@ -142,8 +142,8 @@ integration_errors
 integration_api_usage_events
 ```
 
-- `integration_connections`: Anbieter und Mandantenverbindung, niemals rohe
-  Secrets im Klartext.
+- `integration_connections`: Anbieter und Metadaten der Mandantenverbindung,
+  keine Secretwerte oder verschlüsselten Tokens; die liegen in Vault.
 - `zoho_schema_cache`: tenantisolierter Snapshot der für den verbundenen
   Zoho-Account verfügbaren Module, Felddefinitionen, Layouts,
   Pipeline-/Stufendefinitionen und Related-List-Metadaten. Dieser Snapshot wird
@@ -422,6 +422,10 @@ Die Konfiguration folgt dem Application-Settings-Muster der Identity Platform:
 - `zoho.datacenter`, `zoho.clientId` und `zoho.clientSecret` liegen ebenfalls
   auf `tenantApp`, werden im Tenant-Portal unter `AppSettings` nur bei Auswahl
   von `zoho` eingeblendet und provider-spezifisch gepflegt.
+- `zoho.datacenter` und `zoho.clientId` sind normale Settings in der über das
+  Plattform-Binding aufgelösten Tenant-Datenbank der Sales-App. Der
+  Datacenter-Standard ist `eu`; die Client-ID muss passend zur Zoho-Anwendung
+  eingetragen werden.
 - `zoho.clientSecret` ist als `secret` definiert und wird ausschließlich im
   zentralen Vault unter dem Mandantenpfad gespeichert. Das Tenant Portal liest
   und schreibt diese Einstellung über seine Platform-API; der Secret-Wert wird
@@ -430,14 +434,20 @@ Die Konfiguration folgt dem Application-Settings-Muster der Identity Platform:
   der SalesPlattform. Der OAuth-Refresh-Token wird nach erfolgreicher
   Autorisierung ebenfalls über den zentralen Vault tenantbezogen abgelegt. Es
   gibt dafür keinen app-eigenen `TokenProtectionKey`.
-- Der zentrale Credential-Dienst kennt nur Provider- und Verbindungs-Schlüssel;
-  er kennt keine Zoho-URLs, Zoho-Settings und führt keine provider-spezifischen
-  Tokenaufrufe aus. Das Zoho-Client-Secret wird von der SalesPlattform für den
-  OAuth-Aufruf transient aus dem app-eigenen Secret-Store gelesen.
+- Der zentrale Secret-Store adressiert Werte generisch nach App, Scope,
+  Mandant, Setting-Key und gegebenenfalls Benutzer. Er führt keine
+  Zoho-spezifischen Tokenaufrufe aus. Sales liest das Client-Secret transient
+  über `IApplicationSettingsSecretStore` und die S2S-geschützte Platform API.
+  Der Refresh-Token verwendet den Key `integration.zoho.default.refresh-token`
+  im Scope `tenantApp`. Nur die Platform API greift auf Vault zu.
 
-Das Frontend erhält niemals Access- oder Refresh-Tokens. Pipedrive und weitere
+Das Frontend erhält niemals Zoho-Access- oder -Refresh-Tokens. Pipedrive und weitere
 Adapter verwenden später dieselbe Trennung aus mandantenbezogener Konfiguration,
 geheimer Credential-Ablage und provider-neutralem Domainmodell.
+
+Der verbindliche App-Vertrag einschließlich Portal-Kommunikation,
+Registrierung und Rollentrennung steht in
+[`08-vault-und-service-kommunikation.md`](./08-vault-und-service-kommunikation.md).
 
 ## Rückschreiben
 

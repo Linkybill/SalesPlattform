@@ -12,6 +12,8 @@ Leitung belastbare Steuerungsinformationen geben.
 ## Aktueller technischer Stand
 
 Stand: 2026-09-02.
+Vault-/Service-Kommunikation: 2026-09-08; verbindliche Details in
+[`08-vault-und-service-kommunikation.md`](./08-vault-und-service-kommunikation.md).
 
 - React/Vite-Frontend.
 - ASP.NET-Core-Backend mit geschütztem `GET /api/worklist` sowie dem bisherigen
@@ -23,8 +25,8 @@ Stand: 2026-09-02.
   `sales-backoffice` / „Sales Backoffice“.
 - Native Windows-PowerShell- und Docker-Rebuilds über `rebuild-all.ps1` bzw.
   `rebuild-all.cmd`.
-- Zoho-OAuth, die Zoho-Token-Erneuerung in der SalesPlattform, verschlüsselte
-  tenantbezogene Refresh-Tokens, Metadatenabruf und der vollständige read-only
+- Zoho-OAuth, die Zoho-Token-Erneuerung in der SalesPlattform, tenantbezogene
+  Refresh-Tokens im zentralen Vault, Metadatenabruf und der vollständige read-only
   Initialimport der für das Pflichtenheft benötigten CRM-Daten sind umgesetzt.
   Die Identity Platform stellt dafür nur eine provider-neutrale
   Credential-Ablage bereit und enthält keine Zoho-Fachlogik.
@@ -59,7 +61,8 @@ Stand: 2026-09-02.
   Identity Platform je App/Mandant ausgewählt. Zoho ist aktuell der erste
   auswählbare Provider; seine Client-ID, sein Datacenter und sein Client-Secret
   werden nur eingeblendet, wenn `Zoho CRM` ausgewählt ist. Das Client-Secret ist
-  ein verschlüsseltes Secret-Setting.
+  ein ausschließlich in Vault gespeichertes Secret-Setting; Client-ID und
+  Datacenter sind normale Werte in der Tenant-Datenbank der App.
 - Die CRM-Besitzerzuordnung wird ebenfalls tenantbezogen in den AppSettings
   gespeichert. Die Sales-App bietet dafür unter `Einstellungen` einen
   komfortablen Editor; gespeichert wird die Zuordnung über die stabile
@@ -86,9 +89,12 @@ Stand: 2026-09-02.
   gemeinsam `crm-synchronization`.
 - Interne Platform-API-Aufrufe verwenden die technische Service-Identität aus
   `ServiceAuthentication`. Das Client-Secret wird ausschließlich als
-  Kubernetes Secret `IDENTITY_PLATFORM_S2S_CLIENT_SECRET` injiziert;
-  `IdentityPlatform:RegistrationSecret` bleibt auf Registrierung und
-  Datenbank-Binding beschränkt.
+  Kubernetes-Secret `identity-platform-secrets`, Schlüssel
+  `PORTALAPP_CLIENT_SECRET`, nach `ServiceAuthentication__ClientSecret`
+  injiziert. `IdentityPlatform:RegistrationSecret` bleibt eine zusätzliche
+  App-/Bootstrap-Identifikation; es ersetzt nicht den S2S-Token und ist kein
+  Verschlüsselungsschlüssel. Die technische Rolle `service-to-service` ist
+  keine menschliche Sales-Rolle.
 - Der lokale K3d-Rollout vom 2026-09-02 ist verifiziert: Identity-Platform-API
   und Deployment-Controller, Aufmaß-Backend/-Frontend sowie Sales-Backend/-Frontend
   sind jeweils `1/1` bereit. Die laufenden Anwendungstags sind Aufmaß `1.0.0`

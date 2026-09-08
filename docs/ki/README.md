@@ -14,6 +14,7 @@ geben, ersetzen aber nicht die Fachquelle unter `docs/pflichtenheft/`.
 | [`05-offene-punkte-und-entscheidungen.md`](./05-offene-punkte-und-entscheidungen.md) | Offene Fragen, technische Folgeentscheidungen und Implementierungsstatus |
 | [`06-integrationsarchitektur.md`](./06-integrationsarchitektur.md) | Anbieter-neutrales Domainmodell, CRM-Adapter und zentrale Jobausführung |
 | [`07-ziel-datenmodell.md`](./07-ziel-datenmodell.md) | Vollständige Tabellen-, Entitäten- und Importplanung inklusive aktuellem Implementierungsstatus |
+| [`08-vault-und-service-kommunikation.md`](./08-vault-und-service-kommunikation.md) | Aktueller Settings-/Credential-Vertrag, Vault-Zuständigkeit und Service-Authentisierung |
 
 ## Pflegeprinzip
 
