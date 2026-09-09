@@ -10,9 +10,10 @@ RUN --mount=type=secret,id=github_packages_token \
     rm -f .npmrc
 COPY frontend/ ./
 
-ARG VITE_API_BASE_URL=http://localhost:3101/apps/sales-plattform
-ARG VITE_PLATFORM_API_BASE_URL=http://localhost:3101/platform
-ARG VITE_TENANT_PORTAL_URL=http://localhost:3001
+ARG VITE_API_BASE_URL=https://127.0.0.1:3003
+# Platform and portal URLs are supplied by the deployment profile.
+ARG VITE_PLATFORM_API_BASE_URL
+ARG VITE_TENANT_PORTAL_URL
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ENV VITE_PLATFORM_API_BASE_URL=$VITE_PLATFORM_API_BASE_URL
 ENV VITE_TENANT_PORTAL_URL=$VITE_TENANT_PORTAL_URL

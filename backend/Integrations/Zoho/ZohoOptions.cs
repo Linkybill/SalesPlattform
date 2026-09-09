@@ -7,10 +7,10 @@ public sealed class ZohoOptions
     public string ApiUrl { get; set; } = "https://www.zohoapis.eu";
 
     public string RedirectUri { get; set; } =
-        "http://localhost:3101/apps/sales-plattform/api/integrations/zoho/oauth/callback";
+        "https://127.0.0.1:3003/api/integrations/zoho/oauth/callback";
 
     public string FrontendCallbackUrl { get; set; } =
-        "http://localhost:3101/apps/sales-plattform/";
+        "https://127.0.0.1:3003/import";
 
     /// <summary>
     /// Public HTTPS endpoint Zoho can call. It is intentionally empty for

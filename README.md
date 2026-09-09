@@ -1,5 +1,27 @@
 # SalesPlattform
 
+### Release- und Rebuild-Stand (08.09.2026)
+
+Lokal ist HTTPS ueber die Plattform-Traefik-Kette ausgerollt; aktuelle
+App-Images: `0.1.4`. `rebuild-all.ps1` liest den Default-Tag jetzt aus
+dem Manifest und lehnt abweichende Tags ab. Erst nach erfolgreichen Builds
+und serialisiertem K3d-Import werden laufende Instanzen ersetzt.
+
+`.github/workflows/release.yml` ist der manuelle, geschuetzte GitHub-Actions-
+Release-Weg fuer `hetzner-test`/spaeter `production`: CI, GHCR-Images mit
+passendem Zielmanifest, SSH/Helm-Deployment, Controller- und HTTPS-Pruefung.
+Er setzt eine bereitgestellte Identity Platform voraus und installiert nicht
+selbststaendig Ubuntu/K3s/Vault. Einrichtung und offene Produktionsvoraussetzungen
+stehen zentral in `IdentityPlattform/deploy/cicd/README.md`.
+Die Workflows sind noch nicht auf Hetzner ausgefuehrt; Environments, Ziel-IP,
+separate CI-SSH-Schluessel, Paket-/Registry-Zugriff und Remote-Bootstrap fehlen.
+
+Der Release-Workflow übernimmt die erzeugte `deployment-config.js` vor dem
+Image-Build nach `frontend/public/assets`. App-, Platform-API- und Tenant-Portal-
+Build-URLs stammen aus `release/values.json`. Produktion übergibt zusätzlich
+`vars.PUBLIC_APPLICATION_URL` an das gepinnte Plattform-Tooling. CI prüft den
+Root-/Runtime-Vertrag mit der installierten React-Library.
+
 Die fachliche Zielbeschreibung liegt als tokenfreundliches Markdown-
 Pflichtenheft unter
 [`docs/pflichtenheft/Vertriebstool_Spezifikation.md`](docs/pflichtenheft/Vertriebstool_Spezifikation.md).
@@ -75,14 +97,61 @@ Zuerst die Identity Platform gemäß deren Dokumentation starten und die
 Anwendung für einen Tenant aktivieren. Danach:
 
 ```powershell
-Set-Location .\frontend
-npm install
-npm run dev
+.\deploy-all.ps1 -Target local -Environment dev
 ```
 
-Das Frontend ist anschließend unter `http://localhost:3100` erreichbar. Für
-den Zugriff über den Identity-Platform-Router kann die API-Basis über
-`VITE_API_BASE_URL` gesetzt werden.
+Das Skript baut ausschließlich Sales-Frontend/-Backend, niemals Plattform oder
+Aufmass. Lokale `rebuild-all.ps1`-Aufrufe delegieren an das eigene deploy-all.
+`-Preview` ist read-only; `-ClusterNamePrefix abc` wählt die vorhandene Zuordnung.
+Es importiert die Images in den vorhandenen
+K3d-Cluster und startet die Sales-Deployments. Es benötigt die vorherige Zuordnung
+durch `deploy-all.ps1 -Target local -Environment dev` im Plattform-Repository.
+Der Root-URL-Vertrag vom 09.09.2026 lautet:
+
+| Target/Environment | Operator | Tenant-Portal | SalesPlattform |
+|---|---|---|---|
+| local/dev | `https://127.0.0.1:3000` | `https://127.0.0.1:3001` | `https://127.0.0.1:3003` |
+| ax42-1/dev | `https://176.9.57.203:3000` | `https://176.9.57.203:3001` | `https://176.9.57.203:3003` |
+
+Der Einstieg ist `/`, tenantbezogene Aufrufe verwenden `/{tenantId}/...`.
+Die Shared-Library liest den Tenant aus dem Browserpfad. `appsettings.Deployment.json`
+definiert `Frontend.Port=3003` ohne Pfadzusatz (Root `/`) für beide Targets; den Host liefert
+das Plattform-Target. Remote/dev läuft über den eigenen Aufruf
+`deploy-all.ps1 -Target ax42-1 -Environment dev` in diesem Sales-Ordner.
+Die Plattform vorher separat deployen. Der App-Origin wird über das Manifest
+registriert, nicht als zweite Liste im Plattformskript gepflegt. Der Aufruf
+prüft die installierte Fähigkeit `ApplicationIngress__Contract=registration-v1`;
+alte/fehlende Plattformen werden nicht automatisch installiert. Diese Trennung
+ist offline getestet, noch nicht ausgerollt. Details:
+`IdentityPlattform/docs/solution-deployments.md`.
+
+Rebuild, Runtime-JS, gemountetes Manifest und HTTPS-Abnahme konsumieren denselben
+geprüften Plan. Die App-Origin enthält keinen abschließenden Slash. Platform-API
+und Tenant-Portal kommen ausschließlich aus dem Profil; `VITE_*`-Prozesswerte
+überschreiben den Rebuild-Plan nicht. Das Frontend lädt
+`assets/deployment-config.js` ohne Cache vor dem App-Modul. Dieses öffentliche
+Runtime-Profil hat Vorrang vor Build-Werten; fehlende Plattform-/Portalwerte
+werden gemeldet. `VITE_API_BASE_URL` bleibt der Sales-Name für die App-Wurzel.
+
+OIDC-Callbacks werden an die Root-Origin als `/auth/callback`,
+`/auth/silent-callback` und `/auth/logout-callback` angehängt. Web-Origins enthalten
+nur die Origin. Traefik, Zertifikatsvertrauen und interne HTTPS-Verbindungen
+einschließlich Keycloak-Backchannel stellt die Identity Platform bereit.
+
+Direktes Vite verwendet Port 3003 mit `strictPort`. `frontend/.env.example`
+enthält den App-Default und die aus dem Profil zu übernehmenden Pflichtwerte.
+HTTPS und Profilversorgung für direktes Vite müssen zentral eingerichtet sein;
+`npm run dev` allein stellt diesen Vertrag noch nicht her. Kubernetes/K3s und
+Helm bleiben der unterstützte Betriebsweg.
+
+Offline-Prüfungen ohne Build oder Deployment:
+
+```powershell
+.\tests\Test-LocalHttps.ps1
+node --test tests/RootUrls.test.mjs
+node frontend/node_modules/typescript/bin/tsc -p frontend/tsconfig.app.json --noEmit --pretty false
+node frontend/node_modules/typescript/bin/tsc -p frontend/tsconfig.node.json --noEmit --pretty false
+```
 
 Das Backend benötigt .NET 10. Die Registrierung bei der Platform erfolgt über
 das Secret `IdentityPlatform__RegistrationSecret`; dieses Secret gehört nicht
@@ -102,9 +171,15 @@ werden. Das Client-Secret ist ein Secret-Setting: Es wird verschlüsselt
 gespeichert und nie an Frontend oder normale API-Antworten ausgegeben.
 
 Der OAuth-Client in Zoho muss als Server-based Application registriert sein.
-Als Redirect-URL wird exakt diese URL benötigt:
+Die Redirect-URL wird aus der App-Origin des Profils abgeleitet:
 
-    http://localhost:3101/apps/sales-plattform/api/integrations/zoho/oauth/callback
+- local/dev: `https://127.0.0.1:3003/api/integrations/zoho/oauth/callback`
+- ax42-1/dev: `https://176.9.57.203:3003/api/integrations/zoho/oauth/callback`
+
+Die externe Zoho-Client-Konfiguration muss die jeweilige Adresse erlauben.
+Der Rebuild setzt `Zoho__RedirectUri` und `Zoho__FrontendCallbackUrl` aus dem
+gleichen Plan; die Frontend-Rückkehr liegt unter `/import`. Er ändert keine
+Zoho-App-Registrierung. OAuth-Secrets und Refresh-Tokens bleiben erhalten.
 
 Der Zoho-Refresh-Token wird nicht in der SalesPlattform und nicht in ihrer
 Tenant-Datenbank gespeichert. Die SalesPlattform führt den Zoho-OAuth-
@@ -122,7 +197,7 @@ Client-Secret wird als Kubernetes Secret
 `IdentityPlatform:RegistrationSecret` bleibt auf Manifestregistrierung und
 Datenbank-Binding beschränkt. Zusätzlich müssen Zoho-Redirect-URL und
 `FrontendCallbackUrl` auf die echte öffentliche HTTPS-Adresse der Installation
-gesetzt werden; die localhost-Werte im Bootstrap sind nur für den lokalen
+gesetzt werden; die 127.0.0.1-Werte im Bootstrap sind nur für den lokalen
 Docker-Desktop/Kubernetes-Betrieb. Client-ID und Client-Secret bleiben dabei
 mandantenbezogene Application Settings.
 
@@ -157,19 +232,19 @@ importiert sie in den lokalen K3d-Cluster:
 Optional können Image-Tag, Kubernetes-Kontext und Cache gesteuert werden:
 
 ```powershell
-.\rebuild-all.ps1 -Tag 0.1.1 -KubeContext k3d-identity-platform -NoCache
+.\rebuild-all.ps1 -KubeContext k3d-identity-platform -NoCache
 ```
 
-Die Dockerfiles verwenden das Sales-Repository als Build-Kontext und binden das
-Identity-Platform-Repository als separaten Build-Kontext nur für das Frontend ein.
-Das Backend stellt `IdentityPlatform.Shared` ausschließlich als NuGet-Paket über
-GitHub Packages bereit. Der direkte Build
-entspricht dem Ablauf im Skript:
+Ein explizites `-Tag` muss zu allen `imageTag`-Werten im Manifest passen.
+Beide Dockerfiles verwenden das Sales-Repository als Build-Kontext. Shared-.NET
+und Shared-React werden als NuGet-/npm-Pakete ueber GitHub Packages bezogen.
+Direkte Builds (Tag aus dem Manifest, Import/Deploy danach weiterhin ueber das Skript):
 
 ```powershell
 Set-Location C:\git\SalesPlattform\SalesPlattform
-docker build --secret id=github_packages_token,env=GITHUB_PACKAGES_TOKEN -f backend/Dockerfile -t identity-platform/sales-plattform-backend:0.1.0 .
-docker build --build-context identity=..\..\IdentityPlattform -f frontend/Dockerfile -t identity-platform/sales-plattform-frontend:0.1.0 .
+$appImageTag = (Get-Content backend/manifest.json -Raw | ConvertFrom-Json).imageTag
+docker build --secret id=github_packages_token,env=GITHUB_PACKAGES_TOKEN -f backend/Dockerfile -t "identity-platform/sales-plattform-backend:$appImageTag" .
+docker build --secret id=github_packages_token,env=GITHUB_PACKAGES_TOKEN -f frontend/Dockerfile -t "identity-platform/sales-plattform-frontend:$appImageTag" .
 ```
 
 Das `backend/manifest.json` ist der technische Vertrag für die Registrierung,

@@ -346,8 +346,12 @@ Die Tenant-App-Einstellung `crm.changeDetectionMode` steht standardmäßig auf
 aktiv; Hooks ersetzen ihn nicht vollständig. Mit `crawl-only` kann ein
 Mandant die Hook-Verarbeitung abschalten.
 
-Der technische Job `CRM-Hooks erneuern` läuft alle fünf Minuten. Er dispatcht
-an die registrierten Hook-Update-Services. Diese erneuern ihre Subscriptions,
+Der technische Job `CRM-Hooks erneuern` (`crm-subscription-maintenance`) wird
+mit `ScheduleMode.Configurable`, Cron `0 3 * * *` und Zeitzone `Europe/Berlin`
+registriert: Standard einmal täglich um 03:00 Uhr. Tenant-Admins können
+Aktivierung, Zeitplan und Zeitzone in der zentralen Jobverwaltung ändern;
+manueller Start bleibt erlaubt. Die anderen Jobregistrierungen bleiben
+unverändert. Er dispatcht an die registrierten Hook-Update-Services. Diese erneuern ihre Subscriptions,
 verarbeiten die wartenden Callback-Ereignisse und führen danach
 die fachliche Nachverarbeitung aus. Es gibt keine separaten Jobs pro Modul,
 keinen E-Mail-Job und keinen vollständigen Crawl als Reaktion auf einen Hook.
@@ -355,6 +359,13 @@ Das Callback selbst schreibt nur ein verifiziertes Ereignis in
 `integration_webhook_events`; die Verarbeitung lädt ausschließlich die von
 Zoho gemeldeten Remote-IDs. Der Verification-Token wird nicht gespeichert,
 sondern nur als SHA-256-Hash in `integration_subscriptions`.
+
+Zoho-Subscriptions werden bei höchstens 36 Stunden Restlaufzeit erneuert,
+damit der tägliche Standardlauf sie rechtzeitig vor dem Ablauf berücksichtigt.
+Wartende Callback-Ereignisse werden ebenfalls in diesem Job verarbeitet und
+folgen daher seinem konfigurierten Zeitplan. Der separate Incremental-Crawl
+bleibt das unveränderte Sicherheitsnetz. Bei einem größeren Jobintervall muss
+die begrenzte Laufzeit der Subscriptions berücksichtigt werden.
 
 Für Sales relevante Zoho-Subscriptions sind:
 

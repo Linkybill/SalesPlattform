@@ -5,13 +5,13 @@
   "version": "0.1.1",
   "audience": "sales-plattform",
   "imageRepository": "identity-platform/sales-plattform-backend",
-  "imageTag": "0.1.3",
+  "imageTag": "0.1.4",
   "components": [
     {
       "key": "frontend",
       "type": "Frontend",
       "imageRepository": "identity-platform/sales-plattform-frontend",
-      "imageTag": "0.1.3",
+      "imageTag": "0.1.4",
       "containerPort": 80,
       "minReplicas": 1,
       "maxReplicas": 1,
@@ -21,7 +21,7 @@
       "key": "backend",
       "type": "Backend",
       "imageRepository": "identity-platform/sales-plattform-backend",
-      "imageTag": "0.1.3",
+      "imageTag": "0.1.4",
       "containerPort": 8080,
       "minReplicas": 1,
       "maxReplicas": 1,
@@ -33,7 +33,7 @@
       "key": "web",
       "name": "SalesPlattform Web-App",
       "type": "web",
-      "url": "http://localhost:3101/apps/sales-plattform/"
+      "url": "https://127.0.0.1:3003/"
     }
   ],
   "database": {
@@ -612,14 +612,14 @@
   "client": {
     "standardFlowEnabled": true,
     "redirectUris": [
-      "http://localhost:3101/apps/sales-plattform/auth/callback",
-      "http://localhost:3101/apps/sales-plattform/auth/silent-callback"
+      "https://127.0.0.1:3003/auth/callback",
+      "https://127.0.0.1:3003/auth/silent-callback"
     ],
     "postLogoutRedirectUris": [
-      "http://localhost:3101/apps/sales-plattform/auth/logout-callback"
+      "https://127.0.0.1:3003/auth/logout-callback"
     ],
     "webOrigins": [
-      "http://localhost:3101"
+      "https://127.0.0.1:3003"
     ]
   },
   "roles": [

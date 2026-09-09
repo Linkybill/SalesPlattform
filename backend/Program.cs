@@ -124,9 +124,9 @@ builder.Services
         // to point to the same Platform job after the service refactor.
         Key: "crm-subscription-maintenance",
         Name: "CRM-Hooks erneuern",
-        Description: "Führt die registrierten CRM-Hook-Services aus; jeder Provider erneuert seine Hooks und verarbeitet gemeldete Änderungen gezielt.",
-        ScheduleMode: PlatformJobScheduleMode.Fixed,
-        DefaultCronExpression: "*/5 * * * *",
+        Description: "Führt die registrierten CRM-Hook-Services standardmäßig einmal täglich aus; jeder Provider erneuert seine Hooks und verarbeitet gemeldete Änderungen gezielt. Der Zeitplan ist konfigurierbar.",
+        ScheduleMode: PlatformJobScheduleMode.Configurable,
+        DefaultCronExpression: "0 3 * * *",
         DefaultTimeZoneId: "Europe/Berlin",
         AllowManualStart: true,
         ComponentKey: "backend",

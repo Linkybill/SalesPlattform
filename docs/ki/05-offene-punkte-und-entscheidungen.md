@@ -60,6 +60,12 @@
 - Provider-Webhooks ergänzen später den festen 15-Minuten-Crawl. Sie ersetzen
   weder den Lückenschluss durch Incremental-Crawls noch den Reconciliation-
   Vollimport.
+- Der gemeinsame Job `crm-subscription-maintenance` / `CRM-Hooks erneuern`
+  hat einen konfigurierbaren Zeitplan mit Standard täglich 03:00 Uhr in
+  `Europe/Berlin`. Manueller Start bleibt möglich. Nur diese Jobregistrierung
+  wird auf den täglichen Standard umgestellt; die übrigen Jobs bleiben
+  unverändert. Hook-Erneuerung und wartende Callback-Verarbeitung erfolgen
+  weiterhin zusammen in diesem einen Job.
 - Öffnende Links zu Ursprungsdatensätzen werden vom jeweiligen CRM-Adapter
   beim Import als optionale `ExternalUrl` an der Integrationszuordnung
   gespeichert. Sales-Arbeitsliste und Reports können daraus den Absprung

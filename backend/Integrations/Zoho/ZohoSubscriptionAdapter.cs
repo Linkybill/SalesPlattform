@@ -38,13 +38,15 @@ public sealed class ZohoCrmHookUpdateService(
     private const string ProcessingStatus = "processing";
     private const string ProcessedStatus = "processed";
     private const int EventBatchSize = 100;
+    // Renew before the next daily run, with headroom for scheduling delays.
+    private static readonly TimeSpan SubscriptionRenewalLeadTime = TimeSpan.FromHours(36);
     private readonly ZohoOptions options = zohoOptions.Value;
 
     public CrmHookJobRegistration JobRegistration { get; } = new(
         "crm-zoho-hook-update",
         "Zoho-Hooks erneuern",
         "Registriert, erneuert und verarbeitet Zoho-CRM-Hooks für die relevanten Sales-Module.",
-        "*/5 * * * *");
+        "0 3 * * *");
 
     private static readonly string[] RelevantModules =
     [
@@ -172,7 +174,7 @@ public sealed class ZohoCrmHookUpdateService(
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 subscriptions.TryGetValue(module, out var subscription);
-                if (subscription?.ExpiresAt > now.AddHours(12)
+                if (subscription?.ExpiresAt > now.Add(SubscriptionRenewalLeadTime)
                     && string.Equals(subscription.Status, ActiveStatus, StringComparison.OrdinalIgnoreCase))
                 {
                     subscription.LastCheckedAt = now;

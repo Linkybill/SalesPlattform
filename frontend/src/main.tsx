@@ -1,3 +1,4 @@
+import { deploymentEnvironment } from './deploymentEnvironment'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { IdentityPlatformApplication } from '@hammer2fall/identity-platform-react'
@@ -20,7 +21,7 @@ createRoot(document.getElementById('root')!).render(
         eyebrow: 'IDENTITY PLATFORM APP',
         applicationName: 'SalesPlattform',
         applicationSubtitle: 'Startgerüst für die künftige Zoho-Anbindung',
-        tenantPortalUrl: import.meta.env.VITE_TENANT_PORTAL_URL ?? 'http://localhost:3001',
+        tenantPortalUrl: deploymentEnvironment.VITE_TENANT_PORTAL_URL,
         showUser: true,
         routes: salesRoutes,
       }}

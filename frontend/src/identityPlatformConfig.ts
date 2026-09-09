@@ -1,3 +1,4 @@
+import { deploymentEnvironment } from './deploymentEnvironment'
 import {
   resolveTenantApplicationPath,
   type IdentityPlatformApplicationOptions,
@@ -5,11 +6,8 @@ import {
 
 export const applicationKey = 'sales-plattform'
 
-const defaultPlatformOrigin = window.location.port === '3100'
-  ? `${window.location.protocol}//${window.location.hostname}:3101`
-  : window.location.origin
-const configuredRootUrl = import.meta.env.VITE_API_BASE_URL
-  ?? `${defaultPlatformOrigin}/apps/${applicationKey}`
+const configuredRootUrl = deploymentEnvironment.VITE_API_BASE_URL
+  || window.location.origin
 
 export const tenantApplicationPath = resolveTenantApplicationPath(
   applicationKey,
@@ -18,8 +16,8 @@ export const tenantApplicationPath = resolveTenantApplicationPath(
 
 export const identityPlatformConfig: IdentityPlatformApplicationOptions = {
   applicationKey,
+  applicationRootUrl: tenantApplicationPath.applicationRootUrl,
   applicationBaseUrl: tenantApplicationPath.applicationBaseUrl,
-  platformApiBaseUrl: import.meta.env.VITE_PLATFORM_API_BASE_URL
-    ?? `${defaultPlatformOrigin}/platform`,
+  platformApiBaseUrl: deploymentEnvironment.VITE_PLATFORM_API_BASE_URL,
   syncTenantToUrl: false,
 }

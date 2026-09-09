@@ -1,5 +1,11 @@
+#Requires -Version 7.2
+[CmdletBinding()]
 param(
-    [string]$Tag = '0.1.0',
+    [ValidateSet('local')][string]$Target = 'local',
+    [switch]$Preview,
+    [string]$Tag = '',
+    [string]$Environment = 'dev',
+    [string]$ClusterNamePrefix = '',
     [string]$Namespace = 'identity-platform',
     [string]$KubeContext = '',
     [string]$PlatformRepositoryRoot = '',
@@ -7,12 +13,51 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if (-not $env:IDENTITY_PLATFORM_DEPLOYMENT_PLAN) {
+    if ($KubeContext -or $PSBoundParameters.ContainsKey('Namespace')) { throw 'Standalone: Target/Environment/ClusterNamePrefix statt separatem Namespace/Kontext verwenden.' }
+    & (Join-Path $PSScriptRoot 'deploy-all.ps1') -Target $Target -Environment $Environment -ClusterNamePrefix $ClusterNamePrefix `
+        -Tag $Tag -Preview:$Preview -NoCache:$NoCache -PlatformRepositoryRoot $PlatformRepositoryRoot
+    return
+}
+$previousLocation = Get-Location
+$previousPath = $env:PATH
+$previousKubeConfig = $env:KUBECONFIG
+$lifecycleLock = $null
+try {
 Set-Location -LiteralPath $PSScriptRoot
+if ($env:PATHEXT -notmatch '(?i)(^|;)\.EXE(;|$)') { $env:PATHEXT = "$env:PATHEXT;.EXE" }
+$platformRoot = if ($PlatformRepositoryRoot) { (Resolve-Path -LiteralPath $PlatformRepositoryRoot).Path }
+    else { (Resolve-Path (Join-Path $PSScriptRoot '..\..\IdentityPlattform')).Path }
+. (Join-Path $platformRoot 'deploy\deployment-plan.ps1')
+. (Join-Path $platformRoot 'deploy\app-profile.ps1')
+if ($Preview) {
+    Resolve-DeploymentPlan @{ Root=$platformRoot; Target=$Target; Environment=$Environment;
+        ClusterNamePrefix=$ClusterNamePrefix; AppPaths=@{ 'sales-plattform'=$PSScriptRoot } } |
+        ConvertTo-Json -Depth 30
+    return
+}
+if (-not (Get-DeploymentPlan)) {
+    $lockPath = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'IdentityPlatform\Deployments\local.lock'
+    if (-not (Test-Path (Split-Path $lockPath))) { throw 'Zuerst deploy-all -Target local -Environment dev verwenden.' }
+    try { $lifecycleLock = [IO.File]::Open($lockPath, 'OpenOrCreate', 'ReadWrite', 'None') }
+    catch { throw 'Ein lokaler Lifecycle-Lauf ist bereits aktiv; kein paralleler Sales-Rebuild.' }
+}
+$plan = Resolve-AppRebuildPlan -PlatformRoot $platformRoot -AppKey 'sales-plattform' -AppRoot $PSScriptRoot -Environment $Environment -ClusterNamePrefix $ClusterNamePrefix
+if (($PSBoundParameters.ContainsKey('Namespace') -and $Namespace -ne $plan.Names.Namespace) -or
+    ($KubeContext -and $KubeContext -ne $plan.KubeContext)) { throw 'App und Plattform muessen dieselbe Installation verwenden.' }
+$Namespace = $plan.Names.Namespace
+$KubeContext = $plan.KubeContext
 
 $defaultKubeConfig = Join-Path $env:USERPROFILE '.kube\config'
+if ($env:KUBECONFIG -and $env:KUBECONFIG -ne $defaultKubeConfig) {
+    throw 'Abweichendes KUBECONFIG zuerst bewusst entfernen; keine Zielkonfiguration wird ueberschrieben.'
+}
 if (Test-Path -LiteralPath $defaultKubeConfig) {
     $env:KUBECONFIG = $defaultKubeConfig
 }
+. (Join-Path $platformRoot 'deploy\kubernetes\operator-kubectl.ps1')
+Initialize-PlatformKubectl
+Assert-AppRebuildPlatformReady -Plan $plan
 
 function Invoke-Captured {
     $Command = [string]$args[0]
@@ -83,65 +128,63 @@ if ($currentContext -notmatch '^k3d-(.+)$') {
 $k3dCluster = $Matches[1]
 Invoke-Checked $kubectlCommand cluster-info
 
-$backendImage = "identity-platform/sales-plattform-backend:$Tag"
-$frontendImage = "identity-platform/sales-plattform-frontend:$Tag"
+# The controller reconciles the registered manifest, not the CLI image tag.
+$manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'backend/manifest.json') -Raw | ConvertFrom-Json
+if ([string]::IsNullOrWhiteSpace($Tag)) { $Tag = [string]$manifest.imageTag }
+if ([string]::IsNullOrWhiteSpace($Tag) -or $manifest.imageTag -ne $Tag -or
+    @($manifest.components | Where-Object imageTag -ne $Tag).Count -gt 0) {
+    throw 'Build-Tag und alle imageTag-Werte im Manifest muessen uebereinstimmen. Manifest zuerst aktualisieren.'
+}
+$backendImage = "$($manifest.components | Where-Object key -eq 'backend' | Select-Object -ExpandProperty imageRepository):$Tag"
+$frontendImage = "$($manifest.components | Where-Object key -eq 'frontend' | Select-Object -ExpandProperty imageRepository):$Tag"
 $applicationKey = 'sales-plattform'
-$platformApiUrl = "http://identity-platform-api.$Namespace.svc.cluster.local:8080"
 $platformRoot = if ([string]::IsNullOrWhiteSpace($PlatformRepositoryRoot)) {
     (Resolve-Path (Join-Path $PSScriptRoot '..\..\IdentityPlattform')).Path
 } else {
     (Resolve-Path -LiteralPath $PlatformRepositoryRoot).Path
 }
-$platformAppSettingsPath = Join-Path $platformRoot 'src\IdentityPlatform.Api\appsettings.json'
-if (-not (Test-Path -LiteralPath $platformAppSettingsPath)) {
-    throw "Die Plattformkonfiguration wurde nicht gefunden: $platformAppSettingsPath"
-}
-$platformAppSettings = Get-Content -LiteralPath $platformAppSettingsPath -Raw | ConvertFrom-Json
-$databaseClusterName = [string]$platformAppSettings.DatabaseClusters.ClusterName
-if ([string]::IsNullOrWhiteSpace($databaseClusterName)) {
-    throw 'DatabaseClusters.ClusterName fehlt in der Plattformkonfiguration.'
-}
-$keycloakServiceHost = "$databaseClusterName-keycloak"
-$rabbitMqServiceHost = "$databaseClusterName-rabbitmq"
+. (Join-Path $platformRoot 'deploy\deployment-plan.ps1')
+. (Join-Path $platformRoot 'deploy\app-profile.ps1')
+$plan = Resolve-AppRebuildPlan -PlatformRoot $platformRoot -AppKey 'sales-plattform' -AppRoot $PSScriptRoot -Environment $Environment -ClusterNamePrefix $ClusterNamePrefix
+if (-not $PSBoundParameters.ContainsKey('Namespace')) { $Namespace = $plan.Names.Namespace }
+$platformName = $plan.Names.Platform
+if ($plan.Names.Namespace -ne $Namespace -or $plan.KubeContext -ne $currentContext) { throw 'App und Plattform muessen dieselbe Installation verwenden.' }
+$appProfile = New-AppDeploymentProfile -Plan $plan -Manifest $manifest
 $dockerContext = (Resolve-Path $PSScriptRoot).Path
 $bootstrapPath = Join-Path $PSScriptRoot 'kubernetes\bootstrap.yaml'
-$zohoRedirectUri = if ([string]::IsNullOrWhiteSpace($env:ZOHO_REDIRECT_URI)) {
-    'http://localhost:3101/apps/sales-plattform/api/integrations/zoho/oauth/callback'
-} else { $env:ZOHO_REDIRECT_URI }
-$zohoFrontendCallbackUrl = if ([string]::IsNullOrWhiteSpace($env:ZOHO_FRONTEND_CALLBACK_URL)) {
-    'http://localhost:3101/apps/sales-plattform/import'
-} else { $env:ZOHO_FRONTEND_CALLBACK_URL }
 $zohoWebhookUrl = if ([string]::IsNullOrWhiteSpace($env:ZOHO_WEBHOOK_URL)) {
     ''
 } else { $env:ZOHO_WEBHOOK_URL }
-$defaultZohoScopes = @(
-    'ZohoCRM.modules.accounts.READ'
-    'ZohoCRM.modules.leads.READ'
-    'ZohoCRM.modules.products.READ'
-    'ZohoCRM.modules.deals.READ'
-    'ZohoCRM.modules.cases.READ'
-    'ZohoCRM.modules.quotes.READ'
-    'ZohoCRM.modules.salesorders.READ'
-    'ZohoCRM.modules.invoices.READ'
-    'ZohoCRM.modules.calls.READ'
-    'ZohoCRM.modules.tasks.READ'
-    'ZohoCRM.modules.events.READ'
-    'ZohoCRM.modules.appointments.READ'
-    'ZohoCRM.modules.emails.READ'
-    'ZohoCRM.users.READ'
-    'ZohoCRM.org.READ'
-    'ZohoCRM.settings.modules.READ'
-    'ZohoCRM.settings.fields.READ'
-    'ZohoCRM.settings.layouts.READ'
-    'ZohoCRM.settings.pipeline.READ'
-    'ZohoCRM.settings.related_lists.READ'
-)
-$requiredZohoScopes = @(
-    'ZohoCRM.modules.tasks.CREATE'
-    'ZohoCRM.modules.tasks.UPDATE'
-    'ZohoCRM.notifications.CREATE'
-    'ZohoCRM.notifications.DELETE'
-)
+
+function Assert-PublicHttpsUrl {
+    param([string]$Name, [string]$Value, [switch]$RootOrigin)
+    $parsedUrl = $null
+    if (-not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$parsedUrl) -or
+        $parsedUrl.Scheme -ne 'https' -or -not $parsedUrl.IsWellFormedOriginalString() -or
+        -not [string]::IsNullOrEmpty($parsedUrl.UserInfo)) {
+        throw "$Name muss eine absolute HTTPS-URL ohne Zugangsdaten sein. Alte HTTP-Umgebungsvariablen aktualisieren oder entfernen."
+    }
+    if ($RootOrigin -and ($parsedUrl.AbsolutePath -ne '/' -or $parsedUrl.Query -or $parsedUrl.Fragment)) {
+        throw "$Name muss eine HTTPS-Origin mit App-Wurzel / ohne Query oder Fragment sein."
+    }
+}
+
+# Build, runtime configuration, manifest and HTTPS checks consume the same plan.
+$applicationBaseUrl = $plan.Urls.'sales-plattform'.Frontend.TrimEnd('/')
+$publicPlatformApiUrl = $plan.Urls.'identity-platform'.PlatformApi
+$tenantPortalUrl = $plan.Urls.'identity-platform'.TenantPortal
+$zohoRedirectUri = $plan.BackendUrls.'sales-plattform'.Zoho__RedirectUri
+$zohoFrontendCallbackUrl = $plan.BackendUrls.'sales-plattform'.Zoho__FrontendCallbackUrl
+Assert-PublicHttpsUrl -Name 'VITE_APPLICATION_BASE_URL' -Value $applicationBaseUrl -RootOrigin
+Assert-PublicHttpsUrl -Name 'VITE_PLATFORM_API_BASE_URL' -Value $publicPlatformApiUrl
+Assert-PublicHttpsUrl -Name 'VITE_TENANT_PORTAL_URL' -Value $tenantPortalUrl
+Assert-PublicHttpsUrl -Name 'ZOHO_REDIRECT_URI' -Value $zohoRedirectUri
+Assert-PublicHttpsUrl -Name 'ZOHO_FRONTEND_CALLBACK_URL' -Value $zohoFrontendCallbackUrl
+
+# OAuth defaults remain app-owned.
+$zohoSettings = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'backend\appsettings.json') -Raw | ConvertFrom-Json).Zoho
+$defaultZohoScopes = $zohoSettings.Scopes -split ','
+$requiredZohoScopes = $defaultZohoScopes | Where-Object { $_ -match '\.(CREATE|UPDATE|DELETE)$' }
 $configuredZohoScopes = if ([string]::IsNullOrWhiteSpace($env:ZOHO_SCOPES)) {
     $defaultZohoScopes
 } else {
@@ -153,7 +196,7 @@ $zohoScopes = @($configuredZohoScopes + $requiredZohoScopes |
     Select-Object -Unique) -join ','
 
 function Get-SalesDeployments {
-    $output = Invoke-Captured $kubectlCommand get deployments -A `
+    $output = Invoke-Captured $kubectlCommand get deployments -n $Namespace `
         -l "identity-platform.io/app-key=$applicationKey" `
         -o 'custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,COMPONENT:.metadata.labels.identity-platform\.io/component-key' `
         --no-headers
@@ -171,136 +214,10 @@ function Get-SalesDeployments {
     }
 }
 
-function Ensure-SecretEnvironment {
-    param(
-        [string]$TargetNamespace,
-        [string]$DeploymentName
-    )
-
-    $deploymentJson = (Invoke-Captured $kubectlCommand get deployment `
-        -n $TargetNamespace $DeploymentName -o json) | ConvertFrom-Json
-    $containers = @($deploymentJson.spec.template.spec.containers)
-    $containerIndex = -1
-    for ($index = 0; $index -lt $containers.Count; $index++) {
-        if ($containers[$index].name -eq 'app') {
-            $containerIndex = $index
-            break
-        }
-    }
-    if ($containerIndex -lt 0) {
-        throw "Kein App-Container in Deployment '$TargetNamespace/$DeploymentName' gefunden."
-    }
-
-    $envItems = @($containers[$containerIndex].env)
-    $obsoleteZohoNames = @(
-        'Zoho__ClientId',
-        'Zoho__ClientSecret',
-        'Zoho__TokenProtectionKey',
-        'IdentityPlatform__ApplicationSettings__ProtectionKey'
-    )
-    $removeOperations = @()
-    for ($index = $envItems.Count - 1; $index -ge 0; $index--) {
-        if ($obsoleteZohoNames -contains $envItems[$index].name) {
-            $removeOperations += @{
-                op = 'remove'
-                path = "/spec/template/spec/containers/$containerIndex/env/$index"
-            }
-        }
-    }
-    if ($removeOperations.Count -gt 0) {
-        $patchJson = ConvertTo-Json -InputObject @($removeOperations) -Depth 10 -Compress
-        $patchPath = [IO.Path]::GetTempFileName()
-        try {
-            [IO.File]::WriteAllText($patchPath, $patchJson)
-            Invoke-Checked $kubectlCommand -n $TargetNamespace patch `
-                deployment/$DeploymentName --type=json --patch-file $patchPath
-        } finally {
-            Remove-Item -LiteralPath $patchPath -Force -ErrorAction SilentlyContinue
-        }
-        $envItems = @($envItems | Where-Object { $obsoleteZohoNames -notcontains $_.name })
-    }
-
-    $secretEntries = @(
-        [PSCustomObject]@{
-            Name = 'IdentityPlatform__RegistrationSecret'
-            SecretName = 'identity-platform-secrets'
-            Key = 'APPLICATION_REGISTRATION_SECRET'
-            Optional = $false
-        }
-        [PSCustomObject]@{
-            Name = 'ServiceAuthentication__ClientSecret'
-            SecretName = 'identity-platform-secrets'
-            Key = 'PORTALAPP_CLIENT_SECRET'
-            Optional = $false
-        }
-        [PSCustomObject]@{
-            Name = 'IdentityPlatform__Database__RegistrationSecret'
-            SecretName = 'identity-platform-secrets'
-            Key = 'APPLICATION_REGISTRATION_SECRET'
-            Optional = $false
-        }
-        [PSCustomObject]@{
-            Name = 'RabbitMq__Username'
-            SecretName = 'identity-platform-secrets'
-            Key = 'RABBITMQ_USER'
-            Optional = $false
-        }
-        [PSCustomObject]@{
-            Name = 'RabbitMq__Password'
-            SecretName = 'identity-platform-secrets'
-            Key = 'RABBITMQ_PASSWORD'
-            Optional = $false
-        }
-        [PSCustomObject]@{
-            Name = 'Trust__JwksSecret'
-            SecretName = 'identity-platform-secrets'
-            Key = 'APPLICATION_REGISTRATION_SECRET'
-            Optional = $false
-        }
-    )
-
-    foreach ($entry in $secretEntries) {
-        $envIndex = -1
-        for ($index = 0; $index -lt $envItems.Count; $index++) {
-            if ($envItems[$index].name -eq $entry.Name) {
-                $envIndex = $index
-                break
-            }
-        }
-
-        $secretReference = @{
-            name = $entry.SecretName
-            key = $entry.Key
-            optional = $entry.Optional
-        }
-        $environmentValue = @{
-            name = $entry.Name
-            valueFrom = @{ secretKeyRef = $secretReference }
-        }
-        $operation = @{
-            op = if ($envIndex -ge 0) { 'replace' } else { 'add' }
-            path = if ($envIndex -ge 0) {
-                "/spec/template/spec/containers/$containerIndex/env/$envIndex"
-            } else {
-                "/spec/template/spec/containers/$containerIndex/env/-"
-            }
-            value = $environmentValue
-        }
-        $patchJson = ConvertTo-Json -InputObject @($operation) -Depth 10 -Compress
-        $patchPath = [IO.Path]::GetTempFileName()
-        try {
-            [IO.File]::WriteAllText($patchPath, $patchJson)
-            Invoke-Checked $kubectlCommand -n $TargetNamespace patch `
-                deployment/$DeploymentName --type=json --patch-file $patchPath
-        } finally {
-            Remove-Item -LiteralPath $patchPath -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
-
 $existingDeployments = @(Get-SalesDeployments)
 if ($existingDeployments.Count -eq 0) {
-    Invoke-Checked $kubectlCommand apply -f $bootstrapPath
+    if ($plan) { Initialize-AppBootstrap -Plan $plan -Path $bootstrapPath }
+    else { Invoke-Checked $kubectlCommand apply -f $bootstrapPath }
     $deployments = @(Get-SalesDeployments)
 } else {
     $deployments = $existingDeployments
@@ -308,11 +225,6 @@ if ($existingDeployments.Count -eq 0) {
 
 if ($deployments.Count -eq 0) {
     throw 'Keine SalesPlattform-Deployments konnten gefunden oder angelegt werden.'
-}
-
-Write-Host "Stoppe $($deployments.Count) SalesPlattform-Deployment(s) ..." -ForegroundColor Yellow
-foreach ($deployment in $deployments) {
-    Invoke-Checked $kubectlCommand -n $deployment.Namespace scale deployment/$($deployment.Name) --replicas=0
 }
 
 $commonBuildArguments = @(
@@ -335,15 +247,6 @@ try {
     Pop-Location
 }
 
-$applicationBaseUrl = if ([string]::IsNullOrWhiteSpace($env:VITE_APPLICATION_BASE_URL)) {
-    'http://localhost:3101/apps/sales-plattform'
-} else { $env:VITE_APPLICATION_BASE_URL }
-$publicPlatformApiUrl = if ([string]::IsNullOrWhiteSpace($env:VITE_PLATFORM_API_BASE_URL)) {
-    'http://localhost:3101/platform'
-} else { $env:VITE_PLATFORM_API_BASE_URL }
-$tenantPortalUrl = if ([string]::IsNullOrWhiteSpace($env:VITE_TENANT_PORTAL_URL)) {
-    'http://localhost:3001'
-} else { $env:VITE_TENANT_PORTAL_URL }
 Write-Host "Baue Frontend: $frontendImage ..." -ForegroundColor Cyan
 $frontendBuildArguments = $commonBuildArguments + @(
     '--secret', 'id=github_packages_token,env=GITHUB_PACKAGES_TOKEN',
@@ -362,42 +265,27 @@ try {
 }
 
 Write-Host "Importiere Images in K3d-Cluster '$k3dCluster' ..." -ForegroundColor Cyan
-Invoke-Checked $k3dCommand image import --cluster $k3dCluster $backendImage $frontendImage
-
-foreach ($deployment in $deployments) {
-    if ($deployment.Component -eq 'backend') {
-        Ensure-SecretEnvironment -TargetNamespace $deployment.Namespace -DeploymentName $deployment.Name
-        Invoke-Checked $kubectlCommand -n $deployment.Namespace set image deployment/$($deployment.Name) app=$backendImage
-        Invoke-Checked $kubectlCommand -n $deployment.Namespace set env deployment/$($deployment.Name) `
-            IdentityPlatform__PlatformApiUrl=$platformApiUrl `
-            IdentityPlatform__Database__PlatformApiUrl=$platformApiUrl `
-            Trust__JwksUrl="$platformApiUrl/internal/trust/jwks" `
-            Authentication__Authority="http://${keycloakServiceHost}:8080/realms/identity-platform" `
-            Authentication__BackchannelHost=$keycloakServiceHost `
-            ServiceAuthentication__Enabled=true `
-            ServiceAuthentication__Authority="http://${keycloakServiceHost}:8080/realms/identity-platform" `
-            ServiceAuthentication__ClientId=portalapp `
-            ServiceAuthentication__Audience=portalapp `
-            ServiceAuthentication__Role=service-to-service `
-            RabbitMq__Host=$rabbitMqServiceHost `
-            SalesNotifications__Mail__Host="$databaseClusterName-mailpit" `
-            SalesNotifications__Mail__Port=1025 `
-            Zoho__AccountsUrl=https://accounts.zoho.eu `
-            Zoho__ApiUrl=https://www.zohoapis.eu `
-            Zoho__RedirectUri=$zohoRedirectUri `
-            Zoho__FrontendCallbackUrl=$zohoFrontendCallbackUrl `
-            Zoho__WebhookUrl=$zohoWebhookUrl `
-            Zoho__Scopes=$zohoScopes
-    } elseif ($deployment.Component -eq 'frontend') {
-        Invoke-Checked $kubectlCommand -n $deployment.Namespace set image deployment/$($deployment.Name) app=$frontendImage
-    }
+$importLock = New-Object System.Threading.Mutex($false, "Local\IdentityPlatform.K3dImport.$k3dCluster")
+$importLockHeld = $false
+try {
+    $importLockHeld = $importLock.WaitOne([TimeSpan]::FromMinutes(10))
+    if (-not $importLockHeld) { throw 'Zeitlimit beim Warten auf einen anderen K3d-Image-Import.' }
+    Invoke-Checked $k3dCommand image import --cluster $k3dCluster $backendImage $frontendImage
+} finally {
+    if ($importLockHeld) { $importLock.ReleaseMutex() }
+    $importLock.Dispose()
 }
 
-Write-Host 'Starte alle SalesPlattform-Deployments zunächst als Bootstrap ...' -ForegroundColor Cyan
-foreach ($deployment in $deployments) {
-    Invoke-Checked $kubectlCommand -n $deployment.Namespace scale deployment/$($deployment.Name) --replicas=1
-    Invoke-Checked $kubectlCommand -n $deployment.Namespace rollout restart deployment/$($deployment.Name)
-}
+# One image/configuration patch; existing replica counts belong to controller/HPA.
+# Optional Sales-only settings join that same patch, never a second rollout.
+$appProfile.patches.backend.spec.template.spec.containers[0].env += @(
+    @{ name = 'SalesNotifications__Mail__Host'; value = "$platformName-mailpit"; valueFrom = $null },
+    @{ name = 'SalesNotifications__Mail__Port'; value = '1025'; valueFrom = $null },
+    @{ name = 'Zoho__WebhookUrl'; value = $zohoWebhookUrl; valueFrom = $null },
+    @{ name = 'Zoho__Scopes'; value = $zohoScopes; valueFrom = $null }
+)
+Install-AppDeploymentProfile -DeploymentProfile $appProfile -Namespace $Namespace -Deployments $deployments -Images @{ backend = $backendImage; frontend = $frontendImage } -Restart
+Start-AppBootstrap -Namespace $Namespace -Deployments $deployments
 
 foreach ($deployment in $deployments) {
     Invoke-Checked $kubectlCommand -n $deployment.Namespace rollout status deployment/$($deployment.Name) --timeout=180s
@@ -431,6 +319,13 @@ foreach ($deployment in $deployments | Where-Object Component -eq 'backend') {
     }
 }
 
+if ($plan) { Test-AppDeploymentHttps -Plan $plan -AppKey $applicationKey }
 Write-Host 'Rebuild aller SalesPlattform-Instanzen erfolgreich abgeschlossen.' -ForegroundColor Green
 Write-Host 'Die endgültigen Replica-Zahlen werden nach der Registrierung durch den DeploymentController übernommen.' -ForegroundColor DarkGray
-Invoke-Checked $kubectlCommand get deployments -A -l "identity-platform.io/app-key=$applicationKey" -o wide
+Invoke-Checked $kubectlCommand get deployments -n $Namespace -l "identity-platform.io/app-key=$applicationKey" -o wide
+} finally {
+    $env:PATH = $previousPath
+    $env:KUBECONFIG = $previousKubeConfig
+    Set-Location -LiteralPath $previousLocation.Path
+    if ($lifecycleLock) { $lifecycleLock.Dispose() }
+}
