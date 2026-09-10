@@ -9,6 +9,10 @@ Vor Änderungen an der SalesPlattform zuerst lesen:
 3. `docs/pflichtenheft/Vertriebstool_Spezifikation.md` – tokenfreundliche
    Markdown-Fassung der Fachspezifikation.
 
+Für Deployment, Login und die Änderungen vom 08.–10.09.2026 zusätzlich
+`docs/ki/09-deployment-und-betriebsstand.md` lesen. Ältere Zwischenberichte
+nicht mit einem aktuellen Rolloutnachweis verwechseln.
+
 Für App-Settings, Credentials und interne API-Aufrufe ist
 `docs/ki/08-vault-und-service-kommunikation.md` der verbindliche App-Kontext.
 Vault-Betrieb und S2S-Provisionierung werden zentral bei IdentityPlattform
@@ -42,7 +46,11 @@ Projektentscheidungen haben Vorrang. Bei einem Widerspruch die Abweichung in
   in Konfiguration bzw. die Datenbank, nicht als unveränderliche Werte in den Code.
 - Keine Secrets, Tokens oder produktiven CRM-Daten in das Repository aufnehmen.
 - Entwicklungs- und Build-Anleitungen bleiben auf native Windows-PowerShell- und
-  Docker-Befehle ausgerichtet.
+  Docker-Befehle ausgerichtet. Kein WSL für lokale Builds, Tests oder Skripte;
+  abgebrochene Tests nativ unter Windows erneut ausführen.
+- Das eigene `deploy-all.ps1` deployt ausschließlich Sales. Plattformänderungen
+  separat ausrollen. Keine eigenen RabbitMQ-Passwörter oder zweiten Runtime-
+  Setter: das gemeinsame Plattformprofil liefert zentrale Secret-Verweise.
 
 ## Dokumentationspflege
 

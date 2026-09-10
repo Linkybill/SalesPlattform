@@ -13,8 +13,12 @@ passendem Zielmanifest, SSH/Helm-Deployment, Controller- und HTTPS-Pruefung.
 Er setzt eine bereitgestellte Identity Platform voraus und installiert nicht
 selbststaendig Ubuntu/K3s/Vault. Einrichtung und offene Produktionsvoraussetzungen
 stehen zentral in `IdentityPlattform/deploy/cicd/README.md`.
-Die Workflows sind noch nicht auf Hetzner ausgefuehrt; Environments, Ziel-IP,
-separate CI-SSH-Schluessel, Paket-/Registry-Zugriff und Remote-Bootstrap fehlen.
+Abgleich 10.09.2026: Hetzner `ax42-1` / `176.9.57.203` ist eingerichtet;
+K3s und Plattform wurden dort bereits betrieben. Ein erfolgreicher Gesamtlauf
+dieser Release-Workflows ist nicht nachgewiesen. CI-Environments, separate
+CI-SSH-Schlüssel und Paket-/Registry-Zugriff bleiben gesondert abzunehmen.
+Aktueller Code-/Test-/Rolloutstand: [KI-Betriebsstand](docs/ki/09-deployment-und-betriebsstand.md).
+Lokale Builds/Tests ausschließlich unter Windows PowerShell, kein WSL.
 
 Der Release-Workflow übernimmt die erzeugte `deployment-config.js` vor dem
 Image-Build nach `frontend/public/assets`. App-, Platform-API- und Tenant-Portal-
@@ -192,8 +196,8 @@ Endpunkte noch Zoho-spezifische Einstellungen.
 Beim lokalen Docker-Desktop/K3d-Start benötigt das Sales-Backend deshalb kein
 Zoho-spezifisches Secret. Es verwendet nur das vorhandene
 `ServiceAuthentication` für die interne Kommunikation mit der Plattform; das
-Client-Secret wird als Kubernetes Secret
-`IDENTITY_PLATFORM_S2S_CLIENT_SECRET` injiziert. Das
+Client-Secret wird aus `<PlatformName>-secrets`, Schlüssel
+`PORTALAPP_CLIENT_SECRET`, als `ServiceAuthentication__ClientSecret` injiziert. Das
 `IdentityPlatform:RegistrationSecret` bleibt auf Manifestregistrierung und
 Datenbank-Binding beschränkt. Zusätzlich müssen Zoho-Redirect-URL und
 `FrontendCallbackUrl` auf die echte öffentliche HTTPS-Adresse der Installation
@@ -222,7 +226,7 @@ die Tabelle `hello_world_records` tenant-isoliert.
 
 ## Container-Builds
 
-Das Rebuild-Skript übernimmt den Kubernetes-Bootstrap, baut beide Images und
+Das Rebuild-Skript setzt die separat installierte Plattform voraus, baut beide Images und
 importiert sie in den lokalen K3d-Cluster:
 
 ```powershell

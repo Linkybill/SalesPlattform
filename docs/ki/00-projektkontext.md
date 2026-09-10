@@ -1,5 +1,11 @@
 # Projektkontext
 
+Dokumentationsabgleich: **10.09.2026**. Zuerst den
+[konsolidierten Deployment- und Betriebsstand](09-deployment-und-betriebsstand.md)
+lesen. Die folgenden datierten Abschnitte enthalten auch Zwischenstände:
+Code ist inzwischen committed/gepusht und unter Windows geprüft; ein
+vollständiger neuer Hetzner-Rollout ist damit nicht nachgewiesen.
+
 ## Zweck
 
 Die SalesPlattform wird ein eigenständiges Dashboard- und Steuerungstool für

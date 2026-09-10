@@ -1,6 +1,6 @@
 # Vault, App-Settings und Service-Kommunikation
 
-Stand: 08.09.2026. Diese Datei beschreibt den Ist-Stand und die verbindlichen
+Stand: 10.09.2026. Diese Datei beschreibt den Ist-Stand und die verbindlichen
 Anforderungen der SalesPlattform, keine Fehler- oder Datenhistorie.
 
 Die Plattform ist für Vault-Betrieb und technische Client-Provisionierung
@@ -49,7 +49,7 @@ und keinen daraus abgeleiteten Schlüssel aus `RegistrationSecret`.
 ```text
 Tenant-Portal-Browser
   -> eigene Portal-/Platform-API
-     -> Router Edge -> Application Router -> Sales-App-Settings-Backend
+     -> Application Router -> Sales-App-Settings-Backend
         -> normales Setting: Tenant-Datenbank
         -> Secret: S2S -> Platform API -> Vault
 
@@ -99,6 +99,14 @@ Deployment-Konfiguration, nicht zu den Zoho-App-Settings. Bei einer Rotation
 müssen Plattform-Provisionierung und alle konsumierenden Workloads denselben
 Wert bekommen und neu gestartet werden. Paket-Credentials wie
 `GITHUB_PACKAGES_TOKEN` sind hiervon vollständig unabhängig.
+
+Seit der Deployment-Bereinigung kommen diese Backend-Werte ausschließlich aus
+dem gemeinsamen Runtime-Profil (`deploy/app-runtime.mjs` in der Plattform).
+Die App erzeugt oder rotiert keine RabbitMQ-Zugangsdaten und betreibt keinen
+eigenen Broker. Kubernetes-Secret-Verweise bleiben `valueFrom.secretKeyRef`;
+keine zusätzlichen literalen `value`-Setter für dieselbe Variable. Frontends
+erhalten keine Backend-/RabbitMQ-/Registrierungs-Credentials. App-eigene
+Zoho- und fachliche Mail-Settings bleiben davon getrennt.
 
 ## Registrierung und Betriebspflichten
 
