@@ -1,8 +1,9 @@
 #Requires -Version 7.2
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('local', 'ax42-1')][string]$Target,
-    [string]$Environment = 'dev', [string]$ClusterNamePrefix = '', [string]$Tag = '',
+    [string]$Target = '',
+    [string]$PlatformTarget = '',
+    [string]$Environment = 'dev', [string]$Installation = '', [string]$ClusterNamePrefix = '', [string]$Tag = '',
     [switch]$Preview, [switch]$NoCache, [string]$SshConfig = '', [string]$PlatformRepositoryRoot = ''
 )
 $ErrorActionPreference = 'Stop'

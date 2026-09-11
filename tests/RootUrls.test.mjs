@@ -59,7 +59,7 @@ for (const host of ['127.0.0.1', '176.9.57.203']) {
       for (const rootUrl of [undefined, '', origin, origin + '/']) {
         const environment = {
           VITE_API_BASE_URL: rootUrl,
-          VITE_PLATFORM_API_BASE_URL: 'https://' + host + ':9443/profile-api',
+          VITE_PLATFORM_API_BASE_URL: 'https://' + host + ':3000',
           VITE_TENANT_PORTAL_URL: 'https://' + host + ':3001',
         }
         const { tenantApplicationPath: path, identityPlatformConfig: config } = configuration(environment)
@@ -83,13 +83,13 @@ for (const host of ['127.0.0.1', '176.9.57.203']) {
 test('runtime profile wins over build URLs; incomplete runtime must not fall back', () => {
   const runtime = {
     VITE_API_BASE_URL: 'https://176.9.57.203:3003',
-    VITE_PLATFORM_API_BASE_URL: 'https://176.9.57.203:9443/profile-api',
+    VITE_PLATFORM_API_BASE_URL: 'https://176.9.57.203:3000',
     VITE_TENANT_PORTAL_URL: 'https://176.9.57.203:3001',
   }
   const buildEnvironment = {
     ...runtime,
     VITE_API_BASE_URL: 'https://127.0.0.1:3003',
-    VITE_PLATFORM_API_BASE_URL: 'https://127.0.0.1:9443/profile-api',
+    VITE_PLATFORM_API_BASE_URL: 'https://127.0.0.1:3000',
   }
   assert.equal(evaluate('deploymentEnvironment.ts', {
     __IDENTITY_PLATFORM_CONFIG__: runtime, buildEnvironment,

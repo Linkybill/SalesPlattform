@@ -10,7 +10,8 @@ gemeinsame Fehlerkorrekturen und Betriebsgrenzen stehen im
 - Sales-Commit `691e9c2` wurde auf `main` gepusht.
 - Gemeinsame Plattformkorrekturen: `bd533b7` auf `main` gepusht.
 - React-Library `0.1.50` ist veröffentlicht und in Sales-Paketmanifest und
-  Lockfile übernommen. NuGet-Versionen werden unabhängig davon verwaltet.
+  Lockfile übernommen. Das Backend verwendet `IdentityPlatform.Shared` `0.1.59`
+  mit dem einheitlichen `/api`-Vertrag; NuGet-Versionen werden unabhängig verwaltet.
 - Native Windows-Prüfungen: Backend-Release-Build ohne Warnungen/Fehler,
   Frontend-Lint/-Build, drei Root-/OIDC-Vertragstests und HTTPS-Vertragstests
   bestanden. Ein eigenes Sales-.NET-Testprojekt existiert nicht.
@@ -22,9 +23,12 @@ gemeinsame Fehlerkorrekturen und Betriebsgrenzen stehen im
 Lokale Befehle ausschließlich in Windows PowerShell, kein WSL. Im Sales-Ordner:
 
 ```powershell
-.\deploy-all.ps1 -Target local -Environment dev
+.\deploy-all.ps1 -Target local -PlatformTarget local -Environment dev
 # Alternativer Zielrechner, kein zusätzlicher Plattform-Rollout:
-.\deploy-all.ps1 -Target ax42-1 -Environment dev
+.\deploy-all.ps1 -Target ax42-1 -PlatformTarget ax42-1 -Environment dev
+
+# Separater Runtime-Cluster, zugehörige Plattform bleibt AX42-1
+.\deploy-all.ps1 -Target ax42-2 -PlatformTarget ax42-1 -Environment dev
 ```
 
 `appsettings.Deployment.json` ist die Quelle der Sales-URLs:

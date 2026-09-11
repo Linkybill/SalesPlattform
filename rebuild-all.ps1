@@ -15,7 +15,7 @@ param(
 $ErrorActionPreference = 'Stop'
 if (-not $env:IDENTITY_PLATFORM_DEPLOYMENT_PLAN) {
     if ($KubeContext -or $PSBoundParameters.ContainsKey('Namespace')) { throw 'Standalone: Target/Environment/ClusterNamePrefix statt separatem Namespace/Kontext verwenden.' }
-    & (Join-Path $PSScriptRoot 'deploy-all.ps1') -Target $Target -Environment $Environment -ClusterNamePrefix $ClusterNamePrefix `
+    & (Join-Path $PSScriptRoot 'deploy-all.ps1') -Target $Target -PlatformTarget $Target -Environment $Environment -ClusterNamePrefix $ClusterNamePrefix `
         -Tag $Tag -Preview:$Preview -NoCache:$NoCache -PlatformRepositoryRoot $PlatformRepositoryRoot
     return
 }

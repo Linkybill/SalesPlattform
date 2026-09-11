@@ -20,7 +20,7 @@ public sealed class PlatformJobLivenessClient(
         CancellationToken cancellationToken = default)
     {
         var options = databaseOptions.Value;
-        var path = $"{options.PlatformApiUrl.TrimEnd('/')}/internal/job-runs/{runId:D}/status"
+        var path = $"{options.PlatformApiUrl.TrimEnd('/')}/api/job-runs/{runId:D}/status"
             + $"?applicationKey={Uri.EscapeDataString(options.ApplicationKey)}";
         using var request = new HttpRequestMessage(HttpMethod.Get, path);
 

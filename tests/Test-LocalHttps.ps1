@@ -45,7 +45,7 @@ foreach ($publicHost in @('127.0.0.1', '176.9.57.203')) {
     $plan = @{ Urls = @{
         'sales-plattform' = @{ Frontend = "$origin/" }
         'identity-platform' = @{
-            PlatformApi = "https://${publicHost}:9443/profile-api"
+            PlatformApi = "https://${publicHost}:3000"
             TenantPortal = "https://${publicHost}:3001"
         }
     }; BackendUrls = @{ 'sales-plattform' = @{
@@ -63,7 +63,7 @@ foreach ($publicHost in @('127.0.0.1', '176.9.57.203')) {
 }
 
 $deployment = Get-Content -LiteralPath (Join-Path $root 'appsettings.Deployment.json') -Raw | ConvertFrom-Json
-foreach ($target in @('local', 'ax42-1')) {
+foreach ($target in @('local', 'ax42-1', 'ax42-2')) {
     $frontend = $deployment.Targets.$target.Environments.dev.Urls.Frontend
     if ($frontend.Port -ne 3003 -or $frontend.Path -or $frontend.BaseUrlRef) {
         throw "Falsche App-Root-/Port-Zuordnung fuer $target/dev."

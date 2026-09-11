@@ -61,18 +61,18 @@ Sales-Zoho-Adapter
 Der Browser kommuniziert weder direkt mit Vault noch mit einem fremden
 App-Backend. Sales verwendet `IApplicationSettingsSecretStore` aus
 `IdentityPlatform.Shared`, keine eigene Vault-Verbindung. Der gemeinsame
-Adapter transportiert GET/PUT/DELETE zum internen Secret-Endpunkt der Platform
+Adapter transportiert GET/PUT/DELETE zum token-geschützten `/api`-Endpunkt der Platform
 API mit App-Key, Tenant, Setting und Scope. Nur die Platform API besitzt die
 Vault-Kubernetes-Auth und verwendet ihren `IPlatformSecretStore` direkt.
 
-Der dedizierte interne Secret-GET darf den Wert an das berechtigte Backend
+Der dedizierte Service-Secret-GET darf den Wert an das berechtigte Backend
 liefern. Normale Settings-Antworten bleiben maskiert; Zoho-Tokens werden nie
 an das Frontend geliefert. Secret-Bodies, Tokenantworten und Credentials
 dürfen nicht protokolliert oder ins Repository aufgenommen werden.
 
 ## Service-Identität und fachliche Rollen
 
-Interne HTTP-Aufrufe verwenden Keycloak-Client-Credentials aus
+Service-to-Service-HTTP-Aufrufe verwenden Keycloak-Client-Credentials aus
 `ServiceAuthentication`. Im aktuellen Plattformvertrag sind Client-ID und
 Audience `portalapp`, die technische Realm-Rolle heißt `service-to-service`.
 Die gemeinsame Service-Identität ist noch keine individuelle Identität je
