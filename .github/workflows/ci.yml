@@ -41,7 +41,11 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Require private package access
-        run: test -n "$GITHUB_PACKAGES_TOKEN"
+        run: |
+          if [[ -z "$GITHUB_PACKAGES_TOKEN" ]]; then
+            echo "::error::Repository secret PACKAGES_TOKEN fehlt. Ein Token mit read:packages und Zugriff auf die gemeinsamen Pakete wird benötigt."
+            exit 1
+          fi
       - run: dotnet restore backend/SalesPlattform.Backend.csproj --configfile backend/NuGet.Config
       - run: dotnet build backend/SalesPlattform.Backend.csproj -c Release --no-restore --warnaserror
       # No .NET test project exists yet. Do not report building the API as a test suite.

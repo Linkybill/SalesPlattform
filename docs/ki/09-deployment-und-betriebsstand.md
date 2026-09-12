@@ -1,5 +1,20 @@
 # Sales: Deployment- und Betriebsstand vom 10.09.2026
 
+## Ergänzung 12.09.2026 – Remote-Integration
+
+`IdentityPlatform.Shared` wurde nach erfolgreicher Veröffentlichung auf
+`0.1.60` aktualisiert; React bleibt `0.1.50`. Der obsolete HTTP-/Container-DNS-
+Default für die Platform API wurde entfernt. Der gemeinsame Deploymentplan
+liefert die öffentliche HTTPS-Origin; API-Aufrufe nutzen `/api`.
+`dev/main` installiert Sales weiterhin auf AX42-1 bei derselben Plattform.
+WireGuard-/Remote-Bootstrap wird ausschließlich vom gemeinsamen Plattform-
+Tooling geliefert, nicht als zweite Sales-Implementierung. Grenzen:
+[Server-VPN](../../../../IdentityPlattform/docs/server-vpn.md).
+
+Die ersten nativen Consumer-Builds wurden beim Registry-Restore mit HTTP 401
+blockiert (kein Compilerfehlernachweis). `GITHUB_PACKAGES_TOKEN` lokal und
+`PACKAGES_TOKEN` in CI benötigen gültigen Paketzugriff. Kein Live-Rollout.
+
 Dieser Abgleich konsolidiert die Arbeit vom 08.–10.09.2026. Architektur,
 gemeinsame Fehlerkorrekturen und Betriebsgrenzen stehen im
 [Plattform-Gesamtstand](../../../../IdentityPlattform/docs/stand-2026-09-10.md).
