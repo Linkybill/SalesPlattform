@@ -1,5 +1,21 @@
 # Sales: Deployment- und Betriebsstand vom 10.09.2026
 
+## Paketupdate 14.09.2026 – Shared 0.1.71 / geordneter Instanz-Auslauf
+
+Das Backend referenziert das veröffentlichte **IdentityPlatform.Shared 0.1.71**
+(Plattform `623c901`, erfolgreicher Publish `34899664801`). Der vorhandene
+`AddIdentityPlatform()`-Aufruf bindet den neuen Drain-/Aktivitätsvertrag ein;
+zentrale CRM-Jobs werden dabei bis zu ihrem tatsächlichen Abschluss erfasst.
+React bleibt auf **0.1.55**, Manifest und Registry-Lockfile unverändert.
+
+Nativ unter Windows: frischer Registry-Restore mit bestätigter GitHub-Packages-
+Herkunft und Backend-Releasebuild ohne Warnungen/Fehler bestanden. Sales hat
+kein eigenes .NET-Testprojekt. Eine veraltete separate NuGet-Credentialvariable
+wurde bei der Prüfung durch den gültigen vorhandenen `GITHUB_PACKAGES_TOKEN`
+nur im Prüfprozess übersteuert; keine Secrets gespeichert/geändert.
+Kein Serverrollout. Plattform, Runtime-Agent und App separat aktualisieren.
+Die folgenden Abschnitte dokumentieren ältere Stände.
+
 ## Veröffentlichungsstand 14.09.2026 – reguläre Logging-Pakete
 
 Integration `b3a904e` auf `main` gepusht. Nach erfolgreichem Plattform-Publish
