@@ -1,5 +1,14 @@
 # Offene Punkte, Entscheidungen und Status
 
+## Correlation-ID für technische Diagnose (14.09.2026)
+
+Browser-Requests erhalten zentral im Shared-Frontendpaket einen W3C-Tracekontext.
+Report-/Arbeitslistenaktionen binden zusätzliche Meldungen an denselben Vorgang
+über `createPlatformLogOperation`; keine zweite Logging-Infrastruktur und keine
+CRM-Daten in Logpayloads. Die .NET-Library trägt denselben Trace durch Backend-
+und Serviceaufrufe. npm 0.1.54 / NuGet 0.1.69 sind Quellversionen, Veröffentlichung
+und reguläre Paketumstellung bleiben separate Schritte.
+
 ## Im Pflichtenheft ausdrücklich offen
 
 1. **Mailbox vs. Gespräch:** Der Mapper berücksichtigt vorhandene

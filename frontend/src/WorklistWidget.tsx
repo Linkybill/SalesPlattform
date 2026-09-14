@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useApplicationContext } from '@hammer2fall/identity-platform-react'
+import { useApplicationContext, usePlatformLog, createPlatformLogOperation } from '@hammer2fall/identity-platform-react'
 
 export type WorklistItem = {
   id: string
@@ -37,6 +37,7 @@ type WorklistRule = {
 }
 
 export function WorklistWidget({ compact = false }: { compact?: boolean }) {
+  const log = usePlatformLog()
   const { activeTenantId, authorizedFetch, user } = useApplicationContext()
   const [response, setResponse] = useState<WorklistResponse | null>(null)
   const [selectedRule, setSelectedRule] = useState<string | null>(null)
@@ -47,17 +48,19 @@ export function WorklistWidget({ compact = false }: { compact?: boolean }) {
     if (!user || !activeTenantId) return
     setLoading(true)
     setError(null)
+    const operation = createPlatformLogOperation(log, authorizedFetch)
     try {
-      const apiResponse = await authorizedFetch(`/api/worklist?refresh=${refresh ? 'true' : 'false'}`)
+      const apiResponse = await operation.fetch(`/api/worklist?refresh=${refresh ? 'true' : 'false'}`)
       if (!apiResponse.ok) throw new Error(`Arbeitsliste antwortete mit HTTP ${apiResponse.status}.`)
       setResponse(await apiResponse.json() as WorklistResponse)
     } catch (reason) {
+      operation.log('Error', 'WorklistWidget operation failed', { category: 'Sales.WorklistWidget', tenantId: activeTenantId })
       setResponse(null)
       setError(reason instanceof Error ? reason.message : 'Die Arbeitsliste ist nicht erreichbar.')
     } finally {
       setLoading(false)
     }
-  }, [activeTenantId, authorizedFetch, user])
+  }, [activeTenantId, authorizedFetch, user, log])
 
   useEffect(() => {
     void loadWorklist(true)
@@ -72,8 +75,9 @@ export function WorklistWidget({ compact = false }: { compact?: boolean }) {
 
   const snoozeItem = async (item: WorklistItem) => {
     setError(null)
+    const operation = createPlatformLogOperation(log, authorizedFetch)
     try {
-      const apiResponse = await authorizedFetch(`/api/worklist/${item.id}/snooze`, {
+      const apiResponse = await operation.fetch(`/api/worklist/${item.id}/snooze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tomorrow: true }),
@@ -82,6 +86,7 @@ export function WorklistWidget({ compact = false }: { compact?: boolean }) {
       const updated = await apiResponse.json() as WorklistItem
       setResponse(current => current ? { ...current, items: current.items.filter(candidate => candidate.id !== updated.id) } : current)
     } catch (reason) {
+      operation.log('Error', 'WorklistWidget operation failed', { category: 'Sales.WorklistWidget', tenantId: activeTenantId })
       setError(reason instanceof Error ? reason.message : `Der Vorgang „${item.title}“ konnte nicht aktualisiert werden.`)
     }
   }

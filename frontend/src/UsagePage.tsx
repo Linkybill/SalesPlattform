@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useApplicationContext } from '@hammer2fall/identity-platform-react'
+import { useApplicationContext, usePlatformLog } from '@hammer2fall/identity-platform-react'
 
 type UsageBreakdown = {
   category: string
@@ -124,6 +124,7 @@ async function readJson<T>(response: Response): Promise<T | null> {
 }
 
 export function UsagePage() {
+  const log = usePlatformLog()
   const { activeTenant, activeTenantId, authorizedFetch, error: platformError, user } = useApplicationContext()
   const [hours, setHours] = useState(24)
   const [usage, setUsage] = useState<UsageReport | null>(null)
@@ -149,11 +150,12 @@ export function UsagePage() {
       setCallsByScope({})
       setExpandedScope(null)
     } catch (reason) {
+      log('Error', 'UsagePage operation failed', { category: 'Sales.UsagePage', tenantId: activeTenantId })
       setError(reason instanceof Error ? reason.message : 'Die Usage-Daten sind nicht erreichbar.')
     } finally {
       setLoading(false)
     }
-  }, [activeTenantId, authorizedFetch, canManageUsage, hours, user])
+  }, [activeTenantId, authorizedFetch, canManageUsage, hours, user, log])
 
   useEffect(() => { void load() }, [load])
 
@@ -181,6 +183,7 @@ export function UsagePage() {
         [key]: append && previous ? { ...payload, calls: [...previous.calls, ...payload.calls] } : payload,
       }))
     } catch (reason) {
+      log('Error', 'UsagePage operation failed', { category: 'Sales.UsagePage', tenantId: activeTenantId })
       setError(reason instanceof Error ? reason.message : 'Die API-Calls sind nicht erreichbar.')
     } finally {
       setCallsLoading(null)

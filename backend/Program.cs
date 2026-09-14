@@ -328,8 +328,9 @@ app.MapGet("/api/hello-world", async (
             }
         });
     }
-    catch (InvalidOperationException)
+    catch (InvalidOperationException exception)
     {
+        app.Logger.LogError(exception, "Sales database request unavailable; HTTP {StatusCode}", 503);
         return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
     }
 }).RequireAuthorization();

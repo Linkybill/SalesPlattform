@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   useApplicationContext,
+  usePlatformLog,
 } from '@hammer2fall/identity-platform-react'
 
 type CurrentUser = {
@@ -35,6 +36,7 @@ type OwnerMappingResponse = {
 type ApiError = { message?: string; detail?: string; title?: string }
 
 export function OwnerMappingPage() {
+  const log = usePlatformLog()
   const {
     activeTenant,
     activeTenantId,
@@ -89,11 +91,12 @@ export function OwnerMappingPage() {
       setResponse(mappingPayload)
       selectCurrentUser(mappingPayload)
     } catch (reason) {
+      log('Error', 'OwnerMappingPage operation failed', { category: 'Sales.OwnerMappingPage', tenantId: activeTenantId })
       setError(reason instanceof Error ? reason.message : 'Benutzerzuordnungen konnten nicht geladen werden.')
     } finally {
       setLoading(false)
     }
-  }, [activeTenantId, authorizedFetch, canManage, user])
+  }, [activeTenantId, authorizedFetch, canManage, user, log])
 
   useEffect(() => {
     void load()
@@ -120,6 +123,7 @@ export function OwnerMappingPage() {
       setResponse(payload)
       setMessage(`Zuordnung für ${platformUserEmail} wurde gespeichert.`)
     } catch (reason) {
+      log('Error', 'OwnerMappingPage operation failed', { category: 'Sales.OwnerMappingPage', tenantId: activeTenantId })
       setError(reason instanceof Error ? reason.message : 'Die Zuordnung konnte nicht gespeichert werden.')
     } finally {
       setSaving(false)
@@ -144,6 +148,7 @@ export function OwnerMappingPage() {
       }
       setMessage(`Zuordnung für ${mapping.platformUserEmail} wurde entfernt.`)
     } catch (reason) {
+      log('Error', 'OwnerMappingPage operation failed', { category: 'Sales.OwnerMappingPage', tenantId: activeTenantId })
       setError(reason instanceof Error ? reason.message : 'Die Zuordnung konnte nicht entfernt werden.')
     }
   }

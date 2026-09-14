@@ -3,6 +3,26 @@
 Stand: 10.09.2026. Diese Datei beschreibt den Ist-Stand und die verbindlichen
 Anforderungen der SalesPlattform, keine Fehler- oder Datenhistorie.
 
+## Ergänzung: zentrale Diagnoseintegration (14.09.2026)
+
+Sales verwendet das zentrale Logging über `AddIdentityPlatform` und die
+`IdentityPlatformApplication`-Shell. Kein eigener Logserver/Collector. Technische
+Fehler, abgefangene Datenbankausfälle, Job-Logs sowie fehlgeschlagene HTTP-Aufrufe
+werden mit App-/Tenant-/Trace-Kontext exportiert. CRM-Datensätze, Mailinhalte,
+Settingswerte, Headers und Tokenantworten gehören ausdrücklich nicht ins Log.
+Die neuen Paketstände werden vor der regulären Konsumentenumstellung veröffentlicht;
+lokale Paketprüfungen sind kein Nachweis einer Veröffentlichung oder eines Rollouts.
+
+Lokale Abnahme: Backend gegen das gepackte NuGet-Paket aus isoliertem Testfeed
+erfolgreich gebaut, Frontend gegen das gepackte npm-Archiv erfolgreich gebaut.
+Reports, Arbeitslisten, CRM-Integration, Benutzerzuordnung und Usage melden auch
+abgefangene UI-Fehler mit technischer Kategorie; keine Fehlermeldungen aus
+Responsebodys weiterreichen. Veröffentlichung und feste Referenz-/Lockfile-
+Umstellung stehen noch aus. Bis dahin benötigt die neue `usePlatformLog`-
+Integration die temporär geprüften Pakete; kein gewöhnlicher Clean-Build/Deploy
+mit den bisherigen Paketständen. Verbindliche Releasefolge und unabhängige
+Versionsnummern: `IdentityPlattform/docs/central-logging.md`.
+
 Die Plattform ist für Vault-Betrieb und technische Client-Provisionierung
 zuständig. Kanonische Referenzen im benachbarten Plattform-Repository:
 

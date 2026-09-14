@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import * as L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { useApplicationContext } from '@hammer2fall/identity-platform-react'
+import { useApplicationContext, usePlatformLog, createPlatformLogOperation } from '@hammer2fall/identity-platform-react'
 import { DashboardContentEditor, type LayoutNode, type ReportDefinition } from './DashboardContentEditor'
 
 type Breakdown = { label: string; count: number; amount: number | null }
@@ -25,6 +25,7 @@ const percent = (value: number | null | undefined) => `${(value ?? 0).toFixed(1)
 const date = (value: string | null) => value ? new Date(value).toLocaleDateString('de-DE') : '–'
 
 export function ReportsPage({ forceEdit = false }: { forceEdit?: boolean }) {
+  const log = usePlatformLog()
   const { activeTenantId, authorizedFetch, error: platformError, user } = useApplicationContext()
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [timeframe, setTimeframe] = useState('year')
@@ -39,18 +40,20 @@ export function ReportsPage({ forceEdit = false }: { forceEdit?: boolean }) {
     if (!user || !activeTenantId) return
     setLoading(true)
     setError(null)
+    const operation = createPlatformLogOperation(log, authorizedFetch)
     try {
-      const response = await authorizedFetch(`/api/reports/dashboard?timeframe=${timeframe}`)
+      const response = await operation.fetch(`/api/reports/dashboard?timeframe=${timeframe}`)
       if (!response.ok) throw new Error(`Reports antworteten mit HTTP ${response.status}.`)
       const payload = await response.json() as Dashboard
       setDashboard(payload)
       setDraftNodes(payload.layout.nodes)
     } catch (reason) {
+      operation.log('Error', 'ReportsPage operation failed', { category: 'Sales.ReportsPage', tenantId: activeTenantId })
       setError(reason instanceof Error ? reason.message : 'Die Reports sind nicht erreichbar.')
     } finally {
       setLoading(false)
     }
-  }, [activeTenantId, authorizedFetch, timeframe, user])
+  }, [activeTenantId, authorizedFetch, timeframe, user, log])
 
   useEffect(() => { void load() }, [load])
 
@@ -59,8 +62,9 @@ export function ReportsPage({ forceEdit = false }: { forceEdit?: boolean }) {
     setSavingLayout(true)
     setError(null)
     setLayoutMessage(null)
+    const operation = createPlatformLogOperation(log, authorizedFetch)
     try {
-      const response = await authorizedFetch('/api/reports/layout', {
+      const response = await operation.fetch('/api/reports/layout', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ nodes: draftNodes }),
@@ -77,6 +81,7 @@ export function ReportsPage({ forceEdit = false }: { forceEdit?: boolean }) {
       setEditing(false)
       setLayoutMessage('Die Reportseite wurde für diesen Mandanten gespeichert.')
     } catch (reason) {
+      operation.log('Error', 'ReportsPage operation failed', { category: 'Sales.ReportsPage', tenantId: activeTenantId })
       setError(reason instanceof Error ? reason.message : 'Die Reportseite konnte nicht gespeichert werden.')
     } finally {
       setSavingLayout(false)

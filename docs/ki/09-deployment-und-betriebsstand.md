@@ -1,5 +1,45 @@
 # Sales: Deployment- und Betriebsstand vom 10.09.2026
 
+## Änderung 14.09.2026 – gemeinsamer App-Rollout
+
+Sales, Aufmass und HelloWorld nutzen jetzt denselben zentralen Builder und
+Rolloutablauf. `deploy-all.ps1` und `rebuild-all.ps1` sind nur noch Delegationen.
+`appsettings.Build.json` beschreibt Dockerfile-/Kontext-/Manifestpfade;
+`deploy/local-environment.ps1` erhält ausschließlich die bisherigen lokalen
+Sales-Mailpit-/Zoho-Einstellungen. App-Startup registriert über Shared,
+kein Warten auf Registrierungslogs oder öffentlichen HTTP-200 im Deployment.
+Native Windows-Tests mit simulierten Containerwerkzeugen sowie Sales-HTTPS-/
+Delegationsverträge bestanden. Kein Image-/Serverrollout, kein Paketupdate.
+Details: [Zentrales Tooling](../../../../IdentityPlattform/docs/app-deployment-tooling.md).
+
+## Korrektur 13.09.2026 – Installation ohne öffentlichen Web-Smoke
+
+Lokaler Rebuild und gemeinsames Remote-/CI-Tooling hängen keine automatische
+Startseiten-/Asset-Abnahme mehr an den Container-Rollout an. Startup-Registrierung
+über Shared bleibt im Startup, Kubernetes-Bereitschaft wird geprüft; Browserzugriff, Login
+und Routing sind separat abzunehmen. Der HTTPS-Vertragstest schützt diese
+Trennung. Skriptänderungen lokal, noch nicht nativ getestet/committed/gepusht;
+keine Library-/Imageänderung. Ältere Hinweise auf automatische HTTPS-Abnahme
+im Rebuild beschreiben den vorherigen Ablauf.
+
+## Ergänzung 13.09.2026 – Shared 0.1.62
+
+Das Backend wurde nach erfolgreicher Paketveröffentlichung auf
+`IdentityPlatform.Shared` **0.1.62** aktualisiert (Library-Commit `bbe4bd5`,
+Publish-Lauf `34755308925`). Registry-Restore und tatsächliche Auflösung dieser
+Version sind geprüft. Der bestehende Aufruf `builder.AddIdentityPlatform()`
+meldet mit injizierter Runtime-Konfiguration Manifest und Standort beim App-Start;
+das Deployment übernimmt keine separate Registrierung. Vor dem App-Rollout die
+Plattform für diesen Startup-Vertrag aktualisieren. Keine Secret-/URL-Änderungen.
+
+Nativ unter Windows bestanden: Release-Build ohne Warnungen/Fehler, drei
+Root-/OIDC-Tests und HTTPS-/Lifecycle-Verträge. Auch der linux/amd64-Backend-
+Imagebuild über Windows Docker Desktop mit dem Registry-Paket bestand.
+Ein eigenes .NET-Testprojekt
+existiert weiterhin nicht; der Build wird nicht als API-Test ausgegeben.
+React unverändert. Consumer-Update lokal, noch nicht committed/gepusht und
+nicht auf einem Server ausgerollt; ältere Paketstände unten sind historisch.
+
 ## Ergänzung 12.09.2026 – Remote-Integration
 
 `IdentityPlatform.Shared` wurde nach erfolgreicher Veröffentlichung auf

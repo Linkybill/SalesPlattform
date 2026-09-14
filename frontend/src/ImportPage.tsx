@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useApplicationContext } from '@hammer2fall/identity-platform-react'
+import { useApplicationContext, usePlatformLog } from '@hammer2fall/identity-platform-react'
 import { tenantApplicationPath } from './identityPlatformConfig'
 import { usageRoute } from './salesRoutes'
 
@@ -80,6 +80,7 @@ function formatUnits(units: Record<string, number>): string {
 }
 
 export function ImportPage() {
+  const log = usePlatformLog()
   const {
     activeTenant,
     activeTenantId,
@@ -106,9 +107,10 @@ export function ImportPage() {
       }
       setZohoStatus(payload)
     } catch (reason) {
+      log('Error', 'ImportPage operation failed', { category: 'Sales.ImportPage', tenantId: activeTenantId })
       setZohoError(reason instanceof Error ? reason.message : 'Der Zoho-Status ist nicht erreichbar.')
     }
-  }, [activeTenantId, authorizedFetch, canManageImport, user])
+  }, [activeTenantId, authorizedFetch, canManageImport, user, log])
 
   const loadUsage = useCallback(async () => {
     if (!user || !activeTenantId || !canManageImport) return
@@ -122,11 +124,12 @@ export function ImportPage() {
       setUsage(payload)
       setUsageError(null)
     } catch (reason) {
+      log('Error', 'ImportPage operation failed', { category: 'Sales.ImportPage', tenantId: activeTenantId })
       setUsageError(reason instanceof Error ? reason.message : 'Der API-Verbrauch ist nicht erreichbar.')
     } finally {
       setUsageLoading(false)
     }
-  }, [activeTenantId, authorizedFetch, canManageImport, user])
+  }, [activeTenantId, authorizedFetch, canManageImport, user, log])
 
   const connectZoho = useCallback(async () => {
     setZohoLoading(true)
@@ -140,10 +143,11 @@ export function ImportPage() {
       }
       window.location.assign(payload.authorizationUrl)
     } catch (reason) {
+      log('Error', 'ImportPage operation failed', { category: 'Sales.ImportPage', tenantId: activeTenantId })
       setZohoError(reason instanceof Error ? reason.message : 'Die Zoho-Verbindung konnte nicht gestartet werden.')
       setZohoLoading(false)
     }
-  }, [authorizedFetch])
+  }, [authorizedFetch, activeTenantId, log])
 
   const testZoho = useCallback(async () => {
     setZohoLoading(true)
@@ -159,11 +163,12 @@ export function ImportPage() {
       await loadZohoStatus()
       await loadUsage()
     } catch (reason) {
+      log('Error', 'ImportPage operation failed', { category: 'Sales.ImportPage', tenantId: activeTenantId })
       setZohoError(reason instanceof Error ? reason.message : 'Der Zoho-Verbindungstest ist fehlgeschlagen.')
     } finally {
       setZohoLoading(false)
     }
-  }, [authorizedFetch, loadUsage, loadZohoStatus])
+  }, [authorizedFetch, loadUsage, loadZohoStatus, activeTenantId, log])
 
   useEffect(() => {
     if (!user || !activeTenantId || !canManageImport) return
@@ -203,13 +208,14 @@ export function ImportPage() {
         await loadZohoStatus()
         await loadUsage()
       } catch (reason) {
+        log('Error', 'ImportPage operation failed', { category: 'Sales.ImportPage', tenantId: activeTenantId })
         setZohoError(reason instanceof Error ? reason.message : 'Die Zoho-Verbindung konnte nicht abgeschlossen werden.')
       } finally {
         window.history.replaceState({}, document.title, window.location.pathname)
         setZohoLoading(false)
       }
     })()
-  }, [activeTenantId, authorizedFetch, canManageImport, loadUsage, loadZohoStatus, user])
+  }, [activeTenantId, authorizedFetch, canManageImport, loadUsage, loadZohoStatus, user, log])
 
   if (!canManageImport) {
     return (

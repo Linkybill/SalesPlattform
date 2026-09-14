@@ -129,8 +129,10 @@ alte/fehlende Plattformen werden nicht automatisch installiert. Diese Trennung
 ist offline getestet, noch nicht ausgerollt. Details:
 `IdentityPlattform/docs/solution-deployments.md`.
 
-Rebuild, Runtime-JS, gemountetes Manifest und HTTPS-Abnahme konsumieren denselben
-geprüften Plan. Die App-Origin enthält keinen abschließenden Slash. Platform-API
+Rebuild, Runtime-JS und gemountetes Manifest konsumieren denselben geprüften
+Plan. Das Deployment prüft Rollout und Startup-Registrierung, ruft aber nicht
+die öffentliche Startseite auf; Web-/Routing-Abnahme und Benutzerlogin sind
+separate Prüfungen. Die App-Origin enthält keinen abschließenden Slash. Platform-API
 und Tenant-Portal kommen ausschließlich aus dem Profil; `VITE_*`-Prozesswerte
 überschreiben den Rebuild-Plan nicht. Das Frontend lädt
 `assets/deployment-config.js` ohne Cache vor dem App-Modul. Dieses öffentliche
