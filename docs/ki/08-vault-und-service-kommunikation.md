@@ -10,18 +10,19 @@ Sales verwendet das zentrale Logging über `AddIdentityPlatform` und die
 Fehler, abgefangene Datenbankausfälle, Job-Logs sowie fehlgeschlagene HTTP-Aufrufe
 werden mit App-/Tenant-/Trace-Kontext exportiert. CRM-Datensätze, Mailinhalte,
 Settingswerte, Headers und Tokenantworten gehören ausdrücklich nicht ins Log.
-Die neuen Paketstände werden vor der regulären Konsumentenumstellung veröffentlicht;
-lokale Paketprüfungen sind kein Nachweis einer Veröffentlichung oder eines Rollouts.
+NuGet **0.1.70** und React **0.1.55** sind veröffentlicht und regulär referenziert
+(Plattform-Publish `34868012893`). Correlation-ID und Span-/Parent-IDs verbinden
+Browser-, Router-, Backend- und HTTP-Abhängigkeitsmeldungen.
 
-Lokale Abnahme: Backend gegen das gepackte NuGet-Paket aus isoliertem Testfeed
-erfolgreich gebaut, Frontend gegen das gepackte npm-Archiv erfolgreich gebaut.
+Lokale Abnahme nach Veröffentlichung: native Windows-Registry-Restores mit
+frischen Caches, Backendbuild, Frontend-`npm ci`, Typprüfung und Build bestanden.
 Reports, Arbeitslisten, CRM-Integration, Benutzerzuordnung und Usage melden auch
 abgefangene UI-Fehler mit technischer Kategorie; keine Fehlermeldungen aus
-Responsebodys weiterreichen. Veröffentlichung und feste Referenz-/Lockfile-
-Umstellung stehen noch aus. Bis dahin benötigt die neue `usePlatformLog`-
-Integration die temporär geprüften Pakete; kein gewöhnlicher Clean-Build/Deploy
-mit den bisherigen Paketständen. Verbindliche Releasefolge und unabhängige
-Versionsnummern: `IdentityPlattform/docs/central-logging.md`.
+Responsebodys weiterreichen. Manifest und Lockfile verwenden das reguläre
+Registry-Paket; temporäre Testfeeds/Archive sind nicht mehr erforderlich.
+Ein Serverrollout bleibt separat nötig. GitHub-CI benötigt noch das fehlende
+`PACKAGES_TOKEN`-Secret. Verbindliche Releasefolge und unabhängige Versionsnummern:
+`IdentityPlattform/docs/central-logging.md`.
 
 Die Plattform ist für Vault-Betrieb und technische Client-Provisionierung
 zuständig. Kanonische Referenzen im benachbarten Plattform-Repository:

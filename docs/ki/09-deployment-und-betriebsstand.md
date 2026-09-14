@@ -1,5 +1,22 @@
 # Sales: Deployment- und Betriebsstand vom 10.09.2026
 
+## Veröffentlichungsstand 14.09.2026 – reguläre Logging-Pakete
+
+Integration `b3a904e` auf `main` gepusht. Nach erfolgreichem Plattform-Publish
+(`28f7bd5`, Lauf `34868012893`) sind die regulären Referenzen auf
+`IdentityPlatform.Shared` **0.1.70** und `@hammer2fall/identity-platform-react`
+**0.1.55** einschließlich Registry-Lockfile aktualisiert. Keine lokalen Archive
+oder temporären Versionsoverrides in der Releasekonfiguration. HelloWorld wird
+weiterhin im Plattform-Repository mit Projekt-/Dateiverweisen gebaut.
+
+Native Windows-Prüfungen mit frischen Registry-Caches bestanden: Backend-
+Releasebuild ohne Warnungen/Fehler, Frontend-`npm ci`, Typprüfung und
+Produktionsbuild. Kein eigenes .NET-Testprojekt; der Build ist kein API-Test.
+Sales-GitHub-CI bleibt durch das fehlende Repository-Secret `PACKAGES_TOKEN`
+blockiert (Lauf `34868020405`); es wurden keine Secrets verändert.
+Kein Image-/Serverrollout. Für den Betrieb zuerst die Plattform aktualisieren,
+danach die App neu bauen/deployen. Ältere Abschnitte sind Zwischenstände.
+
 ## Änderung 14.09.2026 – gemeinsamer App-Rollout
 
 Sales, Aufmass und HelloWorld nutzen jetzt denselben zentralen Builder und
