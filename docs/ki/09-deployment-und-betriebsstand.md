@@ -1,5 +1,20 @@
 # Sales: Deployment- und Betriebsstand vom 10.09.2026
 
+## Paketupdate 15.09.2026 – zentrale Browser-Authentifizierung
+
+Frontend-Manifest und Registry-Lockfile verwenden das veröffentlichte
+`@hammer2fall/identity-platform-react` **0.1.56** (Plattform `039b179`,
+erfolgreicher Publish `34949426286`). NuGet bleibt unverändert auf **0.1.71**.
+Die vorhandenen `authorizedFetch`-Aufrufe profitieren ohne Axios-Umbau von
+gemeinsamer Token-Erneuerung, Erkennung verspäteter 401 und höchstens einem
+GET-/HEAD-Replay. Schreibaktionen werden nicht automatisch wiederholt;
+Netzwerkfehler und beliebige 401 löschen keine gültige Sitzung. Job-Liveverbindungen
+und Browser-Logs beziehen Tokens ebenfalls zentral.
+
+Nativ unter Windows: Neuinstallation aus dem Registry-Lockfile, Typprüfung
+und Frontend-Produktionsbuild bestanden. Kein Serverrollout.
+Die folgenden Abschnitte dokumentieren ältere Stände.
+
 ## Paketupdate 14.09.2026 – Shared 0.1.71 / geordneter Instanz-Auslauf
 
 Das Backend referenziert das veröffentlichte **IdentityPlatform.Shared 0.1.71**
