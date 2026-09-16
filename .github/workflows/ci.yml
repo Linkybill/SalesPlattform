@@ -21,6 +21,9 @@ jobs:
       - name: HTTPS and lifecycle contracts
         shell: pwsh
         run: ./tests/Test-LocalHttps.ps1
+      - name: App pipeline boundaries
+        shell: pwsh
+        run: ./tests/Test-AppPipeline.ps1
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 25

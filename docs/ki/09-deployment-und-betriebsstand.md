@@ -1,5 +1,22 @@
 # Sales: Deployment- und Betriebsstand vom 10.09.2026
 
+## Pipeline-Umstellung 16.09.2026
+
+`Deploy SalesPlattform` (`.github/workflows/release.yml`) rollt ausschließlich
+Sales auf `ax42-1/dev` im Namespace `identity-platform` aus, neben der Plattform.
+Keine Plattform-/Datenbankaktualisierung. App-CI, GHCR-Builds und digest-gepinnter
+Helm-Rollout nutzen dasselbe zentrale Tooling wie Aufmass. Kein SCP/Remote-Shell-
+Deployment. `access_only` prüft nur den Zugang; Standard ist echter Rollout.
+Environment: `sales-plattform-ax42-1-dev`, eigene `APP_CI_*`-Zugangsdaten,
+Repository-Secret `PACKAGES_TOKEN` und vollständiger geprüfter Plattform-SHA
+in `IDENTITY_PLATFORM_DEPLOY_REF`. Deployment ausschließlich von `main`,
+ohne Branch-Override; das Environment ebenfalls auf `main` begrenzen.
+Anleitung: [App-Pipelines](../../../../IdentityPlattform/docs/app-pipeline.md).
+Veröffentlichung auf `main` beauftragt. GitHub-Environment ausschließlich für
+`main` eingerichtet; App-CI-Secrets/Zielvariablen und Repository-Secret
+`PACKAGES_TOKEN` fehlen noch (Prüfung 16.09.2026). Deshalb noch kein Deployment,
+keine Secret-/RBAC-/Paketänderung. Ältere Meldungen unten sind historische Stände.
+
 ## Paketupdate 15.09.2026 – zentrale Browser-Authentifizierung
 
 Frontend-Manifest und Registry-Lockfile verwenden das veröffentlichte

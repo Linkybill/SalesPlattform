@@ -1,125 +1,214 @@
-name: Release to Hetzner
+name: Deploy SalesPlattform
+
+# App-only rollout; no remote shell, platform bootstrap or database creation.
 on:
   workflow_dispatch:
     inputs:
-      environment:
-        description: Protected target environment
-        type: choice
-        options: [hetzner-test, production]
-        default: hetzner-test
+      confirmation:
+        description: 'Type ax42-1/dev to deploy SalesPlattform'
         required: true
+        type: string
+      access_only:
+        description: 'Only test access (NO build or deployment)'
+        type: boolean
+        default: false
+
 permissions:
   contents: read
   packages: read
+
 concurrency:
-  group: release-${{ inputs.environment }}
+  group: deploy-sales-plattform-ax42-1-dev
   cancel-in-progress: false
+
+env:
+  APP_CI_APP_KEY: sales-plattform
+  APP_CI_TARGET: ax42-1
+  IDENTITY_PLATFORM_DEPLOY_REF: ${{ vars.IDENTITY_PLATFORM_DEPLOY_REF }}
+
 jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tooling_ref: ${{ steps.policy.outputs.tooling_ref }}
+    steps:
+      - name: Require approved branch, target and reviewed platform tooling
+        id: policy
+        shell: pwsh
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if ($env:GITHUB_REF -cne 'refs/heads/main' -or $env:CONFIRMATION -cne "$env:APP_CI_TARGET/dev") {
+            throw 'Choose main and confirm the fixed app target.'
+          }
+          if ($env:IDENTITY_PLATFORM_DEPLOY_REF -cnotmatch '^[a-f0-9]{40}$') {
+            throw 'Repository variable IDENTITY_PLATFORM_DEPLOY_REF must pin a reviewed platform commit containing app-ci-release.mjs.'
+          }
+          "tooling_ref=$env:IDENTITY_PLATFORM_DEPLOY_REF" >> $env:GITHUB_OUTPUT
+
   ci:
+    needs: validate
+    if: ${{ !inputs.access_only }}
     uses: ./.github/workflows/ci.yml
     secrets:
       PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
-  release:
-    needs: ci
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+
+  images:
+    needs: [validate, ci]
+    if: ${{ !inputs.access_only }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
-    environment: ${{ inputs.environment }}
+    env:
+      IDENTITY_PLATFORM_DEPLOY_REF: ${{ needs.validate.outputs.tooling_ref }}
     permissions:
       contents: read
       packages: write
-    env:
-      DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
-      PUBLIC_APPLICATION_URL: ${{ vars.PUBLIC_APPLICATION_URL }}
-      PUBLIC_ROUTER_URL: ${{ vars.PUBLIC_ROUTER_URL }}
-      PUBLIC_PLATFORM_API_URL: ${{ vars.PUBLIC_PLATFORM_API_URL }}
-      PUBLIC_TENANT_PORTAL_URL: ${{ vars.PUBLIC_TENANT_PORTAL_URL }}
-      PUBLIC_KEYCLOAK_URL: ${{ vars.PUBLIC_KEYCLOAK_URL }}
-      IMAGE_PULL_SECRET: ${{ vars.IMAGE_PULL_SECRET }}
-      TOOLING_REF: ${{ vars.IDENTITY_PLATFORM_DEPLOY_REF }}
-      GITHUB_PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ github.sha }}
           path: app
           persist-credentials: false
-      - name: Require pinned platform tooling
-        shell: bash
-        run: |
-          [[ "$TOOLING_REF" =~ ^[a-f0-9]{40}$ ]] || { echo "::error::IDENTITY_PLATFORM_DEPLOY_REF must be a full reviewed commit SHA"; exit 1; }
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: Hammer2Fall/IdentityPlattform
-          ref: ${{ vars.IDENTITY_PLATFORM_DEPLOY_REF }}
+          ref: ${{ needs.validate.outputs.tooling_ref }}
           token: ${{ secrets.PACKAGES_TOKEN }}
           path: platform
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 22.x
-      - uses: azure/setup-helm@v5
-        with:
-          version: v3.17.3
-      - name: Prepare environment-specific manifest and release bundle
-        shell: bash
+          node-version: '22.x'
+      - name: Resolve app-owned builds and canonical placement
+        id: release
+        shell: pwsh
         run: |
-          set -euo pipefail
-          export RELEASE_TAG="sha-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          export IMAGE_REPOSITORY="ghcr.io/${GITHUB_REPOSITORY,,}"
-          node platform/deploy/cicd/prepare-app-release.mjs app/backend/manifest.json platform/src/IdentityPlatform.Api/appsettings.json release
-          cp -R platform/deploy/cicd/app-chart release/app-chart
-          cp platform/deploy/cicd/deploy-app-remote.sh release/
-          mkdir -p app/frontend/public/assets
-          cp release/deployment-config.js app/frontend/public/assets/deployment-config.js
-          helm template sales-plattform release/app-chart -n identity-platform -f release/values.json >/dev/null
-          {
-            echo "RELEASE_TAG=$RELEASE_TAG"
-            echo "IMAGE_REPOSITORY=$IMAGE_REPOSITORY"
-            echo "APPLICATION_URL=$(jq -r .applicationUrl release/values.json)"
-            echo "PUBLIC_PLATFORM_API_URL=$(jq -r .platformApiUrl release/values.json)"
-            echo "PUBLIC_TENANT_PORTAL_URL=$(jq -r .tenantPortalUrl release/values.json)"
-          } >> "$GITHUB_ENV"
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+          node platform/deploy/cicd/app-ci-release.mjs build app $env:APP_CI_APP_KEY $env:APP_CI_TARGET release.json
+          if ($LASTEXITCODE -ne 0) { throw 'Invalid app release.' }
+          $release = Get-Content release.json -Raw | ConvertFrom-Json
+          foreach ($image in $release.images) {
+            "$($image.component)_context=$($image.context)" >> $env:GITHUB_OUTPUT
+            "$($image.component)_file=$($image.file)" >> $env:GITHUB_OUTPUT
+            "$($image.component)_tag=$($image.repository):$($release.tag)" >> $env:GITHUB_OUTPUT
+          }
+          foreach ($entry in $release.bundle.values.frontend.PSObject.Properties) {
+            "$($entry.Name)=$($entry.Value)" >> $env:GITHUB_OUTPUT
+          }
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish backend with matching registration manifest
-        uses: docker/build-push-action@v6
+      - name: Build and publish backend
+        id: backend
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
-          context: app
-          file: app/backend/Dockerfile
+          context: ${{ steps.release.outputs.backend_context }}
+          file: ${{ steps.release.outputs.backend_file }}
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_REPOSITORY }}-backend:${{ env.RELEASE_TAG }}
+          tags: ${{ steps.release.outputs.backend_tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
           secrets: |
             github_packages_token=${{ secrets.PACKAGES_TOKEN }}
           cache-from: type=gha,scope=release-backend
           cache-to: type=gha,mode=max,scope=release-backend
-      - name: Publish HTTPS frontend
-        uses: docker/build-push-action@v6
+      - name: Build and publish frontend
+        id: frontend
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
-          context: app
-          file: app/frontend/Dockerfile
+          context: ${{ steps.release.outputs.frontend_context }}
+          file: ${{ steps.release.outputs.frontend_file }}
           platforms: linux/amd64
           push: true
-          tags: ${{ env.IMAGE_REPOSITORY }}-frontend:${{ env.RELEASE_TAG }}
+          tags: ${{ steps.release.outputs.frontend_tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
           build-args: |
-            VITE_APPLICATION_BASE_URL=${{ env.APPLICATION_URL }}
-            VITE_API_BASE_URL=${{ env.APPLICATION_URL }}
-            VITE_PLATFORM_API_BASE_URL=${{ env.PUBLIC_PLATFORM_API_URL }}
-            VITE_TENANT_PORTAL_URL=${{ env.PUBLIC_TENANT_PORTAL_URL }}
+            VITE_IDENTITY_PLATFORM_APPLICATION_KEY=${{ steps.release.outputs.VITE_IDENTITY_PLATFORM_APPLICATION_KEY }}
+            VITE_APPLICATION_BASE_URL=${{ steps.release.outputs.VITE_APPLICATION_BASE_URL }}
+            VITE_API_BASE_URL=${{ steps.release.outputs.VITE_API_BASE_URL }}
+            VITE_PLATFORM_API_BASE_URL=${{ steps.release.outputs.VITE_PLATFORM_API_BASE_URL }}
+            VITE_TENANT_PORTAL_URL=${{ steps.release.outputs.VITE_TENANT_PORTAL_URL }}
           secrets: |
             github_packages_token=${{ secrets.PACKAGES_TOKEN }}
           cache-from: type=gha,scope=release-frontend
           cache-to: type=gha,mode=max,scope=release-frontend
-      - name: Deploy through pinned SSH host and verify HTTPS
+      - name: Record exact content addresses
+        shell: pwsh
         env:
-          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
-          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-          DEPLOY_CA_PEM: ${{ secrets.DEPLOY_CA_PEM }}
-        run: bash platform/deploy/cicd/send-release.sh release
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
+        run: |
+          foreach ($component in @('backend', 'frontend')) {
+            $digest = [Environment]::GetEnvironmentVariable("$($component.ToUpperInvariant())_DIGEST")
+            if ($digest -cnotmatch '^sha256:[a-f0-9]{64}$') { throw 'Missing image digest.' }
+            Set-Content "$component.digest" $digest -Encoding utf8NoBOM
+          }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: app-digests
+          path: '*.digest'
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  deploy:
+    needs: [validate, ci, images]
+    if: ${{ always() && !cancelled() && needs.validate.result == 'success' && (inputs.access_only || (needs.ci.result == 'success' && needs.images.result == 'success')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      IDENTITY_PLATFORM_DEPLOY_REF: ${{ needs.validate.outputs.tooling_ref }}
+    environment: sales-plattform-ax42-1-dev
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          path: app
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: Hammer2Fall/IdentityPlattform
+          ref: ${{ needs.validate.outputs.tooling_ref }}
+          token: ${{ secrets.PACKAGES_TOKEN }}
+          path: platform
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.x'
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v4
+        with:
+          version: v3.17.3
+      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4
+        with:
+          version: v1.36.4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: ${{ !inputs.access_only }}
+        with:
+          name: app-digests
+          path: digests
+      - name: Deploy app through verified Kubernetes tunnel (or explicit access-only test)
+        shell: pwsh
+        env:
+          ACCESS_ONLY: ${{ inputs.access_only }}
+          PLATFORM_CI_KUBECONFIG: ${{ secrets.APP_CI_KUBECONFIG }}
+          PLATFORM_CI_SSH_KEY: ${{ secrets.APP_CI_SSH_KEY }}
+          PLATFORM_CI_KNOWN_HOSTS: ${{ secrets.APP_CI_KNOWN_HOSTS }}
+          PLATFORM_CI_CONTEXT: ${{ vars.APP_CI_CONTEXT }}
+          PLATFORM_CI_CLUSTER_UID: ${{ vars.APP_CI_CLUSTER_UID }}
+          PLATFORM_CI_NAMESPACE_UID: ${{ vars.APP_CI_NAMESPACE_UID }}
+          PLATFORM_CI_DATABASE_UID: ${{ vars.APP_CI_DATABASE_UID }}
+          PLATFORM_CI_SSH_USER: ${{ vars.APP_CI_SSH_USER }}
+          PLATFORM_CI_SSH_PORT: ${{ vars.APP_CI_SSH_PORT }}
+          APP_CI_PULL_SECRET: ${{ vars.APP_CI_PULL_SECRET }}
+        run: |
+          ./platform/deploy/cicd/deploy-application.ps1 -AppRoot ./app -AppKey $env:APP_CI_APP_KEY -Target $env:APP_CI_TARGET -DigestDirectory ./digests -AccessOnly:($env:ACCESS_ONLY -eq 'true')
