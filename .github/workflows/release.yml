@@ -209,6 +209,11 @@ jobs:
           PLATFORM_CI_DATABASE_UID: ${{ vars.APP_CI_DATABASE_UID }}
           PLATFORM_CI_SSH_USER: ${{ vars.APP_CI_SSH_USER }}
           PLATFORM_CI_SSH_PORT: ${{ vars.APP_CI_SSH_PORT }}
+          PLATFORM_CI_TRANSPORT: ${{ vars.APP_CI_TRANSPORT }}
+          PLATFORM_CI_VPN: ${{ secrets.APP_CI_VPN }}
           APP_CI_PULL_SECRET: ${{ vars.APP_CI_PULL_SECRET }}
         run: |
+          if (($env:PLATFORM_CI_VPN -or $env:PLATFORM_CI_TRANSPORT -eq 'wireguard') -and -not (Test-Path ./platform/deploy/cicd/ci-vpn-transport.ps1)) {
+            throw 'Pinned platform tooling predates CI VPN. Update IDENTITY_PLATFORM_DEPLOY_REF to a verified VPN-capable commit; no public SSH fallback.'
+          }
           ./platform/deploy/cicd/deploy-application.ps1 -AppRoot ./app -AppKey $env:APP_CI_APP_KEY -Target $env:APP_CI_TARGET -DigestDirectory ./digests -AccessOnly:($env:ACCESS_ONLY -eq 'true')

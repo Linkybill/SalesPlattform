@@ -1,5 +1,19 @@
 # Sales: Deployment- und Betriebsstand vom 10.09.2026
 
+## CI-VPN 17.09.2026
+
+Der Release-Workflow übergibt `APP_CI_TRANSPORT`/`APP_CI_VPN` an das zentrale
+Plattform-Tooling. Serverbootstrap 00 richtet optional zum bestehenden
+Plattformbetrieb einen gemeinsamen App-CI-Zugang einschließlich separatem
+WireGuard-VPN auf UDP 51821 ein; 02 veröffentlicht den Repository-/Environment-
+Peer als Secret. Diese 02-Phase läuft im vollständigen 00-Aufruf automatisch,
+einschließlich Setzen des geprüften Tooling-Pins nach erfolgreicher Plattform-CI.
+Deployment bleibt separat. Die bestehenden Plattform-Credentials bleiben unverändert.
+Workflow und VPN-fähigen Plattform-Commit veröffentlichen; vollständigen
+geprüften SHA in `IDENTITY_PLATFORM_DEPLOY_REF` setzen. Alter Pin mit VPN wird
+abgewiesen, kein öffentlicher SSH-Fallback. Keine App-/Paketänderung und kein
+durch diese Änderung nachgewiesener Live-Rollout.
+
 ## Pipeline-Umstellung 16.09.2026
 
 `Deploy SalesPlattform` (`.github/workflows/release.yml`) rollt ausschließlich
