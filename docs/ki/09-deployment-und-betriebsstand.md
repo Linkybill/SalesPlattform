@@ -1,5 +1,17 @@
 # Sales: Deployment- und Betriebsstand vom 10.09.2026
 
+## Paketupdate 17.09.2026 – Shared 0.1.73
+
+Das Backend referenziert das veröffentlichte `IdentityPlatform.Shared` **0.1.73**
+(Plattform `cc8c7e1`, erfolgreicher Publish-Lauf `35222731466`). Nativ unter
+Windows: frischer Restore aus GitHub Packages und Release-Build ohne Warnungen
+oder Fehler bestanden. Sales hat weiterhin kein eigenes .NET-Testprojekt;
+der Build ist kein API-Test. React bleibt unverändert.
+Shared liefert aggregierte Broker-Drain-Meldungen; die vorhandene Jobintegration
+bleibt appseitig bestehen. Server-Enrolment ist Aufgabe des Infrastruktur-Agenten.
+Kompatible Plattform und Runtime-Infrastruktur vor der App separat aktualisieren.
+Kein Serverrollout; ältere Paketstände unten sind historische Nachweise.
+
 ## CI-VPN 17.09.2026
 
 Der Release-Workflow übergibt `APP_CI_TRANSPORT`/`APP_CI_VPN` an das zentrale
