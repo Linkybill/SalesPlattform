@@ -1,5 +1,22 @@
 # Sales: Deployment- und Betriebsstand vom 10.09.2026
 
+## Paketupdate 19.09.2026 – React 0.1.58 / Job-Liveverbindung
+
+Frontend-Manifest und Registry-Lockfile referenzieren das lokal gebaute und in
+GitHub Packages veröffentlichte `@hammer2fall/identity-platform-react` **0.1.58**
+(Plattform-Commit `7538c13`). Die zentrale SignalR-Anbindung verwendet bei
+Cross-Origin-Aufrufen Bearer-Tokens ohne Browser-Credentials (`withCredentials:
+false`). Der Fix ist im installierten Registry-Paket nachgewiesen; kein lokaler
+Tarball-Verweis. NuGet bleibt auf dem bereits veröffentlichten
+`IdentityPlatform.Shared` **0.1.73**.
+
+Nativ unter Windows: Paketinstallation, TypeScript-Prüfung, Vite-Produktionsbuild
+und alle drei Root-URL-/Runtime-Profiltests bestanden. Der Testloader bindet die
+neue `SessionView`-Abhängigkeit aus dem tatsächlich installierten Paket ein.
+Vite meldet weiterhin einen Chunk über 500 kB. Kein Serverrollout oder Nachweis
+einer erfolgreichen Live-Verbindung; dafür Sales neu bauen/ausrollen und die
+Jobübersicht im Browser prüfen. Die folgenden Abschnitte sind historische Stände.
+
 ## Paketupdate 17.09.2026 – Shared 0.1.73
 
 Das Backend referenziert das veröffentlichte `IdentityPlatform.Shared` **0.1.73**

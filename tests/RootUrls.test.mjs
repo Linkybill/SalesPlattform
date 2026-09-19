@@ -6,6 +6,7 @@ import { runInNewContext } from 'node:vm'
 import { resolveTenantApplicationPath } from '../frontend/node_modules/@hammer2fall/identity-platform-react/dist/TenantApplicationPath.js'
 import * as tenantPaths from '../frontend/node_modules/@hammer2fall/identity-platform-react/dist/TenantApplicationPath.js'
 import { createOidcSession } from '../frontend/node_modules/@hammer2fall/identity-platform-react/dist/OidcSession.js'
+import * as sessionView from '../frontend/node_modules/@hammer2fall/identity-platform-react/dist/SessionView.js'
 
 const require = createRequire(new URL('../frontend/package.json', import.meta.url))
 const ts = require('typescript')
@@ -22,6 +23,7 @@ function installedOidcClient(config) {
     require(name) {
       if (name === './TenantApplicationPath') return tenantPaths
       if (name === './OidcSession') return { createOidcSession }
+      if (name === './SessionView') return sessionView
       if (name === 'oidc-client-ts') return require(name)
       throw new Error('Unexpected OIDC dependency: ' + name)
     },
