@@ -58,6 +58,7 @@ builder.Services.AddScoped<CrmApiUsageRecorder>();
 builder.Services.AddScoped<ICrmApiUsageRecorder>(services =>
     services.GetRequiredService<CrmApiUsageRecorder>());
 builder.Services.AddScoped<CrmApiUsageService>();
+builder.Services.AddScoped<CrmDailyUsageService>();
 builder.Services.AddSingleton<ICrmApiUsageCostModel, ZohoCrmApiUsageCostModel>();
 builder.Services.AddScoped<SalesDashboardLayoutService>();
 builder.Services.AddScoped<SalesReportService>();
@@ -76,6 +77,8 @@ builder.Services.AddScoped<ICrmAdapter>(services =>
 builder.Services.AddScoped<CrmAdapterRegistry>();
 builder.Services.AddScoped<ZohoCrmHookUpdateService>();
 builder.Services.AddScoped<ZohoWebhookReceiver>();
+builder.Services.AddScoped<ZohoWebhookOverviewService>();
+builder.Services.AddScoped<ZohoWebhookSettingsService>();
 builder.Services.AddSingleton<ZohoCrmRecordMapper>();
 builder.Services.AddSingleton<ICrmRecordMapper>(services =>
     services.GetRequiredService<ZohoCrmRecordMapper>());
@@ -114,8 +117,10 @@ builder.Services
     .AddJob<ZohoSchemaCacheJob>(new PlatformJobDefinition(
         Key: "zoho-schema-cache",
         Name: "Zoho-Schema cachen",
-        Description: "Lädt Zoho-Module und Felddefinitionen einmalig in den lokalen Schema-Cache. Dieser Job ist ausschließlich manuell startbar.",
-        ScheduleMode: PlatformJobScheduleMode.Manual,
+        Description: "Aktualisiert Zoho-Module und Felddefinitionen im lokalen Schema-Cache; standardmäßig einmal täglich. Der Zeitplan ist konfigurierbar.",
+        ScheduleMode: PlatformJobScheduleMode.Configurable,
+        DefaultCronExpression: "0 1 * * *",
+        DefaultTimeZoneId: "Europe/Berlin",
         AllowManualStart: true,
         ComponentKey: "backend",
         ConcurrencyGroup: "crm-synchronization"))

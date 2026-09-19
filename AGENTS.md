@@ -27,11 +27,12 @@ Projektentscheidungen haben Vorrang. Bei einem Widerspruch die Abweichung in
 
 ## Projektleitplanken
 
-- Die SalesPlattform ist zunächst ein React-Frontend, ein ASP.NET-Core-Backend mit
-  `GET /api/hello-world` und eine tenant-isolierte, von der Identity Platform
-  bereitgestellte Datenbank. Zoho ist als erster read-only CRM-Adapter mit
-  tenantbezogenem Hintergrundimport umgesetzt; weitere Anbieter und Module
-  werden schrittweise ergänzt.
+- Die SalesPlattform enthält React-Frontend, ASP.NET-Core-Backend und eine
+  tenant-isolierte Plattform-Datenbank. Arbeitsliste, Reports mit Nachweisen,
+  CRM-Verbrauch und Zoho-Integration mit Import/Hook-Verarbeitung sind umgesetzt.
+  Zoho wird primär gelesen; begrenzte Schreibwege bleiben ausdrücklich
+  konfigurierbar. Aktuelle Versionen und Prüfungen stehen in
+  `docs/ki/09-deployment-und-betriebsstand.md`, nicht in alten Zwischenberichten.
 - Zoho CRM bleibt führend für Stammdaten und Geschäftsprozesse. Historie, Snapshots,
   Berechnungen und Wiedervorlagen werden in der eigenen Datenbank geführt.
 - Das Domainmodell ist CRM-anbieterneutral. Zoho wird über einen Adapter

@@ -147,7 +147,8 @@ integration_api_usage_events
 - `zoho_schema_cache`: tenantisolierter Snapshot der für den verbundenen
   Zoho-Account verfügbaren Module, Felddefinitionen, Layouts,
   Pipeline-/Stufendefinitionen und Related-List-Metadaten. Dieser Snapshot wird
-  ausschließlich durch den manuell startbaren Job `zoho-schema-cache`
+  ausschließlich durch den zeitlich konfigurierbaren und manuell startbaren
+  Job `zoho-schema-cache`
   aktualisiert. Full- und Incremental-Sync sowie die Metadaten-API lesen nur
   den lokalen Snapshot und rufen Zoho-Settings nicht selbst auf. Ein
   fehlgeschlagener Refresh ersetzt den bisherigen Snapshot nicht.
@@ -187,6 +188,26 @@ die Full-, Incremental- und Schema-Cache-Jobs setzen zusätzlich ihre
 Run-ID. Ein neuer Adapter muss daher nur seine echten HTTP-Versuche melden und
 kann bei Bedarf ein eigenes Kostenmodell registrieren.
 
+### Tagesverbrauch
+
+`GET /api/integrations/usage/daily?days=30` liefert maximal 90 UTC-Kalendertage
+inklusive heute. Tenant-Admin-Prüfung und tenantisolierte Read-only-DB-Factory
+bleiben obligatorisch. Die Abfrage gruppiert bereits in PostgreSQL nach UTC-
+Datum (`DateOnly`), Anbieter, Verbindung und Verbrauchseinheit; Einzelaufrufe
+und Benutzerangaben werden dafür nicht geladen. Unterschiedliche Einheiten
+werden nicht zusammenaddiert. Lücken im Kalender werden mit 0 aufgezeichneten
+Requests/Einheiten gefüllt; daraus folgt keine garantierte Messvollständigkeit.
+Der heutige Tag ist als unvollständig markiert.
+
+Die Seite API-Verbrauch bietet dafür einen eigenständigen 7/30/90-Tage-Filter,
+Auswahl der Datenreihe und der Kennzahl (geschätzte Einheiten, Requests, Fehler).
+Balkenklicks zeigen Tageswerte; eine aufklappbare Tabelle enthält dieselben
+Kalenderwerte. Der bisherige rollierende Stundenfilter gilt weiterhin für die
+anderen Übersichten. Keine zusätzliche CRM-Abfrage, Migration oder Paketversion.
+SQL-Übersetzung wird mit dem tatsächlich installierten Npgsql-Provider getestet;
+die UTC-Datumsumwandlung folgt dessen
+[Date-/Time-Übersetzungen](https://www.npgsql.org/efcore/mapping/translations.html).
+
 ### Fachliche Ableitungen
 
 ```text
@@ -223,7 +244,8 @@ aus Zoho- oder Pipedrive-JSON befüllt.
 
 Das Zoho-Schema wird nicht implizit beim Hochfahren oder bei einem CRM-Sync
 geladen. Nach einer neuen Zoho-Verbindung oder einer Änderung des Zoho-Schemas
-startet ein berechtigter Benutzer den Job `Zoho-Schema cachen` einmal manuell.
+startet ein berechtigter Benutzer den Job `Zoho-Schema cachen` bei Bedarf
+manuell; regulär aktualisiert ihn der konfigurierbare Zeitplan.
 Ohne vorhandenen Snapshot wird ein Full- oder Incremental-Sync mit einer
 verständlichen Fehlermeldung beendet, damit kein Sync ungeplant die Zoho-
 Metadaten-API und deren Tageskontingent verbraucht.
@@ -251,7 +273,7 @@ als CRM-Task angelegt und erhält deren neue Remote-ID. Alte Links bleiben mit
 ### Hintergrundjobs und Fortschritt
 
 Die Regelbewertung nach dem CRM-Sync ist eine eigene Fortschrittsphase und wird
-nicht erst beim Abschluss des Jobs sichtbar. Sie meldet Start, gepr��fte
+nicht erst beim Abschluss des Jobs sichtbar. Sie meldet Start, geprüfte
 Regelziele, verbleibende Menge und das Persistieren der Regelergebnisse als
 Live-Fortschritt und Job-Logs. Danach werden CRM-Task-Abgleich, Kennzahlen-
 Snapshot und Benachrichtigungen ebenfalls als laufende Nachverarbeitung mit
@@ -314,7 +336,12 @@ Jeder CRM-Lauf meldet zuerst seinen vollständigen Modulplan und danach den
 aktuellen Modulstatus. Die Fortschrittswerte unterscheiden gelesene,
 geschriebene und fehlgeschlagene Records; aus diesen Werten wird die
 Restmenge je Modul berechnet. Der Abschluss übergibt die geschriebenen Records
-zusätzlich als strukturierte `writtenRecords`-Liste in den Plattformdetails.
+zusätzlich als begrenzte strukturierte `writtenRecords`-Stichprobe in den
+Plattformdetails. Sie enthält höchstens 100 Einträge und höchstens 128 KiB
+Roh-JSON; ausgelassene Payloads und eine gekürzte Liste werden mit Zählern
+ausgewiesen. Die vollständigen Rohdaten verbleiben tenantisoliert in
+`integration_raw_records`, damit Jobmeldungen das HTTP-Request-Limit nicht
+überschreiten.
 Die Plattform ist für Transport, Speicherung und Live-Anzeige zuständig; die
 SalesPlattform liefert fachliche Schritte, Zähler, Fehler und Payload-Details.
 
@@ -338,6 +365,10 @@ Synchronisation und Regelbewertung wird der Tages-Snapshot für den aktuellen
 Tenant neu berechnet. Dadurch gibt es für Mailversand und Kennzahlen keine
 separaten Zeitpläne und keine unabhängigen Sales-Jobs.
 
+Der Job `Zoho-Schema cachen` (`zoho-schema-cache`) ist zeitlich
+konfigurierbar und läuft standardmäßig täglich um 01:00 Uhr in der Zeitzone
+`Europe/Berlin`. Ein manueller Start ist weiterhin möglich.
+
 ### Zoho-Hooks als kostensparende Änderungserkennung
 
 Zoho ist der erste Provider mit einer konkreten Subscription-Implementierung.
@@ -350,18 +381,66 @@ Der technische Job `CRM-Hooks erneuern` (`crm-subscription-maintenance`) wird
 mit `ScheduleMode.Configurable`, Cron `0 3 * * *` und Zeitzone `Europe/Berlin`
 registriert: Standard einmal täglich um 03:00 Uhr. Tenant-Admins können
 Aktivierung, Zeitplan und Zeitzone in der zentralen Jobverwaltung ändern;
-manueller Start bleibt erlaubt. Die anderen Jobregistrierungen bleiben
-unverändert. Er dispatcht an die registrierten Hook-Update-Services. Diese erneuern ihre Subscriptions,
+manueller Start bleibt erlaubt. Er dispatcht an die registrierten
+Hook-Update-Services. Diese erneuern ihre Subscriptions,
 verarbeiten die wartenden Callback-Ereignisse und führen danach
 die fachliche Nachverarbeitung aus. Es gibt keine separaten Jobs pro Modul,
 keinen E-Mail-Job und keinen vollständigen Crawl als Reaktion auf einen Hook.
+
 Das Callback selbst schreibt nur ein verifiziertes Ereignis in
 `integration_webhook_events`; die Verarbeitung lädt ausschließlich die von
-Zoho gemeldeten Remote-IDs. Der Verification-Token wird nicht gespeichert,
-sondern nur als SHA-256-Hash in `integration_subscriptions`.
+Zoho gemeldeten Remote-IDs. Neue Queue-Payloads speichern nur Modul, Operation,
+Channel und IDs, keinen Verification-Token oder weitere Callback-Felder. Die
+Subscription hält nur den SHA-256-Hash. Alte Queue-Payloads können noch Tokens
+enthalten; sie werden durch diese Änderung nicht rückwirkend bereinigt und
+niemals in der Übersicht ausgegeben.
+
+Unter CRM-Integration zeigt „Hooks und Ereignisse“ Tenant-Administratoren die
+Basis-URL, vorhandene und fehlende Modul-Subscriptions, Gültigkeit und Prüfzeiten
+sowie die paginierte Ereignisliste. `GET /api/integrations/zoho/hooks` prüft
+Tenant-Admin-Zugriff zusätzlich zur Sales-Autorisierung und liest ausschließlich
+über die tenantisolierte Read-only-DB-Factory. Modul-/Statusfilter und Pagination
+(maximal 100 Einträge) begrenzen Antworten. Zähler beziehen sich auf alle
+gespeicherten Ereignisse des Modulfilters, nicht nur auf die aktuelle Seite.
+Die Anzeige ruft Zoho nicht auf und bestätigt keine öffentliche Erreichbarkeit.
+
+Eingang und Dubletten werden über `ILogger` mit Ereignis-ID geloggt; Start,
+Erfolg und Fehler des Imports über die bestehende Plattform-Jobhistorie mit
+derselben ID. Keine Rohpayloads, Tokens oder beliebigen Provider-Fehlertexte
+werden in der neuen API ausgegeben. Neue Verarbeitungsfehler werden auf sichere
+Diagnosecodes reduziert. „Importiert“ bestätigt die kanonische Übernahme;
+der Erfolg der nachfolgenden Fachverarbeitung ist separat im Joblauf zu prüfen.
+Abgewiesene Aufrufe und ignorierte Dubletten sind keine neuen gespeicherten
+Ereignisse. Zeitplan, Batchgröße (100) und Versuchslimit (5) bleiben unverändert.
 
 Zoho-Subscriptions werden bei höchstens 36 Stunden Restlaufzeit erneuert,
 damit der tägliche Standardlauf sie rechtzeitig vor dem Ablauf berücksichtigt.
+Eine geänderte `NotifyUrl` erzwingt ebenfalls eine Neuregistrierung, auch bei
+noch langer Restlaufzeit. Remote setzt `appsettings.Deployment.json` den Wert
+den Standard `Zoho__WebhookUrl` über `BackendUrls` aus dem öffentlichen `Frontend`-Einstieg
+und `/api/integrations/zoho/webhook` zusammen. Für die Installation auf ax42-1
+ist das `https://176.9.57.203:3003/api/integrations/zoho/webhook`; eine Platzierung
+auf ax42-2 nutzt weiterhin den öffentlichen Einstieg der zugehörigen Plattform.
+Vorrang hat das Tenant-App-Setting **Zoho Webhook-URL** (`zoho.webhookUrl`), damit
+jeder Kunde seinen eigenen Frontend-Host verwenden kann. Nur leer/nicht gesetzt
+fällt auf den Deployment-Standard zurück; ungültige explizite Werte blockieren
+die Registrierung. `ZohoWebhookSettingsService` liest für Job und Übersicht
+denselben aktuellen Wert direkt aus dem Tenant-App-Settings-Store (ohne Secrets,
+OAuth-Aufrufe oder Schreibzugriffe). Änderungen benötigen kein Neuverbinden.
+Die Registrierung ergänzt selbst `?tenant_id=<Tenant-GUID>`; nicht manuell in
+der Basis-URL eintragen. Local benötigt eine öffentlich erreichbare URL im
+Mandanten-Setting oder im `ZOHO_WEBHOOK_URL`-Standard (kein localhost-Callback).
+
+Das Sales-Manifest registriert ausschließlich diesen POST-Pfad unter `webhooks`
+mit `componentKey: backend`. Die Plattform prüft Manifestfreigabe, aktiven Tenant,
+aktive App und Tenant-App-Zuordnung, bevor sie den Callback mit frischer
+Router-Trust-Assertion weiterleitet. Sales verlangt übereinstimmende Tenant-
+Angaben in Query und vertrauenswürdigem Router-Header und prüft Channel, Modul,
+Token und Subscription-Ablaufdatum in der Tenant-Datenbank. Andere API-Pfade
+bleiben benutzerauthentifiziert. API und Application Router zuerst aktualisieren,
+danach Sales; kein NuGet-/npm-Update nötig. Anschließend `CRM-Hooks erneuern`
+einmal manuell starten. URL-/Routertests sind kein produktiver Callback-Nachweis.
+
 Wartende Callback-Ereignisse werden ebenfalls in diesem Job verarbeitet und
 folgen daher seinem konfigurierten Zeitplan. Der separate Incremental-Crawl
 bleibt das unveränderte Sicherheitsnetz. Bei einem größeren Jobintervall muss
@@ -391,11 +470,19 @@ Subscription registriert; ein eventuell veralteter Contacts-Webhook wird
 verworfen. Für die Aktivierung sind die minimal nötigen Notifications-OAuth-
 Berechtigungen `ZohoCRM.notifications.CREATE` und
 `ZohoCRM.notifications.DELETE` sowie eine von Zoho erreichbare
-`Zoho:WebhookUrl` erforderlich. Die CRM-Leserechte sind auf die tatsächlich
-verwendeten Module begrenzt; für CRM-Aufgaben kommen nur
+im Mandanten-Setting `zoho.webhookUrl` (alternativ Deployment-Standard
+`Zoho:WebhookUrl`) erforderlich. Seit der Scope-Korrektur vom 19.09.2026 wird
+auf Benutzerauftrag `ZohoCRM.modules.READ` für modulübergreifendes Lesen
+angefordert; die importierten Module bleiben unverändert. Zusätzlich bleiben
+`ZohoCRM.modules.emails.READ`, Benutzer-/Organisations- und die gezielten
+Settings-Leserechte erhalten. Für CRM-Aufgaben kommen nur
 `ZohoCRM.modules.tasks.CREATE` und `ZohoCRM.modules.tasks.UPDATE` hinzu.
+Nichtleere ältere Scope-Overrides werden um sämtliche benötigten Scopes ergänzt.
+Der verworfene Scope `ZohoCRM.modules.DealHistory.READ` wird herausgefiltert;
+kein `ZohoCRM.modules.ALL` und keine zusätzlichen CRM-Löschrechte.
 Bestehende OAuth-Verbindungen müssen nach der Scope-Änderung einmal neu
-autorisiert werden.
+autorisiert werden. Ein erfolgreicher Stage-History-Abruf ist separat live
+nachzuweisen; lokale Scope-Vertragstests sind kein Zoho-Integrationstest.
 
 ### Exklusive Prozessgruppen
 

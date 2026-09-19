@@ -1,10 +1,12 @@
 # Projektkontext
 
-Dokumentationsabgleich: **10.09.2026**. Zuerst den
+Dokumentationsabgleich: **19.09.2026**. Zuerst den
 [konsolidierten Deployment- und Betriebsstand](09-deployment-und-betriebsstand.md)
 lesen. Die folgenden datierten Abschnitte enthalten auch Zwischenstände:
-Code ist inzwischen committed/gepusht und unter Windows geprüft; ein
-vollständiger neuer Hetzner-Rollout ist damit nicht nachgewiesen.
+Frühere Angaben zu Commit/Push, Paketen und Rollout gelten nur für den jeweils
+datierten Arbeitslauf. Der aktuelle Stand wird lokal gesichert, nicht gepusht
+oder erneut deployt. Gemeldete Benutzer-Deployments sind ohne verifizierte
+Image-/Quellrevision kein Nachweis für jeden nachfolgenden Fix.
 
 ## Zweck
 
@@ -16,6 +18,56 @@ Vertriebsmitarbeiter beim Öffnen eine priorisierte Tagesarbeit zeigen und der
 Leitung belastbare Steuerungsinformationen geben.
 
 ## Aktueller technischer Stand
+
+Tagesverbrauch (19.09.2026): Unter API-Verbrauch gibt es ein Diagramm für
+7/30/90 UTC-Kalendertage inklusive heute, getrennt nach Provider/Verbindung/
+Einheit. Requests, Fehler und geschätzte Credits sind auswählbar; Tageswerte
+sind anklickbar und als Tabelle verfügbar. Aggregation erfolgt tenantisoliert
+in PostgreSQL, ohne CRM-Aufrufe. 23 Aggregations-/SQL-Vertragstests und Chrome-
+Test bestanden; Live-Abnahme dieses Quellstands separat. Keine Paket-/Datenbankmigration.
+
+Mandantenkorrektur Hook-URL (19.09.2026): **Zoho Webhook-URL** (`zoho.webhookUrl`)
+ist ein Tenant-AppSetting. Je Kunde sind unterschiedliche Frontend-Hosts möglich.
+Registrierung und Übersicht lesen denselben aktuellen Tenant-Wert; leer nutzt
+den bisherigen Deployment-Standard. Kein stiller Fallback bei ungültigem Wert.
+Eine geänderte URL erzwingt Neuregistrierung beim nächsten Hook-Job. Das neue
+Setting wird beim Start des aktualisierten Backends registriert; dessen Rollout
+ist im Rahmen dieses Dokumentationsabgleichs nicht verifiziert.
+
+Hook-Übersicht vom 19.09.2026: CRM-Integration enthält für Tenant-Admins
+„Hooks und Ereignisse“ mit konfigurierter Callback-Basis-URL, Modul-Subscriptions
+und paginierten Ereignissen. Neue Eingangs-/Dublettenlogs und Import-Joblogs
+korrelieren über die Ereignis-ID. Neue Queue-Payloads enthalten keinen Token;
+alte werden nicht rückwirkend bereinigt. Keine neue Migration oder Paketversion.
+Native Builds, 71 Hook-Prüfungen, 16 Vertragstests und Chrome-Smoke-Test bestanden.
+Live-Abnahme separat. Verarbeitung bleibt am Zeitplan von `CRM-Hooks erneuern`;
+ein empfangener Hook startet weiterhin keinen sofortigen Import.
+
+Common-Themes vom 19.09.2026: React **0.1.59** ist lokal gebaut, in GitHub Packages
+veröffentlicht und in Sales samt Registry-Lockfile integriert. Gemeinsame Auswahl
+Hell/Dunkel/System mit Browserpersistenz; Sales-Oberflächen verwenden zentrale
+Theme-Variablen. Build, zwölf Integrations-/Navigations-/URL-Tests und Chrome-Test
+mit installiertem Paket bestanden. Kein Serverrollout; Details in
+`09-deployment-und-betriebsstand.md`. Aufmass-Integration bleibt separat.
+
+Sales-Navigation und Report-Nachweise vom 19.09.2026: Arbeit ist die Startseite
+(`/worklist`, App-Root wird lokal darauf normalisiert), Steuerung liegt unter
+`/reports`. Beide Bereiche haben eine linke Themennavigation; Meeting Report
+gehört zur Arbeit. Kennzahlen und Diagramme öffnen durchsuchbare, paginierte
+Nachweistabellen aus demselben API-Snapshot. Quellen/Formeln/Zeiträume und
+Importstatus sind sichtbar. Normale Vertriebsrollen dürfen Reports lesen;
+persönliche Arbeitslistenfilter und Admin-Schreibrechte bleiben unverändert.
+Details und Prüfstatus: `05-offene-punkte-und-entscheidungen.md`, Abschnitt
+„Gesprächsentscheidung: Arbeit und Steuerung“. Dies ist eine Sales-Änderung an
+Frontend und Backend, ohne neue Shared-Pakete oder Datenbankmigration.
+Noch kein produktiver Rolloutnachweis.
+
+## Historische Umsetzungsschritte und Nachweise
+
+Die folgenden Versions-/Rolloutangaben sind datierte Historie. Aktuell:
+Shared 0.1.73, React 0.1.59; synthetische .NET-Prüfprogramme liegen unter `tests/`.
+Die zentrale SSH-Auswahl und App-isolierte Routingkorrektur sind in der
+Plattform dokumentiert; dafür keine Sales-Neuinstallation oder Schlüsselrotation.
 
 Tenant-Login-Korrektur vom 09.09.2026: Die Plattform hat React `0.1.50`
 veröffentlicht; Sales verwendet das Registry-Paket in Manifest und Lockfile.
@@ -153,17 +205,22 @@ Azure oder an externen Providerkonten für diese Portumstellung.
   Logs, Fehler und strukturierte JSON-Details; aktive Läufe können dort echt
   abgebrochen werden. Die SalesPlattform registriert ihre
   Implementierungsklassen über `IdentityPlatform.Shared`.
-- `crm-full-import` ist durch Tenant-Admins konfigurierbar (Default täglich);
-  `crm-incremental-crawl` läuft fest alle 15 Minuten. Die gemeinsame React-
-  Library integriert `/jobs` automatisch als tenantadmin-geschützten
-  Headerpunkt.
+- `crm-full-import` ist durch Tenant-Admins konfigurierbar (Default täglich um
+  02:00 Uhr); `crm-incremental-crawl` ist ebenfalls konfigurierbar (Default alle
+  15 Minuten). `zoho-schema-cache` hat einen konfigurierbaren Zeitplan mit dem
+  Default täglich um 01:00 Uhr. Alle drei Jobs bleiben manuell startbar. Die
+  gemeinsame React-Library integriert `/jobs` automatisch als
+  tenantadmin-geschützten Headerpunkt.
 - Beide Jobs rufen `CrmSynchronizationService` und anschließend den anhand von
   `crm.integration` ausgewählten `ICrmSynchronizationAdapter` auf. Zoho kennt
   weder Plattformjobdefinition noch Zeitplan; die Jobs kennen keine Zoho-API.
 - Der Lauf protokolliert zuerst den Synchronisationsplan, danach den aktuellen
   Modulschritt mit gelesenen, geschriebenen, fehlgeschlagenen und noch offenen
   Datensätzen. Die Abschlussdetails enthalten zusätzlich die geschriebenen
-  Records als strukturiertes JSON für die Jobdetailansicht.
+  Records als begrenzte strukturierte Stichprobe für die Jobdetailansicht. Der
+  Payload ist auf 100 Einträge und insgesamt 128 KiB Roh-JSON begrenzt; Anzahl,
+  Auslassungen und Trunkierung werden ausgewiesen. Die vollständigen Rohdaten
+  bleiben tenantisoliert in `integration_raw_records` gespeichert.
 - E-Mails bleiben Bestandteil desselben CRM-Sync-Laufs. Sie werden als
   Related-List der Elternobjekte Accounts, Leads und Deals gelesen;
   es gibt keinen separaten E-Mail-Sync-Job.
@@ -236,10 +293,10 @@ Azure oder an externen Providerkonten für diese Portumstellung.
   keine separaten Sales-Jobs oder eigenen Zeitpläne.
 
 Die Regelbewertung nach dem CRM-Teil ist eine eigene Live-Phase. Der
-Plattformfortschritt zeigt die gepr��ften Regeltreffer, bestehende Vorg��nge und
+Plattformfortschritt zeigt die geprüften Regeltreffer, bestehende Vorgänge und
 die verbleibende Menge; aktuelle Regelziele und das Speichern der Ergebnisse
 werden als Job-Logs protokolliert. CRM-Aufgaben-Abgleich, Kennzahlen und
-Benachrichtigungen bleiben bis zum tats��chlichen Abschluss sichtbar.
+Benachrichtigungen bleiben bis zum tatsächlichen Abschluss sichtbar.
 
 ## Erste fachliche Umsetzung: Arbeitsliste
 

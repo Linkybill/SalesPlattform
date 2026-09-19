@@ -13,9 +13,10 @@ namespace SalesPlattform.Backend.Services;
 /// the tenant database as their source and never query the CRM during a page
 /// request.
 /// </summary>
-public sealed class SalesReportService(
+public sealed partial class SalesReportService(
     PlatformTenantDbContextFactory<SalesPlattformDbContext> dbFactory,
-    SalesDashboardLayoutService layoutService)
+    SalesDashboardLayoutService layoutService,
+    SalesApplicationSettingsService applicationSettings)
 {
     public async Task<SalesDashboardResponse> GetDashboardAsync(
         ClaimsPrincipal user,
@@ -31,8 +32,14 @@ public sealed class SalesReportService(
         var now = DateTimeOffset.UtcNow;
         var period = await LoadPeriodAsync(db, selectedTimeframe, now, cancellationToken);
         var model = await LoadModelAsync(db, cancellationToken);
+        var sourceSync = await db.IntegrationSyncRuns.AsNoTracking()
+            .Where(run => run.FinishedAt != null).OrderByDescending(run => run.FinishedAt)
+            .Select(run => new SalesReportSyncState(run.Mode, run.Status, run.FinishedAt!.Value, run.RecordsFailed))
+            .FirstOrDefaultAsync(cancellationToken);
+        var rules = await applicationSettings.GetRuleConfigurationAsync(
+            Guid.Parse(user.FindFirstValue("tenant_id")!), user.FindFirstValue("sub"), cancellationToken);
 
-        var canSeeManagement = SalesDashboardLayoutService.HasAnyRole(user, "sales-manager", "sales-management");
+        var canSeeManagement = SalesDashboardLayoutService.HasAnyRole(user, "sales-user", "sales-manager", "sales-management");
         var canSeeCleanup = SalesDashboardLayoutService.HasAnyRole(user, "sales-manager", "sales-management", "sales-backoffice");
         return new(
             now,
@@ -47,7 +54,12 @@ public sealed class SalesReportService(
             BuildGoals(model, period, now),
             canSeeCleanup ? BuildCleanup(model) : null,
             BuildService(model, period, now),
-            BuildCommercial(model, period, now));
+            BuildCommercial(model, period, now))
+        {
+            SourceSync = sourceSync,
+            Evidence = BuildEvidence(model, period, now, rules.DealInactiveDays, rules.ContractRenewalHorizonDays,
+                canSeeManagement, canSeeCleanup)
+        };
     }
 
     public async Task<SalesDashboardLayoutResponse> GetLayoutAsync(
@@ -253,7 +265,8 @@ public sealed class SalesReportService(
         var rescheduled = inPeriod.Count(appointment => appointment.RescheduleCount > 0 || AppointmentState(appointment.Status) == "rescheduled");
         var noShow = inPeriod.Count(appointment => AppointmentState(appointment.Status) == "no-show");
         var planned = inPeriod.Length;
-        var created = inPeriod.Count(appointment => appointment.SourceCreatedAt is { } createdAt && InPeriod(createdAt, period));
+        var created = model.Appointments.Count(appointment => appointment.IsActive && appointment.SourceDeletedAt is null
+            && InPeriod(appointment.SourceCreatedAt, period));
         return new(
             period.Name,
             created,
@@ -308,7 +321,7 @@ public sealed class SalesReportService(
             .GroupBy(link => link.InternalEntityId)
             .ToDictionary(group => group.Key, group => group.Select(item => item.ExternalUrl).FirstOrDefault(url => !string.IsNullOrWhiteSpace(url)));
         var dealsByCustomer = model.Deals.Where(IsActive).Where(deal => deal.CustomerId.HasValue).GroupBy(deal => deal.CustomerId!.Value).ToDictionary(group => group.Key, group => group.ToArray());
-        var rows = model.Customers.Where(customer => customer.IsActive).Select(customer => new CustomerMapPoint(
+        var rows = model.Customers.Where(customer => customer.IsActive && customer.SourceDeletedAt is null).Select(customer => new CustomerMapPoint(
             customer.Id,
             customer.Name,
             customer.Owner?.DisplayName ?? model.Owners.FirstOrDefault(owner => owner.Id == customer.OwnerId)?.DisplayName,
@@ -494,7 +507,7 @@ public sealed class SalesReportService(
     private static bool IsOrderClosed(string? status)
         => IsAnyStatus(status, "delivered", "completed", "cancelled", "closed", "geliefert", "abgeschlossen");
     private static bool IsInvoiceClosed(string? status)
-        => IsAnyStatus(status, "paid", "settled", "cancelled", "bezahlt", "beglichen");
+        => status?.Trim().ToLowerInvariant() is "paid" or "settled" or "cancelled" or "canceled" or "bezahlt" or "beglichen";
     private static bool IsAnyStatus(string? value, params string[] expected)
         => expected.Any(item => value?.Contains(item, StringComparison.OrdinalIgnoreCase) == true);
 
@@ -523,6 +536,7 @@ public sealed class SalesReportService(
     private static string AppointmentState(string? status)
     {
         var value = (status ?? "planned").Trim().ToLowerInvariant();
+        if (value.Contains("not held") || value.Contains("nicht stattgefunden")) return "no-show";
         if (value.Contains("cancel") || value.Contains("absag")) return "cancelled";
         if (value.Contains("resched") || value.Contains("verschob")) return "rescheduled";
         if (value.Contains("no-show") || value.Contains("noshow") || value.Contains("nicht erschienen")) return "no-show";
@@ -575,7 +589,13 @@ public sealed record SalesDashboardResponse(
     SalesGoalsReport Goals,
     SalesCleanupReport? Cleanup,
     SalesServiceReport Service,
-    SalesCommercialReport Commercial);
+    SalesCommercialReport Commercial)
+{
+    public SalesReportEvidence Evidence { get; init; } = new([], []);
+    public SalesReportSyncState? SourceSync { get; init; }
+}
+
+public sealed record SalesReportSyncState(string Mode, string Status, DateTimeOffset FinishedAt, int FailedRecords);
 
 public sealed record SalesCockpitReport(
     string PeriodName,

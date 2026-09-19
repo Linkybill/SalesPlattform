@@ -24,6 +24,9 @@ jobs:
       - name: App pipeline boundaries
         shell: pwsh
         run: ./tests/Test-AppPipeline.ps1
+      - name: Zoho OAuth scope contracts
+        shell: pwsh
+        run: ./tests/Test-ZohoScopes.ps1
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -51,12 +54,38 @@ jobs:
           fi
       - run: dotnet restore backend/SalesPlattform.Backend.csproj --configfile backend/NuGet.Config
       - run: dotnet build backend/SalesPlattform.Backend.csproj -c Release --no-restore --warnaserror
-      # No .NET test project exists yet. Do not report building the API as a test suite.
+      - name: Zoho task payload regression checks (no CRM writes)
+        run: |
+          dotnet restore tests/ZohoTaskPayload/ZohoTaskPayload.csproj --configfile backend/NuGet.Config
+          dotnet build tests/ZohoTaskPayload/ZohoTaskPayload.csproj -c Release --no-restore --warnaserror
+          dotnet run --project tests/ZohoTaskPayload/ZohoTaskPayload.csproj -c Release --no-build --no-restore
+      # Payload checks are not live API/integration tests.
+      - name: Zoho webhook security regression checks (no CRM calls)
+        run: |
+          dotnet restore tests/ZohoWebhook/ZohoWebhook.csproj --configfile backend/NuGet.Config
+          dotnet build tests/ZohoWebhook/ZohoWebhook.csproj -c Release --no-restore --warnaserror
+          dotnet run --project tests/ZohoWebhook/ZohoWebhook.csproj -c Release --no-build --no-restore
+          node --test tests/WebhookDeployment.test.mjs
+      - name: Report evidence regression checks (synthetic data)
+        run: |
+          dotnet restore tests/Reports/Reports.csproj --configfile backend/NuGet.Config
+          dotnet build tests/Reports/Reports.csproj -c Release --no-restore --warnaserror
+          dotnet run --project tests/Reports/Reports.csproj -c Release --no-build --no-restore
       - name: Frontend typecheck and production build
         working-directory: frontend
         run: npm ci --no-audit --no-fund && npm run lint && npm run build
+      - name: Daily CRM usage aggregation checks
+        # Compile the real Npgsql query without live database access.
+        run: |
+          dotnet restore tests/Usage/Usage.csproj --configfile backend/NuGet.Config
+          dotnet build tests/Usage/Usage.csproj -c Release --no-restore --warnaserror
+          dotnet run --project tests/Usage/Usage.csproj -c Release --no-build --no-restore
       - name: Root URLs and runtime profile
         run: node --test tests/RootUrls.test.mjs
+      - name: Sales navigation and report UI contracts
+        run: node --test tests/ReportNavigation.test.mjs
+      - name: Installed common theme integration
+        run: node --test tests/ThemeIntegration.test.mjs
   images:
     needs: build
     runs-on: ubuntu-latest

@@ -18,17 +18,23 @@ Management/Geschäftsführung und `sales-backoffice` für das Backoffice.
 | Ansicht | Vertrieb | Vertriebsleitung | Management/GF | Backoffice |
 |---|---|---|---|---|
 | Meine Arbeitsliste | eigene, Team umschaltbar | alle Vorgänge des Tenants sowie eigene | nach Freigabe | nach Aufgabe |
-| Cockpit | nicht standardmäßig | ja | ja | nein |
-| Team-Steuerung | Lesesicht nach Entscheidung | ja | ja | nein |
-| Meeting Report | nach Entscheidung | ja | ja | nein |
-| Analyse | eingeschränkt/nach Entscheidung | ja | ja | nein |
-| Kundenstamm/Karte | eingeschränkt/nach Entscheidung | ja | ja | nein |
+| Cockpit | ja, lesen | ja | ja | nein |
+| Team-Steuerung | ja, lesen | ja | ja | nein |
+| Meeting Report | ja, lesen | ja | ja | nein |
+| Analyse | ja, lesen | ja | ja | nein |
+| Kundenstamm/Karte | ja, lesen | ja | ja | nein |
 | Ziele und Pace | teamweit sichtbar | ja | ja | nein |
 | Aufräumen | nein | ja | ja | ja |
 
 Die Vertriebsleitung erhält für die erste Arbeitsliste eine serverseitig
 erzwungene tenantweite Ansicht. Normale Vertriebsbenutzer bleiben auf ihren
 CRM-Besitzer und nicht zugeordnete Vorgänge begrenzt.
+
+Die erweiterte Report-Lesesicht ist die ausdrückliche Gesprächsentscheidung
+vom 19.09.2026. Sie gilt innerhalb des aktiven Tenants, auch für die zugehörigen
+Datensatznachweise. Sie erweitert weder Arbeitslisten-Schreibrechte noch
+Layout-/Benutzerverwaltung oder Bereinigungsaktionen. Kennzahlnachweise werden
+serverseitig mit denselben Rollenfreigaben wie die Reports projiziert.
 
 Die erste Arbeitslisten-API setzt diesen Grundsatz serverseitig um. Ein CRM-
 Besitzer wird über die E-Mail des authentifizierten Plattform-Benutzers gesucht;
@@ -45,12 +51,18 @@ persönliches Mapping.
 
 Die fachlichen Reports sind eigenständige Komponenten in einem gemeinsamen
 Seitenbaum. Tenant-Admins bearbeiten die Seite direkt über den Button
-„Reportseite bearbeiten“: Sie können Grid, Tabs, Akkordeon, Überschrift und
+„Layout bearbeiten“: Sie können Grid, Tabs, Akkordeon, Überschrift und
 Text hinzufügen, bei Tabs/Akkordeons Abschnitte anlegen und benennen und jeden
 Report an beliebiger Stelle platzieren. Die Sales-App speichert den Baum als
 internes JSON über `PUT /api/reports/layout`; es gibt dafür keine rohe
 Webpart- oder Layout-Einstellung im Mandantenportal. Das Defaultmodell enthält
 alle Reports, einschließlich Servicefälle sowie Angebote/Aufträge/Rechnungen.
+
+Die normale Ansicht filtert den bestehenden Seitenbaum auf das links gewählte
+Thema. Container, Begleittexte, Sichtbarkeit und Rollenfreigabe bleiben erhalten;
+ausgeblendete Vorfahren können nicht über die Navigation umgangen werden.
+Gespeicherte Layouts werden nicht automatisch überschrieben. Der Editor zeigt
+weiterhin den gesamten Baum; ausgeblendete Reports werden als solche erklärt.
 
 Die Serverantwort enthält für jeden Report die effektive Rollenfreigabe. Ein
 nicht freigegebener Report wird nicht gerendert. Die UI-Komposition ersetzt

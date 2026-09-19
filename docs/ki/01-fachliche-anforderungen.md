@@ -1,5 +1,27 @@
 # Fachliche Anforderungen
 
+## Aktuelle Gesprächsentscheidung (19.09.2026)
+
+Die Navigation trennt **Arbeit** (Startseite) und **Steuerung**. Unter Arbeit
+stehen links Auslaufende Produkte (R-06), Schlummernde Leads (R-07/13/14),
+Wiedervorlagen (übrige Vorgangsregeln) und Meeting Report (mit R-12 als
+Unterpunkt). Alle vorhandenen Regeln bleiben erreichbar; die Gesamtliste
+bleibt zusätzlich verfügbar. Es gibt keine neue fachliche Regelbewertung
+durch diese Gruppierung und keine sichtbaren numerischen Prioritätspunkte.
+
+Steuerung gliedert die Reports links in Cockpit, Monat, Vertriebsteam, Jahr,
+Lifetime, Analyse, Kundenstamm, Ziele/Pace, Aufräumen, Service und kommerzielle
+Kette. Der Meeting Report bleibt vollständig unter Arbeit. Monats-, Jahres-
+und Lifetime-Seiten verwenden denselben Kennzahlenkatalog mit festem Zeitraum;
+es sind keine separat gepflegten Berechnungen. Operative Handlungspunkte gehören
+in die Arbeit; das Cockpit zeigt die entsprechenden Kennzahlen mit Nachweisen.
+
+Kacheln, Zahlen in Team-/Zieltabellen und Diagrammbalken öffnen ihre konkreten
+Datensätze im Modal. Quelle, Zeitraum, Formel und fehlende Voraussetzungen
+werden angegeben. Tabellen sind durchsuchbar und paginiert. Diese Entscheidung
+ersetzt widersprechende ältere Vorgaben unten (Score-Anzeige, gemeinsame lange
+Reportseite und auf Leitung begrenzte Report-Lesesicht).
+
 ## Produktprinzipien
 
 - Die Anwendung kennt den Vertriebsprozess und reduziert aktive Suche.
@@ -20,7 +42,7 @@ Die persönliche Startansicht vereinigt mindestens:
 - Cross-Selling-Chancen.
 
 Standardmäßig zeigt sie eigene Vorgänge. Eine Teamansicht ist umschaltbar.
-Jeder Eintrag zeigt mindestens Vorgangsart, Kunde, Kontext, Prioritätspunkte,
+Jeder Eintrag zeigt mindestens Vorgangsart, Kunde, Kontext, Prioritätsstufe,
 Fälligkeit bzw. Alter, Wert und nächste Aktion. Die Sortierung ist in
 `03-regelwerk-und-kpis.md` festgelegt.
 
@@ -31,7 +53,8 @@ Das Cockpit muss in etwa 30 Sekunden beantworten, ob Handlungsbedarf besteht:
 - Statusampel,
 - acht Kern-KPIs,
 - Funnel,
-- höchstens fünf nach Schweregrad sortierte Handlungspunkte.
+- anklickbare Hinweise auf hängende Deals und auslaufende Verträge;
+  die ausführlichen operativen Vorgänge stehen unter Arbeit.
 
 Jede Kachel ist klickbar. Handlungspunkte stammen insbesondere aus hängenden
 Deals, auslaufenden Verträgen und Zielabweichungen.

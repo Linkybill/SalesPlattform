@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useApplicationContext, usePlatformLog } from '@hammer2fall/identity-platform-react'
+import { DailyUsageChart } from './DailyUsageChart'
 
 type UsageBreakdown = {
   category: string
@@ -135,6 +136,9 @@ export function UsagePage() {
   const [callsLoading, setCallsLoading] = useState<string | null>(null)
 
   const canManageUsage = activeTenant?.isTenantAdmin === true
+  const logDailyError = useCallback(() => {
+    log('Error', 'Daily usage failed', { category: 'Sales.DailyUsage', tenantId: activeTenantId })
+  }, [log, activeTenantId])
 
   const load = useCallback(async () => {
     if (!user || !activeTenantId || !canManageUsage) return
@@ -235,6 +239,7 @@ export function UsagePage() {
       </section>
 
       {(error || platformError) && <div className="message error-message">{error ?? platformError}</div>}
+      {user && activeTenantId && <DailyUsageChart key={`${activeTenantId}:${user.username ?? user.email ?? user.displayName}`} authorizedFetch={authorizedFetch} onError={logDailyError} />}
       {!usage && loading && <section className="sales-card report-loading">Usage-Daten werden geladen …</section>}
       {usage && (
         <>

@@ -16,6 +16,24 @@ public static class ZohoEndpointExtensions
         var protectedGroup = endpoints.MapGroup("/api/integrations/zoho")
             .RequireAuthorization("sales-user");
 
+        protectedGroup.MapGet("/hooks", async (
+            ClaimsPrincipal user, HttpContext httpContext, TenantAdminAccessService tenantAdminAccess,
+            ZohoWebhookOverviewService overview, string? module, string? status,
+            int? page, int? pageSize, CancellationToken cancellationToken) =>
+        {
+            if (!await tenantAdminAccess.IsCurrentTenantAdminAsync(user, cancellationToken))
+                return Results.Forbid();
+            httpContext.Response.Headers.CacheControl = "no-store";
+            try
+            {
+                return Results.Ok(await overview.GetAsync(module, status, page ?? 1, pageSize ?? 25, cancellationToken));
+            }
+            catch (ArgumentException exception)
+            {
+                return Results.BadRequest(new { message = exception.Message });
+            }
+        });
+
         protectedGroup.MapGet("/oauth/start", async (
             ClaimsPrincipal user,
             ZohoOAuthService oauth,
@@ -91,7 +109,7 @@ public static class ZohoEndpointExtensions
                 {
                     return Results.Conflict(new
                     {
-                        message = "Noch kein Zoho-Schema-Cache vorhanden. Bitte zuerst den manuellen Job 'Zoho-Schema cachen' starten."
+                        message = "Noch kein Zoho-Schema-Cache vorhanden. Bitte zuerst den Job 'Zoho-Schema cachen' starten."
                     });
                 }
 
@@ -121,17 +139,18 @@ public static class ZohoEndpointExtensions
             HttpContext httpContext,
             JsonElement payload,
             ZohoWebhookReceiver receiver,
+            ILogger<ZohoWebhookReceiver> logger,
             CancellationToken cancellationToken) =>
         {
-            if (!Guid.TryParse(httpContext.Request.Query["tenant_id"], out var tenantId)
-                || tenantId == Guid.Empty)
+            if (!TryReadWebhookTenant(httpContext.Request, out var tenantId))
             {
+                logger.LogWarning("Rejected Zoho webhook: invalid tenant routing context.");
                 return Results.BadRequest(new { message = "Der Zoho-Webhook enthält keinen gültigen Tenant-Kontext." });
             }
 
-            // Zoho cannot send the platform JWT. The tenant is taken only from
-            // the provider-generated callback URL and the request is accepted
-            // only after the subscription token is verified against that tenant.
+            // Zoho cannot send a user JWT. Shared trust middleware authenticates
+            // the router; its tenant header must match the registered callback URL.
+            // The subscription token is then verified in that tenant's database.
             httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
             [
                 new Claim("tenant_id", tenantId.ToString("D")),
@@ -148,11 +167,22 @@ public static class ZohoEndpointExtensions
             }
             catch (InvalidOperationException exception)
             {
+                logger.LogWarning("Rejected Zoho webhook: invalid callback payload.");
                 return Results.BadRequest(new { message = exception.Message });
             }
         }).AllowAnonymous();
 
         return endpoints;
+    }
+
+    internal static bool TryReadWebhookTenant(HttpRequest request, out Guid tenantId)
+    {
+        tenantId = Guid.Empty;
+        var values = request.Query["tenant_id"];
+        var routed = request.Headers["X-Tenant-Id"];
+        return values.Count == 1 && Guid.TryParseExact(values[0], "D", out tenantId)
+            && tenantId != Guid.Empty && routed.Count == 1
+            && Guid.TryParseExact(routed[0], "D", out var routedId) && routedId == tenantId;
     }
 }
 

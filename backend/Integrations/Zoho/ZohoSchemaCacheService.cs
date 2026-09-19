@@ -58,7 +58,7 @@ public sealed record ZohoSchemaCacheSnapshot(
 
 /// <summary>
 /// Owns the persisted Zoho metadata snapshot. It is intentionally separate
-/// from the regular CRM sync: only the explicitly started schema-cache job
+/// from the regular CRM sync: only the dedicated schema-cache job
 /// talks to Zoho's settings endpoints.
 /// </summary>
 public sealed class ZohoSchemaCacheService(

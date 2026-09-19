@@ -19,16 +19,30 @@ public sealed class ZohoOptions
     /// </summary>
     public string WebhookUrl { get; set; } = string.Empty;
 
-    public string Scopes { get; set; } =
-        "ZohoCRM.modules.accounts.READ,ZohoCRM.modules.leads.READ,ZohoCRM.modules.products.READ,ZohoCRM.modules.deals.READ,ZohoCRM.modules.cases.READ,ZohoCRM.modules.quotes.READ,ZohoCRM.modules.salesorders.READ,ZohoCRM.modules.invoices.READ,ZohoCRM.modules.calls.READ,ZohoCRM.modules.tasks.READ,ZohoCRM.modules.events.READ,ZohoCRM.modules.appointments.READ,ZohoCRM.modules.emails.READ,ZohoCRM.modules.tasks.CREATE,ZohoCRM.modules.tasks.UPDATE,ZohoCRM.notifications.CREATE,ZohoCRM.notifications.DELETE,ZohoCRM.users.READ,ZohoCRM.org.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ,ZohoCRM.settings.layouts.READ,ZohoCRM.settings.pipeline.READ,ZohoCRM.settings.related_lists.READ";
+    public const string RequiredScopes =
+        "ZohoCRM.modules.READ,ZohoCRM.modules.emails.READ,ZohoCRM.modules.tasks.CREATE,ZohoCRM.modules.tasks.UPDATE,ZohoCRM.notifications.CREATE,ZohoCRM.notifications.DELETE,ZohoCRM.users.READ,ZohoCRM.org.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ,ZohoCRM.settings.layouts.READ,ZohoCRM.settings.pipeline.READ,ZohoCRM.settings.related_lists.READ";
+
+    public string Scopes { get; set; } = RequiredScopes;
 
     public int OAuthStateLifetimeMinutes { get; set; } = 10;
 
     public string[] GetScopes()
-        => Scopes
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+    {
+        // Remove the previously introduced, unsupported grant from old overrides
+        // as well as defaults. Module-wide access remains read-only.
+        var configured = Scopes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(scope => !scope.Equals("ZohoCRM.modules.DealHistory.READ", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (configured.Length == 0)
+            return [];
+
+        // Legacy overrides must not drop rights needed by the current adapter.
+        // Adding requested scopes does not upgrade an existing OAuth grant.
+        return configured
+            .Concat(RequiredScopes.Split(','))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+    }
 
     public void ValidateForOAuth()
     {

@@ -1,4 +1,127 @@
-# Sales: Deployment- und Betriebsstand vom 10.09.2026
+# Sales: Deployment- und Betriebsstand
+
+## Aktueller Quellenabgleich und Sicherungsstand – 19.09.2026
+
+Der gesamte lokale Arbeitsstand wird je Repository committed; dieser Auftrag
+umfasst keinen Push oder Rollout. Die datierten Abschnitte darunter sind
+historische Umsetzungsschritte. Angaben wie "kein Commit/Push" und alte Paket-
+Pins beschreiben deren damaligen Zeitpunkt. Benutzer-Deployments wurden gemeldet,
+ihre Image-/Quellrevisionen hier aber nicht erneut geprüft.
+
+Aktuelle Paketdateien: Shared **0.1.73**, Common-React **0.1.59** einschließlich
+Registry-Lockfile. Quellstand enthält Arbeit/Steuerung-Navigation, Report-
+Nachweistabellen, Common-Themes, tägliche CRM-Verbrauchsauswertung, tenantbezogene
+Hook-URL/Übersicht und Webhook-Vertrag sowie Zoho-Scope-/Task-Payload-Korrekturen.
+Es gibt jetzt vier synthetische .NET-Prüfprogramme unter `tests/` (keine
+Live-CRM-Integrationstests); ältere Aussagen "kein .NET-Testprojekt" gelten nicht
+als Beschreibung dieser Regressionen.
+
+Vor Sicherung erneut nativ unter Windows geprüft: 34 Task-Payload-Fälle,
+87 Webhook-/Settings-Prüfungen, 129 Report-Assertions, 23 Verbrauchs-/SQL-
+Prüfungen, 18 Node-Verträge sowie Scope-/HTTPS-/Pipeline-Prüfungen bestanden.
+TypeScript-/Vite-Produktionsbuild bestanden; bekannte Warnung für einen JS-Chunk
+über 500 kB bleibt. Der SQL-Test übersetzt die echte Npgsql-Abfrage, ohne eine
+Datenbank zu kontaktieren. Keine produktiven CRM-Aufrufe, keine Schlüsseländerung.
+
+Der zentrale SSH-Fix gilt bereits mit aktualisiertem lokalem Plattform-Tooling.
+Die App-Fehlerisolation benötigt dagegen API/DeploymentController/Router-Rollout,
+keine Sales-/Aufmass-Neuinstallation. Der Webhook-Vertrag erfordert separat
+zuerst die Plattform und danach Sales-Manifest/Backend. Quellen, Tests und
+Live-Grenzen: [Plattformstand 19.09.2026](../../../../IdentityPlattform/docs/stand-2026-09-19.md).
+
+```powershell
+# Sales: konfigurierte Platzierung nur anzeigen
+.\deploy-all.ps1 -Environment dev -Preview
+# Explizit: beide Targets sind Pflicht; kein stiller Standortwechsel
+.\deploy-all.ps1 -Target ax42-1 -PlatformTarget ax42-1 -Environment dev -Preview
+```
+
+## Tagesverbrauchsdiagramm – 19.09.2026
+
+Frontend/Backend um `/api/integrations/usage/daily` und den Tagesverlauf in
+API-Verbrauch erweitert. 7/30/90 UTC-Tage, geschätzte Verbrauchseinheiten,
+Requests und Fehler; getrennte Reihen je Provider/Verbindung/Einheit und
+Tageswerttabelle. Tenant-Admin-Zugriff und lokale Tenant-Datenhaltung bleiben.
+Keine neue Migration oder Shared-Paketversion. 23 synthetische Aggregations-/
+SQL-Übersetzungsprüfungen und nativer Chrome-Test bestanden. Kein Rollout,
+kein Commit/Push, keine produktiven CRM-/Datenbankabfragen.
+Abschließender Backend-/Test-Releasebuild ohne Warnungen/Fehler, Frontendbuild
+und 18 bestehende Theme-/Navigation-/URL-/Webhook-Verträge bestanden. Bekannte
+Vite-Warnung wegen eines JavaScript-Chunks über 500 kB bleibt unverändert.
+
+## Korrektur: mandantenbezogene Hook-URL – 19.09.2026
+
+Das Sales-Manifest registriert jetzt `zoho.webhookUrl` im Scope `tenantApp`,
+Anzeige **Zoho Webhook-URL** unter Tenant-Portal → SalesPlattform → AppSettings.
+Kunden mit verschiedenen Frontend-Hosts verwenden jeweils ihre eigene URL.
+Job und Übersicht lesen denselben Tenant-Wert; nur leer/nicht gesetzt nutzt
+den bisherigen Deployment-Standard. Ungültige explizite URLs blockieren die
+Registrierung; sie werden nicht durch eine andere Adresse ersetzt. Eine Änderung
+wirkt beim nächsten Hook-Job ohne OAuth-Neuverbinden oder Backend-Neustart.
+Zum Bereitstellen des neuen Settings muss dieser Backend-/Manifeststand ausgerollt
+werden; Anzeige der Quelle benötigt auch das neue Frontend. Keine neue
+Paketversion/Migration. Keine Domains/Zertifikate provisioniert, kein Live-Rollout.
+
+Native Abnahme: 87 Hook-/Settings-Prüfungen, 18 Verträge, Backend-/Frontendbuild
+und Chrome-Test bestanden. Zwei verschiedene Kunden-Hosts werden getrennt
+aufgelöst; Benutzerwerte und fremde Tenant-Werte überschreiben den Mandantenwert
+nicht. Frontend-Build weiterhin mit bekannter Chunkgrößenwarnung.
+
+## Hook-Übersicht und Ereignislogs – 19.09.2026
+
+Sales-Frontend und -Backend lokal erweitert: CRM-Integration zeigt Tenant-Admins
+URL, Modulregistrierungen und Ereignisstatus; technische Logs und Joblogs nutzen
+die Ereignis-ID. Endpoint `/api/integrations/zoho/hooks` ist lesend und zusätzlich
+Tenant-Admin-geschützt. Neue Queue-Payloads werden ohne Prüf-Token gespeichert.
+Kein Paketupdate und keine Migration. Bestehende Alt-Payloads bleiben unverändert.
+
+Native Backend-/Frontend-Builds, 71 Hook-Prüfungen, 16 Vertragstests und Chrome-
+Test (Filter, Pagination, Fehler/Refresh, Detailansicht, mobile Darstellung)
+bestanden. Bekannte Frontend-Chunkgrößenwarnung. Kein Commit/Push oder Rollout.
+Für diesen Arbeitsstand gelten weiterhin die unten beschriebenen API-/Router-
+Voraussetzungen des öffentlichen Webhook-Vertrags. Nach dem Rollout Schema-Cache
+und `CRM-Hooks erneuern` prüfen/starten. Der konfigurierte Job verarbeitet bis zu
+100 wartende Ereignisse pro Lauf; die Übersicht ändert den Zeitplan nicht.
+
+## Common-Themes integriert – React 0.1.59, 19.09.2026
+
+Das lokal gebaute gemeinsame React-Paket **0.1.59** wurde in GitHub Packages
+veröffentlicht. Sales verwendet es aus der Registry in `frontend/package.json`
+und `package-lock.json`, kein lokaler Paketverweis. Der gemeinsame Umschalter
+bietet Hell/Dunkel/System; Sales initialisiert die Browserpräferenz vor dem
+ersten React-Render. Eigene Stylesheets verwenden die gemeinsamen Theme-Tokens.
+
+Native Windows-Prüfungen: 138 Common-Tests, zwölf Sales-Integrations-/Navigations-/
+URL-Tests, Typecheck und Produktionsbuild bestanden. Chrome-Test mit installiertem
+Registry-Paket ohne Alias prüft Systemmodus, Umschaltung, gespeicherte Auswahl
+nach Reload, Report-Dialog/Tabelle und 390px-Handylayout. Bekannte Vite-Warnung:
+ein JS-Chunk über 500 kB. Kein Serverrollout, kein Commit/Push dieses Arbeitsstands.
+
+Für die Themes kann Sales nun mit diesem lokalen Arbeitsstand gebaut/ausgerollt
+werden. Git-/CI-Rollout benötigt zusätzlich dessen Commit/Push. Der ebenfalls
+lokal enthaltene Webhook-Vertrag verlangt separat zuerst die aktualisierte
+Plattform-API und den Application Router (siehe folgenden Abschnitt). Keine neue
+NuGet-Version erforderlich. Aufmass wurde in dieser Sales-Integration nicht verändert.
+
+## Webhook-Anbindung 19.09.2026 – lokaler Implementierungsstand
+
+Remote-Deploymentprofile setzen `Zoho__WebhookUrl` automatisch aus dem
+öffentlichen Sales-Einstieg. Das Backend-Manifest meldet den exakten POST-Pfad
+über den generischen `webhooks`-Vertrag an der Plattform an. Hierfür sind
+**zuerst Plattform-API und Application Router, danach Sales** neu auszurollen;
+anders als beim separaten ValidateSet-Skriptfix ist das eine Laufzeitänderung.
+Shared 0.1.73 überträgt das Manifest bereits unverändert; keine neuen NuGet-/npm-
+Pakete und keine Datenbankmigration. Danach im Tenant `CRM-Hooks erneuern`
+manuell starten; dort werden Channel und Token automatisch verwaltet. Keine
+manuelle Channel-/Tokenpflege; die Tenant-ID wird bei Registrierung ergänzt.
+Abweichende URLs werden je Tenant unter `zoho.webhookUrl` gepflegt (siehe Korrektur oben).
+
+Geprüft unter nativem Windows: synthetische Webhook-Sicherheits-/URL-/Erneuerungs-
+Tests (`tests/ZohoWebhook`), vier Sales-Deployment-Vertragstests und Rendern der
+echten Sales-Profile für ax42-1 und ax42-2. Plattform: komplette API-/Router-Suite
+(955 bestanden, 13 übersprungen) und neun Runtime-Profiltests. Kein Serverrollout,
+keine Live-Zoho-Anfrage. Für den Betriebsnachweis muss danach eine reale Änderung
+in Zoho als verifiziertes Event und beim Hook-Wartungslauf als verarbeitet erscheinen.
 
 ## Paketupdate 19.09.2026 – React 0.1.58 / Job-Liveverbindung
 

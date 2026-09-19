@@ -24,8 +24,39 @@ Vorgeschlagene Basiswerte:
 | Inaktiver Lead | 30 |
 | Cross-Selling | 20 |
 
-Basiswerte, Deckelungen und der Divisor sind konfigurierbar. Die Punkte werden
-im Listeneintrag angezeigt.
+Basiswerte, Deckelungen und der Divisor sind konfigurierbar. Seit der
+Gesprächsentscheidung vom 19.09.2026 bleiben Punkte intern für die Sortierung;
+die Oberfläche zeigt nur die verständliche Prioritätsstufe.
+
+### Nachvollziehbare Report-Kennzahlen (19.09.2026)
+
+`SalesReportEvidence` liefert Kennzahlmetadaten und normalisierte Detailzeilen
+in derselben Dashboard-Antwort. Das Frontend berechnet Summen/Quoten nicht
+erneut und fragt beim Öffnen eines Nachweises nicht erneut das CRM ab.
+
+- Umsatz: aktive gewonnene Deals nach Abschlussdatum, ersatzweise CRM-
+  Änderungsdatum. Kein Rechnungsumsatz. Kunden-Lifetime zeigt dieselbe
+  Deal-Basis über alle synchronisierten Zeiträume, nicht den optionalen
+  CRM-Kunden-Umsatzwert.
+- Zielerreichung/Pace: Umsatz des aktuellen Geschäftsjahres gegen dessen
+  Jahresziele; auch auf Monats-/Lifetime-Seiten ausdrücklich als Jahresbezug
+  beschriftet. Fehlende Ziele oder Nenner ergeben „Nicht berechenbar“.
+- Pipeline: aktueller offener Bestand außerhalb terminaler Stufen.
+  Deckung = Pipeline / verbleibendes Jahresziel als Vielfaches.
+- Gemischte/fehlende Währungen oder Beträge erzeugen keine erfundene Summe.
+  Diagramme vergleichen unterschiedliche Währungen nicht über Balkenlängen.
+- Wiederkehrende Vertragsbeträge werden nicht mehr fälschlich ARR genannt:
+  eine verlässliche Monats-/Jahresbasis fehlt im Quellmodell.
+- Neu angelegte Termine werden nach Erstellungsdatum gezählt, unabhängig
+  vom Terminbeginn. Kalenderwoche und Terminquoten verwenden den Beginn.
+  Quoten-Nachweise zeigen den vollständigen Nenner einschließlich Status.
+- Stale-/Renewal-Grenzen kommen aus den Tenant-Einstellungen. Dringende
+  Servicefälle werden vollständig gezählt, nicht nur eine Vorschau mit acht.
+- Zeiträume verwenden wie bisher UTC und werden so beschriftet; Zeilen-Daten
+  stellt der Browser lokal dar. Kalender-/Zeitzonenumbau ist nicht enthalten.
+- Importzeitpunkt, Modus, Status und Fehleranzahl des letzten beendeten Laufs
+  werden zusätzlich zum Berechnungszeitpunkt angezeigt. Ein Teilimport ist
+  ausdrücklich kein Aktualitätsnachweis aller Entitäten.
 
 Die erste produktive Projektion berechnet die Werte für die Arbeitsliste mit
 diesen Startwerten. Vertragsenden unter 30 Tagen werden als eigener kritischer

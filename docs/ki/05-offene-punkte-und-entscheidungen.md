@@ -1,5 +1,211 @@
 # Offene Punkte, Entscheidungen und Status
 
+## Tagesdiagramm für den CRM-Verbrauch (19.09.2026)
+
+Benutzerauftrag: Verbrauch tagesweise als Chart anzeigen. Im bestehenden
+Sales-Kontext sind damit die erfassten CRM-Verbrauchseinheiten gemeint (Zoho:
+geschätzte Credits), nicht KI- oder OAuth-Tokens. Unter API-Verbrauch kommt ein
+eigener Tagesverlauf mit 7/30/90 Kalendertagen inklusive heute und einer
+zugänglichen Tageswerttabelle hinzu. Tagesgrenzen sind ausdrücklich UTC, der
+heutige Tag ist unvollständig. Anbieter/Verbindungen/Einheiten werden getrennt
+ausgewählt, niemals zu einer uneinheitlichen Verbrauchssumme addiert.
+Gruppierung erfolgt serverseitig in der tenantisolierten Usage-Tabelle; keine
+Zoho-Aufrufe, keine Migration oder Paketänderung. Tage ohne gespeicherte Events
+erscheinen mit 0 (kein Beleg für durchgängige Messung). Zugriff nur Tenant-Admins.
+
+Lokal umgesetzt: `/api/integrations/usage/daily`, serverseitige UTC-`DateOnly`-
+Gruppierung, Lückenfüllung, Auswahl von Reihe/Kennzahl sowie klickbare Tageswerte
+und Tabelle im Frontend. 23 synthetische Prüfungen einschließlich der echten
+Npgsql-SQL-Übersetzung und Tenantfilter bestanden. Der Chrome-Test prüft 7/30/90
+Tage, Einheitenwechsel, Balkenklick, Tabelle, Fehler/Refresh und 390px-Layout.
+Keine produktiven Daten gelesen, kein Live-Rollout oder Commit/Push.
+
+## Korrektur: Hook-URL ist ein Mandanten-Setting (19.09.2026)
+
+Ausdrückliche Benutzerentscheidung: Jeder Kunde muss seine Hook-Basis-URL in
+den Sales-AppSettings pflegen können. `zoho.webhookUrl` wird als normales
+`tenantApp`-Setting unter „Zoho CRM“ registriert. Job und Übersicht verwenden
+denselben tenantbezogenen Leser; kein OAuth-Neuverbinden oder Neustart zum
+Übernehmen einer Änderung. Nur ein leerer/nicht gesetzter Wert nutzt den
+vorhandenen Deploymentwert als abwärtskompatiblen Standard. Ein ungültiger
+expliziter Wert wird angezeigt/abgewiesen, nicht still durch den Standard ersetzt.
+Tenant-ID und Token werden weiterhin erst bei der Registrierung ergänzt.
+Eine geänderte effektive URL erzwingt beim nächsten Hook-Job die Registrierung.
+Die URL muss auf einen erreichbaren, für diesen Mandanten eingerichteten
+Sales-Einstieg führen; das Setting provisioniert keine Domain oder Zertifikate.
+
+Umgesetzt und nativ geprüft: 87 synthetische Hook-/Settings-Prüfungen (zwei
+Mandanten mit verschiedenen Frontend-Hosts, isolierter Scope, sofortiges Lesen
+geänderter Werte, ungültige Werte ohne Fallback), 18 Vertragstests, Backend-
+Releasebuild ohne Warnungen/Fehler und Frontend-Build bestanden. Chrome prüft
+auch Mandantenquelle/URL in der Übersicht. Bekannte Vite-Chunkgrößenwarnung.
+Kein Commit/Push oder Rollout; keine produktiven Tenant-Settings geändert.
+
+## Hook-Übersicht und sichere Ereignisprotokolle (19.09.2026)
+
+Benutzerauftrag: Callback-URL und Integration erklären sowie empfangene Hooks
+nachvollziehbar machen. Unter CRM-Integration entsteht eine Tenant-Admin-Ansicht
+mit konfigurierter Basis-URL, Modul-Subscriptions (auch fehlenden), Ablaufzeiten
+und paginierter Ereignisliste mit Status, Versuchen und sicheren Fehlerhinweisen.
+Die Übersicht liest ausschließlich die Tenant-Datenbank, nicht die Zoho-API.
+Eingang und Dubletten werden technisch protokolliert; Verarbeitung erhält die
+Ereignis-ID als Korrelation in den bestehenden Plattform-Joblogs.
+
+„Importiert“ bedeutet kanonische Daten übernommen, nicht erfolgreiche gesamte
+Regel-/Task-/Benachrichtigungsnachverarbeitung. Diese bleibt im Joblauf sichtbar.
+Der Zeitplan wird nicht geändert: Callback speichert, `CRM-Hooks erneuern`
+verarbeitet maximal 100 Ereignisse je Lauf, Fehler maximal fünf Versuche.
+Abgewiesene Aufrufe sind keine verifizierten Ereignisse und erscheinen nur im
+technischen Log. Keine Rohpayloads, Tokens oder beliebigen Provider-Fehlertexte
+in der neuen API. Neue Queue-Payloads speichern nur benötigte Felder ohne Token;
+alte Payloads bleiben lesbar, die bestehende Deduplizierungs-ID bleibt stabil.
+Keine Datenbankmigration, kein Paketupdate, keine Live-CRM-Schreibtests.
+
+Lokal umgesetzt und nativ geprüft: Backend-Releasebuild ohne Warnungen/Fehler,
+Frontend-Typecheck/Build (bekannte Chunkgrößenwarnung), 71 synthetische Hook-
+Prüfungen und 16 Deployment-/Theme-/Navigations-/URL-Verträge bestanden. Der
+Chrome-Test prüft zusätzlich Status/Details, Modul- und Statusfilter, Pagination,
+Leerzustand, HTTP-Fehler, erneutes Laden sowie 390px-Layout mit offener Hook-
+Modulübersicht. Kein Serverrollout, kein produktiver Callback-Nachweis und kein
+Commit/Push. Bereits gespeicherte ältere Payloads werden nicht bereinigt.
+
+## Gemeinsames helles und dunkles Theme (19.09.2026)
+
+Benutzerauftrag: zentrale Themes im Common-React-Paket. Sales verwendet dessen
+semantische Farbvariablen; kein eigener Theme-Store oder zweiter Umschalter.
+Der gemeinsame Header bietet Hell, Dunkel und System; Browserauswahl bleibt
+je Origin erhalten. Reports, Arbeitsliste, Formulare und Dialoge wechseln mit.
+Fachliche Daten, Berechtigungen und Navigation bleiben unverändert. Externe
+Kartenkacheln sind kein Teil des UI-Themes. Veröffentlichung und Live-Rollout
+sind getrennt vom lokalen Implementierungs-/Prüfstand nachzuweisen.
+
+Lokal umgesetzt: Common React 0.1.59 enthält Themes und Umschalter; Sales-
+Stylesheets verwenden dessen Variablen. Native Prüfungen: Common-Build/138 Tests,
+Sales-Typecheck/Build, neun Navigations-/URL-Tests und Chrome-Smoke-Test mit
+echtem Common-Header, Theme-Persistenz, Report-Dialog/Tabelle und 390px-Layout.
+Auf Folgeauftrag Common 0.1.59 lokal frisch gebaut und in GitHub Packages
+veröffentlicht; Sales-Paketreferenz und Registry-Lockfile sind aktualisiert.
+`initializePlatformTheme()` läuft vor dem ersten React-Render. Zwölf Integrations-/
+Navigations-/URL-Tests sowie Typecheck/Produktionsbuild bestanden.
+`tests/ThemeBrowser.mjs` besteht jetzt mit dem tatsächlich installierten Registry-
+Paket ohne lokalen Alias; Dark/Light/System, Reload-Persistenz und 390px-Layout
+sind geprüft. Kein Serverrollout und kein Commit/Push dieses Arbeitsstands bei
+dieser Integration. Kein NuGet-Update. Aufmass bleibt separat zu integrieren.
+
+## Öffentlicher Zoho-Webhook (19.09.2026)
+
+Benutzerauftrag: URL automatisch im Deployment konfigurieren und die sichere
+öffentliche Durchleitung ergänzen. `Zoho__WebhookUrl` wird in den Remote-
+Deploymentprofilen aus dem öffentlichen Frontend-Einstieg und dem app-eigenen
+Webhook-Pfad abgeleitet. Local bleibt ohne öffentlich erreichbaren Override
+absichtlich deaktiviert. Sales registriert genau diesen POST-Empfänger im
+generischen Manifestvertrag `webhooks`; Plattform-API und Application Router
+müssen diesen Vertrag vor dem Sales-Rollout unterstützen. Die Tenant-ID ist
+Routingkontext, kein Tokenersatz. Sales prüft weiterhin Channel, Modul und
+Subscription-Token innerhalb des Tenants, einschließlich Ablaufdatum.
+
+Umgesetzt und nativ getestet: 37 synthetische URL-/Tenant-/Token-/Erneuerungs-
+Prüfungen, vier Deployment-Vertragstests, bestehender HTTPS-Vertrag und Sales-
+Releasebuild ohne Warnungen/Fehler. Echte Remote-Profile beider Ziele gerendert.
+Noch nicht ausgerollt. Nach Plattform-API/Router und Sales den Job `CRM-Hooks
+erneuern` einmal starten; er registriert die URL samt Tenant und Token selbst.
+Keine NuGet-/npm-Veröffentlichung erforderlich.
+
+## Gesprächsentscheidung: Arbeit und Steuerung (19.09.2026)
+
+Der aktuelle Benutzerauftrag ersetzt die frühere gemeinsame lange Reportseite:
+Oben stehen Arbeit und daneben Steuerung. Arbeit erhält links die vier Themen
+Auslaufende Produkte, Schlummernde Leads, Wiedervorlagen und Meeting Report;
+vorhandene Regelarten werden darunter eingeordnet, nicht gelöscht oder mit neuen
+Schwellwerten neu erfunden. Steuerung erhält ebenfalls eine linke Reportnavigation
+(Cockpit, Monat, Team, Jahr, Lifetime, Analyse, Kunden, Ziele, Aufräumen und
+bestehende Fachreports). Meeting Report gehört zur Arbeit. Numerische
+Prioritätspunkte verschwinden aus der Oberfläche, die Priorisierung bleibt.
+
+Alle Sales-Vertriebsrollen dürfen die Steuerung lesen; die frühere Beschränkung
+von Cockpit/Analyse auf Leitung/GF ist damit aufgehoben. Persönliche
+Arbeitslistenfilter, Tenant-Isolation, Layout-Schreibschutz und Berechtigungen
+für Bereinigungsaktionen bleiben unverändert. Kennzahlen und Diagrammbalken
+öffnen ein zugängliches Tabellen-Modal mit exakt ihrer Berechnungsgrundlage.
+Quelle, Zeitraum, Formel, Datenstand und fehlende Voraussetzungen sind sichtbar;
+fehlende Ziele/Nenner sind nicht 0. Details und Kennzahlen stammen aus derselben
+Antwort; Tabellen werden paginiert, nicht still abgeschnitten. Vorhandene
+gespeicherte Layouts bleiben erhalten. Änderungen erfolgen ausschließlich in
+Sales, ohne CRM-Schreibzugriffe oder Änderungen an Aufmass/Identity Platform.
+
+Umgesetzt in Sales-Frontend und -Backend. Das Backend liefert normalisierte
+Nachweiszeilen einmal pro Antwort und referenziert sie aus mehreren Kennzahlen.
+Die Arbeitsliste hat keine stille 250er-API-/100er-UI-Abschneidung mehr; die
+UI blättert in 25er-Seiten. Fremde/unbekannte Regelarten bleiben unter Weitere
+bzw. Alle erreichbar. Beim Tenant-/Benutzerwechsel wird der Seitenzustand
+zurückgesetzt; veraltete Ladeantworten werden verworfen.
+
+Validierung nativ unter Windows: Backend-/Frontend-Build, synthetische
+Reportprojektion (`tests/Reports`), Navigations-/SSR-Tests und bestehende
+Root-URL-Tests. Ein isolierter Chrome-Smoke-Test (`tests/ReportBrowser.mjs`)
+prüft beide Navigationsbereiche, Themenfilter, Tabellen-Pagination, Modal-Suche,
+KPI-/Diagrammklicks, Escape/Fokusrückgabe sowie 390px-Handylayout. Keine
+produktive Anmeldung und keine Live-CRM-Schreibzugriffe. Für den Rollout müssen
+Sales-Frontend und Sales-Backend gemeinsam aktualisiert werden; Platform-only
+oder ein npm-/NuGet-Update ist hierfür nicht erforderlich.
+
+## Zoho-Aufgaben: Lead-Verknüpfung (19.09.2026)
+
+Der Fehler `INVALID_DATA` auf `$.data[0].Who_Id.id` entsteht bei der
+Aufgabenspiegelung durch das falsche Lookup-Feld für Leads. Der Task-Payload
+muss die externe Lead-ID als `What_Id.id` zusammen mit `$se_module = Leads`
+übergeben. `Who_Id` ist bei Tasks für Kontakte vorgesehen; Kontakte bleiben
+außerhalb der Sales-Integration. Quelle: [Zoho Tasks API](https://help.zoho.com/portal/en/community/topic/kaizen-36-tasks-api).
+Die Korrektur gilt für Create und Update. Andere Zielmodule, Owner-Zuordnung,
+Remote-ID-Normalisierung und das Beibehalten von Status/Priorität bei Updates
+bleiben unverändert. Keine Scope- oder OAuth-Änderung für diesen Fehler.
+
+Umgesetzt in `ZohoCrmAdapter.BuildTaskPayload`. Der ausführbare Regressionstest
+`tests/ZohoTaskPayload` reproduzierte vor der Korrektur das falsche Lead-Lookup.
+Nach der Korrektur bestehen 34 Payload-Fälle für Create/Update, sieben Zielmodule,
+rohe/präfixierte IDs sowie fehlende/unsupported Ziele. Natives Windows-Releasebuild
+ohne Warnungen/Fehler und Scope-/Deployment-Verträge bestanden. Der Test läuft
+auch in CI; er sendet keine CRM-Anfragen. Nicht ausgerollt, keine Live-Aufgaben
+angelegt. Fehler bei Create erzeugen keinen erfolgreichen CRM-Link; weiterhin
+aktive Vorgänge ohne Link werden beim nächsten Aufgabenabgleich erneut versucht.
+
+## Zoho-Scopes für Deal-Historie (19.09.2026)
+
+Die zunächst anhand eines älteren Field-Trackers-Artikels ergänzte Berechtigung
+`ZohoCRM.modules.DealHistory.READ` ist zurückgenommen. Beim erneuten Verbinden
+meldete Zoho „Ungültiger Authentifizierungsumfang / Umfang nicht vorhanden“.
+Der ergänzte Scope fehlt in der aktuellen v8-Scope-Liste; der Screenshot benennt
+den einzelnen abgelehnten Scope nicht. Defaults und effektive OAuth-Anforderung
+entfernen die Ergänzung, auch aus alten `Zoho__Scopes`-/`ZOHO_SCOPES`-Overrides.
+Auf ausdrücklichen Auftrag werden jetzt die für die Integration vorgesehenen
+Rechte vollständig angefordert: `ZohoCRM.modules.READ` für modulübergreifendes
+Lesen, zusätzlich `modules.emails.READ`, `users.READ`, `org.READ` sowie die
+vorhandenen Settings-Leserechte für Module, Felder, Layouts, Pipelines und
+Related Lists. Schreibrechte bleiben auf Tasks CREATE/UPDATE und Notifications
+CREATE/DELETE beschränkt. Kein `modules.ALL`, keine neuen CRM-Löschrechte.
+Dies erweitert bewusst die bisherigen modulspezifischen Leserechte; welche
+Entitäten Sales synchronisiert, bleibt unverändert. Die gesamte erforderliche
+Scope-Menge wird auch bei älteren Overrides ergänzt, nicht nur ein einzelner
+History-Scope. Die Zustimmung bleibt interaktiv beim jeweiligen Zoho-Benutzer.
+Leere bzw. ausschließlich aus dem verworfenen Scope bestehende Optionswerte
+bleiben ungültig. Quellen: [Zoho v8 Scopes](https://www.zoho.com/crm/developer/docs/api/v8/scopes.html)
+und [Related Records](https://www.zoho.com/crm/developer/docs/api/v8/get-related-records.html).
+
+Nach Deployment muss jeder betroffene Mandant Zoho erneut verbinden. Vorhandene
+Refresh-Tokens werden nicht automatisch erweitert. Die Fehlerflut im Import ist
+eine separate offene Fehlerbehandlung und nicht Bestandteil dieser Scope-Korrektur.
+
+Umgesetzt in Options-Defaults, `appsettings.json`, effektiver OAuth-Scope-Auflösung
+und Deployment-Override. Ein einzelner `ZOHO_SCOPES`-Eintrag wird jetzt als Liste
+behandelt, statt mit weiteren Scopes ohne Komma verkettet zu werden.
+Nativ unter Windows bestanden: neue Scope-Vertragstests (auch in CI eingebunden),
+App-Pipeline-/HTTPS-Verträge und Backend-Releasebuild ohne Warnungen/Fehler.
+Die bisherigen Tests prüfen Konfigurationsverarbeitung, nicht die Anerkennung
+von Scope-Namen durch Zoho. Kein Deployment und kein authentifizierter
+Zoho-Livetest; erfolgreiche Zustimmung und Stage-History-Abruf bleiben offen.
+Die Rücknahme repariert die von uns geänderte OAuth-Anforderung, ist aber kein
+nachgewiesener Fix für das ursprüngliche `OAUTH_SCOPE_MISMATCH` beim Import.
+
 ## Correlation-ID für technische Diagnose (14.09.2026)
 
 Browser-Requests erhalten zentral im Shared-Frontendpaket einen W3C-Tracekontext.

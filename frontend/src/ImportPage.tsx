@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useApplicationContext, usePlatformLog } from '@hammer2fall/identity-platform-react'
 import { tenantApplicationPath } from './identityPlatformConfig'
 import { usageRoute } from './salesRoutes'
+import { WebhookOverview } from './WebhookOverview'
 
 type ZohoStatus = {
   connected: boolean
@@ -96,6 +97,9 @@ export function ImportPage() {
   const [usageLoading, setUsageLoading] = useState(false)
   const [usageError, setUsageError] = useState<string | null>(null)
   const canManageImport = activeTenant?.isTenantAdmin === true
+  const logHookError = useCallback(() => {
+    log('Error', 'Hook overview failed', { category: 'Sales.Webhooks', tenantId: activeTenantId })
+  }, [log, activeTenantId])
 
   const loadZohoStatus = useCallback(async () => {
     if (!user || !activeTenantId || !canManageImport) return
@@ -291,6 +295,8 @@ export function ImportPage() {
         {(zohoError || platformError) && <div className="message error-message">{zohoError ?? platformError}</div>}
         {zohoMessage && <div className="message success-message">{zohoMessage}</div>}
       </section>
+
+      {user && activeTenantId && <WebhookOverview key={`${activeTenantId}:${user.username ?? user.email ?? user.displayName}`} authorizedFetch={authorizedFetch} jobsUrl={jobsRoute} onError={logHookError} />}
 
       <section className="sales-card integration-card">
         <div className="card-heading">

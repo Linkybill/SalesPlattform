@@ -30,11 +30,11 @@ public static class SalesWebPartCatalog
 
     public static readonly IReadOnlyList<SalesWebPartDefinition> Definitions =
     [
-        new("cockpit", "Cockpit", "Statusampel, Kern-KPIs, Funnel und Handlungspunkte.", "sales-manager"),
-        new("team", "Team-Steuerung", "Zielerreichung und Aktivität je Mitarbeiter.", "sales-manager"),
-        new("meetings", "Meeting Report", "Geplante, durchgeführte, abgesagte und verschobene Termine.", "sales-manager"),
-        new("analysis", "Analyse", "Umsatz, Verlustgründe, Verweildauer und Cross-Selling.", "sales-manager"),
-        new("customers", "Kundenstamm und Karte", "Kundenverteilung, Gebiete und CRM-Absprünge.", "sales-manager"),
+        new("cockpit", "Cockpit", "Kennzahlen mit Berechnungsgrundlage und Pipeline-Verteilung.", "sales-user"),
+        new("team", "Vertriebsteam", "Zielerreichung und Aktivität je Mitarbeiter.", "sales-user"),
+        new("meetings", "Meeting Report", "Geplante, durchgeführte, abgesagte und verschobene Termine.", "sales-user"),
+        new("analysis", "Analyse", "Umsatz, Verlustgründe, Verweildauer und Cross-Selling.", "sales-user"),
+        new("customers", "Kundenstamm und Karte", "Kundenverteilung, Gebiete und CRM-Absprünge.", "sales-user"),
         new("goals", "Ziele und Pace", "Zielerreichung, Zeitanteil und Pace je Mitarbeiter.", "sales-user"),
         new("cleanup", "Aufräumen", "Datenqualität und mögliche Dubletten zur manuellen Prüfung.", "sales-cleanup"),
         new("service", "Servicefälle", "Beschwerden, Supportfälle, Prioritäten und Überfälligkeiten.", "sales-user"),

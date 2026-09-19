@@ -11,6 +11,24 @@ public static class CrmApiUsageEndpointExtensions
     public static IEndpointRouteBuilder MapCrmApiUsageEndpoints(
         this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapGet("/api/integrations/usage/daily", async (
+            int? days, ClaimsPrincipal user, HttpContext httpContext,
+            TenantAdminAccessService tenantAdminAccess, CrmDailyUsageService usage,
+            CancellationToken cancellationToken) =>
+        {
+            if (!await tenantAdminAccess.IsCurrentTenantAdminAsync(user, cancellationToken))
+                return Results.Forbid();
+            httpContext.Response.Headers.CacheControl = "no-store";
+            try
+            {
+                return Results.Ok(await usage.GetAsync(days ?? 30, cancellationToken));
+            }
+            catch (ArgumentException exception)
+            {
+                return Results.BadRequest(new { message = exception.Message });
+            }
+        }).RequireAuthorization("sales-access");
+
         endpoints.MapGet("/api/integrations/usage", async (
             int? hours,
             ClaimsPrincipal user,

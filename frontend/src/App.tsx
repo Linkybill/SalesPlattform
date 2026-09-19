@@ -5,8 +5,14 @@ import { ImportPage } from './ImportPage'
 import { ReportsPage } from './ReportsPage'
 import { UsagePage } from './UsagePage'
 import { resolveSalesRoute } from './salesRoutes'
+import { useApplicationContext } from '@hammer2fall/identity-platform-react'
 
 function App() {
+  const { activeTenantId, user } = useApplicationContext()
+  return <TenantApp key={`${activeTenantId}:${user?.email ?? user?.username ?? user?.displayName ?? 'anonymous'}:${user?.roles?.join(',')}`} />
+}
+
+function TenantApp() {
   const [pathname, setPathname] = useState(() => window.location.pathname)
 
   useEffect(() => {

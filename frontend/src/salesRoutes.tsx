@@ -6,17 +6,17 @@ export const usageRoute = `${applicationRouteBase === '/' ? '' : applicationRout
 
 export const salesRoutes: readonly UserAuthorisationRoute[] = [
   {
-    id: 'dashboard',
-    route: applicationRouteBase,
-    title: 'Reports',
-    icon: <LayoutIcon />,
+    id: 'worklist',
+    route: `${applicationRouteBase === '/' ? '' : applicationRouteBase}/worklist`,
+    title: 'Arbeit',
+    icon: <WorklistIcon />,
     visibleForRoles: ['sales-user', 'sales-manager', 'sales-management', 'sales-backoffice'],
   },
   {
-    id: 'worklist',
-    route: `${applicationRouteBase === '/' ? '' : applicationRouteBase}/worklist`,
-    title: 'Arbeitsliste',
-    icon: <WorklistIcon />,
+    id: 'dashboard',
+    route: `${applicationRouteBase === '/' ? '' : applicationRouteBase}/reports`,
+    title: 'Steuerung',
+    icon: <LayoutIcon />,
     visibleForRoles: ['sales-user', 'sales-manager', 'sales-management', 'sales-backoffice'],
   },
   {
@@ -46,9 +46,16 @@ export const salesRoutes: readonly UserAuthorisationRoute[] = [
 
 export type SalesRouteId = 'dashboard' | 'worklist' | 'import' | 'usage' | 'dashboard-layout'
 
+// Explicit sibling paths prevent the shared header's prefix matching from
+// highlighting both Arbeit and Steuerung underneath a tenant root.
+export function canonicalSalesEntryPath(pathname: string): string {
+  return normalizePathname(pathname) === normalizePathname(applicationRouteBase)
+    ? salesRoutes.find(route => route.id === 'worklist')!.route : pathname
+}
+
 export function resolveSalesRoute(pathname: string): SalesRouteId {
   const importRoute = salesRoutes.find(route => route.id === 'import')
-  if (!importRoute) return 'dashboard'
+  if (!importRoute) return 'worklist'
 
   const currentPath = normalizePathname(pathname)
   const dashboardLayoutRoute = salesRoutes.find(route => route.id === 'dashboard-layout')
@@ -60,12 +67,12 @@ export function resolveSalesRoute(pathname: string): SalesRouteId {
   if (currentPath === importPath || currentPath.startsWith(`${importPath}/`)) return 'import'
   const usagePath = normalizePathname(new URL(usageRoute, window.location.origin).pathname)
   if (currentPath === usagePath || currentPath.startsWith(`${usagePath}/`)) return 'usage'
-  const worklistRoute = salesRoutes.find(route => route.id === 'worklist')
-  if (worklistRoute) {
-    const worklistPath = normalizePathname(new URL(worklistRoute.route, window.location.origin).pathname)
-    if (currentPath === worklistPath || currentPath.startsWith(`${worklistPath}/`)) return 'worklist'
+  const reportRoute = salesRoutes.find(route => route.id === 'dashboard')
+  if (reportRoute) {
+    const reportPath = normalizePathname(new URL(reportRoute.route, window.location.origin).pathname)
+    if (currentPath === reportPath || currentPath.startsWith(`${reportPath}/`)) return 'dashboard'
   }
-  return 'dashboard'
+  return 'worklist'
 }
 
 function normalizePathname(pathname: string): string {

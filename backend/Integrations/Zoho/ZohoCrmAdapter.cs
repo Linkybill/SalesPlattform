@@ -548,12 +548,10 @@ public sealed class ZohoCrmAdapter(
             };
             if (targetModule is not null)
             {
-                var isParticipant = targetModule is "Leads";
-                task[isParticipant ? "Who_Id" : "What_Id"] =
+                // Task Who_Id is a Contact lookup. Leads, like the other
+                // supported non-contact targets, use What_Id + $se_module.
+                task["What_Id"] =
                     new JsonObject { ["id"] = NormalizeZohoRecordId(request.TargetExternalId) };
-                // Zoho requires the concrete related module for every Task
-                // relationship. This is also mandatory for Who_Id (Leads),
-                // not only for What_Id relationships.
                 task["$se_module"] = targetModule;
             }
         }

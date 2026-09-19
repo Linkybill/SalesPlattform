@@ -4,7 +4,6 @@ using System.Text.Json;
 using IdentityPlatform.Shared.Database;
 using IdentityPlatform.Shared.Jobs;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using SalesPlattform.Backend.Data;
 using SalesPlattform.Backend.Integrations.Abstractions;
 using SalesPlattform.Backend.Integrations.Repositories;
@@ -27,7 +26,7 @@ public sealed class ZohoCrmHookUpdateService(
     SalesApplicationSettingsService applicationSettings,
     ICrmBusinessChangeProcessor businessChanges,
     ICrmApiUsageRecorder apiUsage,
-    IOptions<ZohoOptions> zohoOptions,
+    ZohoWebhookSettingsService webhookSettings,
     ILogger<ZohoCrmHookUpdateService> logger)
     : ICrmHookUpdateService
 {
@@ -40,7 +39,6 @@ public sealed class ZohoCrmHookUpdateService(
     private const int EventBatchSize = 100;
     // Renew before the next daily run, with headroom for scheduling delays.
     private static readonly TimeSpan SubscriptionRenewalLeadTime = TimeSpan.FromHours(36);
-    private readonly ZohoOptions options = zohoOptions.Value;
 
     public CrmHookJobRegistration JobRegistration { get; } = new(
         "crm-zoho-hook-update",
@@ -48,7 +46,7 @@ public sealed class ZohoCrmHookUpdateService(
         "Registriert, erneuert und verarbeitet Zoho-CRM-Hooks für die relevanten Sales-Module.",
         "0 3 * * *");
 
-    private static readonly string[] RelevantModules =
+    internal static readonly string[] RelevantModules =
     [
         "Users",
         "Leads",
@@ -102,15 +100,17 @@ public sealed class ZohoCrmHookUpdateService(
                 return EmptyResult();
             }
 
-            if (!TryBuildWebhookBaseUrl(out var webhookBaseUrl, out var urlError))
+            var webhookConfiguration = await webhookSettings.ResolveCurrentAsync(cancellationToken);
+            if (webhookConfiguration.BaseUri is not { } webhookBaseUrl)
             {
+                var urlError = webhookConfiguration.Error!;
                 await context.Logger.WarningAsync(
                     $"Zoho-Hooks nicht registriert: {urlError}",
                     "CRM-Hooks",
                     JsonSerializer.SerializeToElement(new
                     {
                         reason = "webhook-url-not-configured",
-                        configured = !string.IsNullOrWhiteSpace(options.WebhookUrl)
+                        source = webhookConfiguration.Source
                     }),
                     cancellationToken);
                 return new CrmHookUpdateResult(
@@ -128,7 +128,7 @@ public sealed class ZohoCrmHookUpdateService(
             if (schema is null)
             {
                 const string message =
-                    "Zoho-Hooks können erst registriert werden, wenn der manuelle Job 'Zoho-Schema cachen' einmal erfolgreich gelaufen ist.";
+                    "Zoho-Hooks können erst registriert werden, wenn der Job 'Zoho-Schema cachen' einmal erfolgreich gelaufen ist.";
                 await context.Logger.WarningAsync(message, "CRM-Hooks", cancellationToken: cancellationToken);
                 return new CrmHookUpdateResult(
                     ProviderKey,
@@ -174,10 +174,10 @@ public sealed class ZohoCrmHookUpdateService(
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 subscriptions.TryGetValue(module, out var subscription);
-                if (subscription?.ExpiresAt > now.Add(SubscriptionRenewalLeadTime)
-                    && string.Equals(subscription.Status, ActiveStatus, StringComparison.OrdinalIgnoreCase))
+                var notifyUrl = BuildTenantWebhookUrl(webhookBaseUrl, context.TenantId);
+                if (CanKeepSubscription(subscription, notifyUrl, now))
                 {
-                    subscription.LastCheckedAt = now;
+                    subscription!.LastCheckedAt = now;
                     unchanged++;
                     continue;
                 }
@@ -187,7 +187,6 @@ public sealed class ZohoCrmHookUpdateService(
                     var oldChannelId = subscription?.ChannelId;
                     var token = CreateVerificationToken();
                     var requestedChannelId = CreateChannelId();
-                    var notifyUrl = BuildTenantWebhookUrl(webhookBaseUrl, context.TenantId);
                     var registration = await crm.RegisterNotificationsAsync(
                         notifyUrl,
                         token,
@@ -366,7 +365,12 @@ public sealed class ZohoCrmHookUpdateService(
                 webhookEvent.Status = ProcessingStatus;
                 webhookEvent.AttemptCount++;
                 await db.SaveChangesAsync(cancellationToken);
-                var payload = ZohoWebhookPayload.Parse(webhookEvent.PayloadJson);
+                var payload = ZohoWebhookPayload.ParseStored(webhookEvent.PayloadJson);
+                await context.Logger.InfoAsync(
+                    "Zoho-Hook-Import gestartet.", "CRM-Hook-Ereignisse",
+                    JsonSerializer.SerializeToElement(new { eventId = webhookEvent.Id,
+                        module = payload.Module, operation = payload.Operation,
+                        attempt = webhookEvent.AttemptCount, records = payload.RecordIds.Count }), cancellationToken);
                 var runItem = await repository.GetOrCreateSyncRunItemAsync(
                     syncRun,
                     payload.Module,
@@ -437,6 +441,8 @@ public sealed class ZohoCrmHookUpdateService(
                     "CRM-Hook-Ereignisse",
                     JsonSerializer.SerializeToElement(new
                     {
+                        eventId = webhookEvent.Id,
+                        attempt = webhookEvent.AttemptCount,
                         module = payload.Module,
                         operation = payload.Operation,
                         records = payload.RecordIds.Count,
@@ -447,7 +453,7 @@ public sealed class ZohoCrmHookUpdateService(
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 failed++;
-                var message = exception.Message[..Math.Min(exception.Message.Length, 4000)];
+                var message = ZohoWebhookOverviewService.SafeError(exception.Message)!;
                 warnings.Add(message);
                 repository.DetachRecordChanges();
                 webhookEvent.Status = FailedStatus;
@@ -459,7 +465,10 @@ public sealed class ZohoCrmHookUpdateService(
                 await context.Logger.WarningAsync(
                     $"Zoho-Hook konnte nicht verarbeitet werden: {message}",
                     "CRM-Hook-Ereignisse",
-                    JsonSerializer.SerializeToElement(new { remaining = events.Length - index - 1 }),
+                    JsonSerializer.SerializeToElement(new { eventId = webhookEvent.Id,
+                        eventType = webhookEvent.EventType, attempt = webhookEvent.AttemptCount,
+                        retryPending = webhookEvent.AttemptCount < 5, errorType = exception.GetType().Name,
+                        remaining = events.Length - index - 1 }),
                     cancellationToken);
             }
 
@@ -534,14 +543,23 @@ public sealed class ZohoCrmHookUpdateService(
         return run;
     }
 
-    private bool TryBuildWebhookBaseUrl(out Uri uri, out string error)
+    internal static bool CanKeepSubscription(IntegrationSubscription? subscription, string notifyUrl, DateTimeOffset now)
+        => subscription?.ExpiresAt > now.Add(SubscriptionRenewalLeadTime)
+            && string.Equals(subscription.NotifyUrl, notifyUrl, StringComparison.Ordinal)
+            && string.Equals(subscription.Status, ActiveStatus, StringComparison.OrdinalIgnoreCase);
+
+    internal static bool TryValidateWebhookUrl(string? webhookUrl, out Uri uri, out string error)
     {
-        if (!Uri.TryCreate(options.WebhookUrl, UriKind.Absolute, out uri!)
+        if (!Uri.TryCreate(webhookUrl, UriKind.Absolute, out uri!)
             || (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-            || string.IsNullOrWhiteSpace(uri.Host))
+            || string.IsNullOrWhiteSpace(uri.Host)
+            || !string.IsNullOrEmpty(uri.UserInfo)
+            || !string.IsNullOrEmpty(uri.Query)
+            || !string.IsNullOrEmpty(uri.Fragment)
+            || !uri.AbsolutePath.EndsWith("/api/integrations/zoho/webhook", StringComparison.Ordinal))
         {
-            error = "Zoho:WebhookUrl ist nicht als erreichbare HTTP(S)-URL konfiguriert.";
+            error = "In den Sales-AppSettings unter Zoho Webhook-URL (zoho.webhookUrl) eine öffentliche HTTP(S)-URL zum /api/integrations/zoho/webhook ohne Zugangsdaten, Query oder Fragment eintragen. Leer verwendet den Deployment-Standard.";
             uri = null!;
             return false;
         }
@@ -550,7 +568,7 @@ public sealed class ZohoCrmHookUpdateService(
             || uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
             || uri.Host.EndsWith(".local", StringComparison.OrdinalIgnoreCase))
         {
-            error = "Zoho:WebhookUrl zeigt auf localhost bzw. eine lokale Domain und kann von Zoho nicht erreicht werden.";
+            error = "Die Zoho Webhook-URL zeigt auf localhost bzw. eine lokale Domain und kann von Zoho nicht erreicht werden. Die Mandanteneinstellung zoho.webhookUrl prüfen.";
             return false;
         }
 
@@ -596,6 +614,20 @@ public sealed class ZohoWebhookReceiver(
     PlatformTenantDbContextFactory<SalesPlattformDbContext> dbFactory,
     ILogger<ZohoWebhookReceiver> logger)
 {
+    internal static bool HasValidSubscriptionToken(IntegrationSubscription? subscription, string token, DateTimeOffset now)
+    {
+        if (subscription is null || subscription.Status != "active"
+            || subscription.ExpiresAt is null || subscription.ExpiresAt <= now
+            || string.IsNullOrEmpty(token) || string.IsNullOrEmpty(subscription.VerificationTokenHash)) return false;
+        try
+        {
+            return CryptographicOperations.FixedTimeEquals(
+                Convert.FromHexString(subscription.VerificationTokenHash),
+                SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+        }
+        catch (FormatException) { return false; }
+    }
+
     public async Task<ZohoWebhookReceipt> ReceiveAsync(
         JsonElement payload,
         CancellationToken cancellationToken = default)
@@ -618,15 +650,9 @@ public sealed class ZohoWebhookReceiver(
                 && item.ChannelId == parsed.ChannelId
                 && item.Module == parsed.Module
                 && item.Status == "active", cancellationToken);
-        if (subscription is null
-            || !CryptographicOperations.FixedTimeEquals(
-                Convert.FromHexString(subscription.VerificationTokenHash),
-                SHA256.HashData(Encoding.UTF8.GetBytes(parsed.Token))))
+        if (!HasValidSubscriptionToken(subscription, parsed.Token, DateTimeOffset.UtcNow))
         {
-            logger.LogWarning(
-                "Rejected Zoho webhook for channel {ChannelId} and module {Module}.",
-                parsed.ChannelId,
-                parsed.Module);
+            logger.LogWarning("Rejected Zoho webhook: subscription verification failed.");
             throw new UnauthorizedAccessException("Zoho-Webhook konnte nicht verifiziert werden.");
         }
 
@@ -638,6 +664,7 @@ public sealed class ZohoWebhookReceiver(
                 && item.ExternalEventId == externalEventId, cancellationToken);
         if (existing is not null)
         {
+            logger.LogInformation("Zoho webhook duplicate ignored: EventId {EventId}, Status {Status}.", existing.Id, existing.Status);
             return new ZohoWebhookReceipt(existing.Id, false, existing.Status);
         }
 
@@ -648,13 +675,15 @@ public sealed class ZohoWebhookReceiver(
             ConnectionKey = "default",
             EventType = $"{parsed.Module}.{parsed.Operation}",
             ExternalEventId = externalEventId,
-            PayloadJson = parsed.PayloadJson,
+            PayloadJson = parsed.ToStoredJson(),
             Status = "queued",
             AttemptCount = 0,
             ReceivedAt = DateTimeOffset.UtcNow
         };
         db.IntegrationWebhookEvents.Add(webhookEvent);
         await db.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Zoho webhook queued: EventId {EventId}, Module {Module}, Operation {Operation}, Records {Records}.",
+            webhookEvent.Id, parsed.Module, parsed.Operation, parsed.RecordIds.Count);
         return new ZohoWebhookReceipt(webhookEvent.Id, true, webhookEvent.Status);
     }
 }
@@ -669,7 +698,15 @@ internal sealed record ZohoWebhookPayload(
     IReadOnlyCollection<string> RecordIds,
     string PayloadJson)
 {
-    public static ZohoWebhookPayload Parse(string payloadJson)
+    // Verification is mandatory at the HTTP boundary, but secrets are not needed by the durable queue.
+    public static ZohoWebhookPayload Parse(string payloadJson) => ParseCore(payloadJson, requireToken: true);
+    public static ZohoWebhookPayload ParseStored(string payloadJson) => ParseCore(payloadJson, requireToken: false);
+    public string ToStoredJson() => JsonSerializer.Serialize(new
+    {
+        module = Module, operation = Operation, channel_id = ChannelId, ids = RecordIds
+    });
+
+    private static ZohoWebhookPayload ParseCore(string payloadJson, bool requireToken)
     {
         using var document = JsonDocument.Parse(payloadJson);
         var root = document.RootElement;
@@ -678,7 +715,7 @@ internal sealed record ZohoWebhookPayload(
         var token = ReadString(root, "token");
         if (string.IsNullOrWhiteSpace(module)
             || string.IsNullOrWhiteSpace(channelId)
-            || string.IsNullOrWhiteSpace(token))
+            || (requireToken && string.IsNullOrWhiteSpace(token)))
         {
             throw new InvalidOperationException("Zoho-Webhook enthält kein Modul, keine Channel-ID oder keinen Verification-Token.");
         }
@@ -688,7 +725,6 @@ internal sealed record ZohoWebhookPayload(
             "insert" or "create" => "create",
             "update" or "edit" => "edit",
             "delete" => "delete",
-            var value when !string.IsNullOrWhiteSpace(value) => value,
             _ => throw new InvalidOperationException("Zoho-Webhook enthält keine unterstützte Operation.")
         };
         var recordIds = root.TryGetProperty("ids", out var ids)
@@ -707,7 +743,7 @@ internal sealed record ZohoWebhookPayload(
             module,
             operation,
             channelId,
-            token,
+            token ?? string.Empty,
             recordIds,
             payloadJson);
     }

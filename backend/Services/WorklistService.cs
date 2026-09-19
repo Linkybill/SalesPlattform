@@ -136,7 +136,6 @@ public sealed class WorklistService(
                 .OrderByDescending(item => item.PriorityScore)
                 .ThenBy(item => item.DueAt)
                 .ThenBy(item => item.CreatedAt)
-                .Take(250)
                 .ToArrayAsync(cancellationToken);
 
             var externalUrls = await ResolveExternalUrlsAsync(items, cancellationToken);

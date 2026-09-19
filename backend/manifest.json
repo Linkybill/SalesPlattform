@@ -28,6 +28,9 @@
       "deploymentMode": "Shared"
     }
   ],
+  "webhooks": [
+    { "path": "/api/integrations/zoho/webhook", "componentKey": "backend" }
+  ],
   "entryPoints": [
     {
       "key": "web",
@@ -84,6 +87,21 @@
       "type": "string",
       "scopes": ["tenantApp"],
       "validation": { "minLength": 1, "maxLength": 300 },
+      "dependsOn": {
+        "scope": "tenantApp",
+        "settingKey": "crm.integration",
+        "value": "zoho"
+      }
+    },
+    {
+      "key": "zoho.webhookUrl",
+      "name": "Zoho Webhook-URL",
+      "description": "Öffentliche Sales-Callback-Basis-URL dieses Mandanten, z. B. https://sales.kunde.de/api/integrations/zoho/webhook. Ohne Query oder Token eintragen; die Tenant-ID wird automatisch ergänzt. Leer verwendet den Deployment-Standard. Nach einer Änderung den Job CRM-Hooks erneuern starten. Die Adresse muss bereits als erreichbarer Sales-Einstieg eingerichtet sein.",
+      "category": "Zoho CRM",
+      "type": "string",
+      "defaultValue": "",
+      "scopes": ["tenantApp"],
+      "validation": { "maxLength": 2048 },
       "dependsOn": {
         "scope": "tenantApp",
         "settingKey": "crm.integration",

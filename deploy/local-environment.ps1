@@ -3,8 +3,11 @@ param($Plan, [string]$AppRoot)
 $settings = (Get-Content -LiteralPath (Join-Path $AppRoot 'backend/appsettings.json') -Raw | ConvertFrom-Json).Zoho
 $defaults = $settings.Scopes -split ','
 $configured = if ([string]::IsNullOrWhiteSpace($env:ZOHO_SCOPES)) { $defaults } else { $env:ZOHO_SCOPES -split ',' }
-$scopes = @($configured + @($defaults | Where-Object { $_ -match '\.(CREATE|UPDATE|DELETE)$' }) |
-    ForEach-Object { $_.Trim() } | Where-Object { $_ } | Select-Object -Unique) -join ','
+# Older overrides can add rights, but must retain the current integration grants.
+$scopes = @(@($configured) + @($defaults) |
+    ForEach-Object { $_.Trim() } |
+    Where-Object { $_ -and $_ -ine 'ZohoCRM.modules.DealHistory.READ' } |
+    Select-Object -Unique) -join ','
 @{ name = 'SalesNotifications__Mail__Host'; value = "$($Plan.Names.Platform)-mailpit"; valueFrom = $null }
 @{ name = 'SalesNotifications__Mail__Port'; value = '1025'; valueFrom = $null }
 @{ name = 'Zoho__WebhookUrl'; value = [string]$env:ZOHO_WEBHOOK_URL; valueFrom = $null }

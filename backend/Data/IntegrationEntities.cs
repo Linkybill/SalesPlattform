@@ -44,7 +44,7 @@ public sealed class IntegrationApiUsageEvent : SalesEntity
 
 /// <summary>
 /// Persisted Zoho CRM metadata used by all regular synchronization runs.
-/// The schema is refreshed only by the explicit manual schema-cache job; a
+/// The schema is refreshed only by the dedicated schema-cache job; a
 /// normal full or incremental sync never calls Zoho's settings endpoints.
 /// </summary>
 public sealed class ZohoSchemaCache : SalesEntity

@@ -1,0 +1,49 @@
+.sales-section-browser { display: grid; grid-template-columns: 235px minmax(0, 1fr); gap: 24px; align-items: start; }
+.sales-section-nav { display: flex; flex-direction: column; gap: 6px; position: sticky; top: 20px; }
+.sales-section-nav button { width: 100%; text-align: left; padding: 12px 14px; color: var(--ip-text, #eaf3ff); border: 1px solid transparent; border-radius: 9px; background: var(--ip-surface-raised, #112338); cursor: pointer; font: inherit; }
+.sales-section-nav button:hover { background: var(--ip-surface-hover, #1c3851); }
+.sales-section-nav button.is-active { background: var(--ip-surface-selected, #163b4b); border-color: var(--ip-accent, #64d9e7); color: var(--ip-accent-hover, #a2f2ff); }
+.sales-section-nav .worklist-subtopic { font-size: .85rem; padding-left: 26px; background: transparent; }
+.sales-section-content, .worklist-results { min-width: 0; }
+.sales-section-content > h2 { margin-top: 0; }
+.meeting-report-embedded .sales-hero { padding: 20px; margin-bottom: 16px; }
+.meeting-report-embedded h1 { font-size: 1.6rem; }
+.meeting-report-embedded .sales-lead { font-size: .95rem; }
+.meeting-report-embedded .sales-card { padding: 18px; }
+.report-kpi-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.explained-kpi { padding: 0; overflow-wrap: anywhere; }
+.metric-open { appearance: none; display: flex; flex-direction: column; gap: 10px; width: 100%; padding: 18px; border: 0; border-radius: inherit; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.metric-open:hover { background: var(--ip-surface-hover, #183449); }
+.metric-open strong { font-size: 1.6rem; }
+.metric-open small { line-height: 1.5; }
+.explained-kpi details { padding: 0 18px 14px; font-size: .8rem; }
+.explained-kpi summary { cursor: pointer; color: var(--ip-accent-hover, #9ddcec); }
+.metric-explanation p { margin: 8px 0; line-height: 1.5; }
+.metric-link { color: var(--ip-accent-hover, #9eeeff); padding: 4px 0; border: 0; border-bottom: 1px dotted currentColor; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.chart-detail-button { display: block; width: 100%; text-align: left; color: inherit; background: transparent; border: 0; border-radius: 6px; padding: 8px; cursor: pointer; font: inherit; }
+.chart-detail-button:hover { background: var(--ip-surface-hover, #1a3549); }
+.chart-detail-button > span { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+.chart-detail-button > i { display: block; }
+.report-detail-dialog { width: min(1150px, calc(100vw - 32px)); max-height: 88dvh; padding: 28px; box-sizing: border-box; border: 1px solid var(--ip-border, #476b86); border-radius: 16px; background: var(--ip-surface, #0e1d30); color: var(--ip-text, #edf5ff); overflow: auto; }
+.report-detail-dialog::backdrop { background: var(--ip-backdrop, rgb(0 8 20 / 78%)); }
+.report-detail-dialog .card-heading { align-items: flex-start; gap: 20px; }
+.detail-value { font-size: 1.8rem; margin: 12px 0; }
+.evidence-table label { display: grid; gap: 8px; margin-top: 20px; }
+.evidence-table input { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--ip-border-strong, #46637c); background: var(--ip-surface-raised, #14283c); color: var(--ip-text, #edf5ff); font: inherit; }
+.evidence-table td { vertical-align: top; }
+.evidence-table td:nth-child(6) { min-width: 220px; white-space: normal; }
+.button-row { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 16px; }
+.report-status { line-height: 1.6; }
+.sales-section-nav button:focus-visible, .metric-open:focus-visible, .metric-link:focus-visible, .chart-detail-button:focus-visible { outline: 2px solid var(--ip-accent, #8aedff); outline-offset: 3px; }
+@media (max-width: 1000px) {
+  .sales-section-browser { grid-template-columns: 190px minmax(0, 1fr); gap: 14px; }
+  .report-columns-three { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .sales-section-browser, .worklist-browser { grid-template-columns: minmax(0, 1fr); }
+  .sales-section-nav { position: static; }
+  .report-detail-dialog { padding: 16px; }
+  .report-detail-dialog .card-heading { flex-direction: column-reverse; }
+  .chart-detail-button > span { flex-wrap: wrap; }
+  .report-kpi-grid { grid-template-columns: minmax(0, 1fr); }
+}

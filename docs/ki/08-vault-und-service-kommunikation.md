@@ -1,7 +1,10 @@
 # Vault, App-Settings und Service-Kommunikation
 
-Stand: 10.09.2026. Diese Datei beschreibt den Ist-Stand und die verbindlichen
+Abgleich: 19.09.2026. Diese Datei beschreibt die verbindlichen
 Anforderungen der SalesPlattform, keine Fehler- oder Datenhistorie.
+Aktuelle Paket-Pins: Shared 0.1.73 und React 0.1.59. Die folgende datierte
+Diagnoseintegration nennt ihre damaligen Prüf-/Veröffentlichungsstände;
+externe CI-Secrets wurden beim aktuellen Dokuabgleich nicht neu abgefragt.
 
 ## Ergänzung: zentrale Diagnoseintegration (14.09.2026)
 
@@ -10,7 +13,7 @@ Sales verwendet das zentrale Logging über `AddIdentityPlatform` und die
 Fehler, abgefangene Datenbankausfälle, Job-Logs sowie fehlgeschlagene HTTP-Aufrufe
 werden mit App-/Tenant-/Trace-Kontext exportiert. CRM-Datensätze, Mailinhalte,
 Settingswerte, Headers und Tokenantworten gehören ausdrücklich nicht ins Log.
-NuGet **0.1.70** und React **0.1.55** sind veröffentlicht und regulär referenziert
+Damals waren NuGet **0.1.70** und React **0.1.55** veröffentlicht und regulär referenziert
 (Plattform-Publish `34868012893`). Correlation-ID und Span-/Parent-IDs verbinden
 Browser-, Router-, Backend- und HTTP-Abhängigkeitsmeldungen.
 
@@ -44,11 +47,20 @@ Secretwerte aller Scopes werden ausschließlich im zentralen Vault gespeichert.
 | `crm.integration` | `tenantApp` | Normales Setting; Auswahl `none` oder `zoho` |
 | `zoho.datacenter` | `tenantApp` | Normales Setting; Standard `eu` |
 | `zoho.clientId` | `tenantApp` | Normales Setting; Client-ID der Zoho-Anwendung |
+| `zoho.webhookUrl` | `tenantApp` | Normales Setting; öffentliche Callback-Basis-URL des jeweiligen Mandanten; leer verwendet den Deployment-Standard |
 | `zoho.clientSecret` | `tenantApp` | `secret: true`; Client-Secret in Vault |
 | `integration.zoho.default.refresh-token` | `tenantApp` | Internes Credential ohne Manifest-Editor; nach erfolgreichem OAuth vom Zoho-Adapter in Vault gespeichert |
 
 Client-ID und Datacenter sind keine Secrets. Der Tenant-Admin pflegt die
 Zoho-Konfiguration im Tenant Portal unter **SalesPlattform → AppSettings**.
+Unter **Zoho Webhook-URL** wird der für diesen Kunden eingerichtete Sales-Einstieg
+mit `/api/integrations/zoho/webhook` eingetragen. Verschiedene Kunden dürfen
+unterschiedliche Frontend-Hosts verwenden. Übersicht und Hook-Job lesen bei jedem
+Aufruf denselben aktuellen Tenant-App-Wert, unabhängig von OAuth und ohne Neustart.
+Ein expliziter ungültiger Wert wird nicht durch die Deployment-URL ersetzt.
+Die Tenant-ID wird bei Registrierung ergänzt. Nach Änderung den Job
+„CRM-Hooks erneuern“ starten; bereits gültige Subscriptions mit anderer URL
+werden dabei ersetzt. Das Setting richtet weder DNS noch Routing oder TLS ein.
 Die Zoho-Felder werden bei `crm.integration = zoho` eingeblendet. Das
 Secret-Passwortfeld setzt einen neuen Wert; gespeicherte Secretwerte werden
 in normalen Settings-Antworten nicht zurückgegeben.

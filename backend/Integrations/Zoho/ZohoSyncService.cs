@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using IdentityPlatform.Shared.Database;
@@ -28,6 +29,9 @@ public sealed class ZohoSyncService(
     // one sequential network round-trip per Account/Lead/Deal.
     private const int RelatedFetchConcurrency = 4;
     private const int RelatedWriteBatchSize = 100;
+    private const int MaxWrittenRecordDetails = 100;
+    private const int MaxSingleWrittenRecordPayloadBytes = 32 * 1024;
+    private const int MaxWrittenRecordPayloadBytes = 128 * 1024;
 
     public string ProviderKey => CrmProviders.Zoho;
 
@@ -186,6 +190,7 @@ public sealed class ZohoSyncService(
                 .Where(item => item.SyncRunId == runId)
                 .OrderBy(item => item.EntityType)
                 .ThenBy(item => item.ExternalId)
+                .Take(MaxWrittenRecordDetails)
                 .Select(item => new ZohoSynchronizationWrittenRecordSnapshot(
                     item.EntityType,
                     item.ExternalId,
@@ -241,7 +246,7 @@ public sealed class ZohoSyncService(
             var schema = await schemaCache.GetCachedAsync(cancellationToken)
                 ?? throw new InvalidOperationException(
                     "Für den Zoho-Sync ist noch kein lokaler Zoho-Schema-Cache vorhanden. "
-                    + "Bitte zuerst den manuellen Job 'Zoho-Schema cachen' ausführen.");
+                    + "Bitte zuerst den Job 'Zoho-Schema cachen' ausführen.");
             var availableModules = schema.AvailableModules;
             var sourceRecords = new Dictionary<string, IReadOnlyCollection<CrmExternalRecord>>(
                 StringComparer.OrdinalIgnoreCase);
@@ -1162,7 +1167,9 @@ public sealed class ZohoSyncService(
             : "Vollimport";
 
     private static JsonElement ToDetails(ZohoSynchronizationSnapshot snapshot)
-        => JsonSerializer.SerializeToElement(new
+    {
+        var writtenRecordDetails = BuildWrittenRecordDetails(snapshot.WrittenRecords);
+        return JsonSerializer.SerializeToElement(new
         {
             provider = CrmProviders.Zoho,
             localRunId = snapshot.RunId,
@@ -1170,14 +1177,12 @@ public sealed class ZohoSyncService(
             recordsRead = snapshot.RecordsRead,
             recordsWritten = snapshot.RecordsWritten,
             recordsFailed = snapshot.RecordsFailed,
-            writtenRecords = snapshot.WrittenRecords.Select(record => new
-            {
-                entityType = record.EntityType,
-                externalId = record.ExternalId,
-                externalModifiedAt = record.ExternalModifiedAt,
-                syncedAt = record.SyncedAt,
-                payload = ParsePayload(record.PayloadJson)
-            }).ToArray(),
+            writtenRecords = writtenRecordDetails.Records,
+            writtenRecordsIncluded = writtenRecordDetails.Records.Count,
+            writtenRecordsTotal = snapshot.RecordsWritten,
+            writtenRecordsTruncated = snapshot.RecordsWritten > writtenRecordDetails.Records.Count,
+            writtenRecordPayloadsOmitted = writtenRecordDetails.PayloadsOmitted,
+            writtenRecordPayloadBytesIncluded = writtenRecordDetails.PayloadBytesIncluded,
             modules = snapshot.Modules.Select(module =>
             {
                 var item = snapshot.Items.FirstOrDefault(candidate =>
@@ -1205,6 +1210,39 @@ public sealed class ZohoSyncService(
                 };
             }).ToArray()
         });
+    }
+
+    private static WrittenRecordDetails BuildWrittenRecordDetails(
+        IReadOnlyCollection<ZohoSynchronizationWrittenRecordSnapshot> records)
+    {
+        var details = new List<IReadOnlyDictionary<string, object?>>(records.Count);
+        var payloadBytesIncluded = 0;
+        var payloadsOmitted = 0;
+
+        foreach (var record in records)
+        {
+            var payloadSizeBytes = Encoding.UTF8.GetByteCount(record.PayloadJson);
+            var includePayload = payloadSizeBytes <= MaxSingleWrittenRecordPayloadBytes
+                && payloadBytesIncluded + payloadSizeBytes <= MaxWrittenRecordPayloadBytes;
+            if (includePayload)
+                payloadBytesIncluded += payloadSizeBytes;
+            else
+                payloadsOmitted++;
+
+            details.Add(new Dictionary<string, object?>
+            {
+                ["entityType"] = record.EntityType,
+                ["externalId"] = record.ExternalId,
+                ["externalModifiedAt"] = record.ExternalModifiedAt,
+                ["syncedAt"] = record.SyncedAt,
+                ["payload"] = includePayload ? ParsePayload(record.PayloadJson) : null,
+                ["payloadOmitted"] = !includePayload,
+                ["payloadSizeBytes"] = payloadSizeBytes
+            });
+        }
+
+        return new WrittenRecordDetails(details, payloadBytesIncluded, payloadsOmitted);
+    }
 
     private static object ParsePayload(string payloadJson)
     {
@@ -1218,4 +1256,9 @@ public sealed class ZohoSyncService(
             return payloadJson;
         }
     }
+
+    private sealed record WrittenRecordDetails(
+        IReadOnlyCollection<IReadOnlyDictionary<string, object?>> Records,
+        int PayloadBytesIncluded,
+        int PayloadsOmitted);
 }
