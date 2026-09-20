@@ -91,6 +91,52 @@ try {
   assert.ok(await evaluate(`document.querySelector('.hook-overview').textContent.includes('Mandanten-AppSetting zoho.webhookUrl')`));
   assert.ok(await evaluate(`document.querySelector('.hook-overview').textContent.includes('https://sales.example.test/api/integrations/zoho/webhook')`));
   assert.ok(await evaluate(`document.querySelector('.hook-overview').textContent.includes('Versuchslimit erreicht')`));
+  assert.equal(await evaluate(`window.hookFixture.checkedModules.length`), 0, 'Overview must not trigger provider reads.');
+  assert.equal(await evaluate(`window.hookFixture.jobRequests.length`), 0, 'Overview must never start a job automatically.');
+  const rebuildPanel = '[aria-label="Hooks neu registrieren"]';
+  await evaluate(`window.confirm = () => false; document.querySelector('${rebuildPanel} button').click()`);
+  assert.equal(await evaluate(`window.hookFixture.jobRequests.length`), 0, 'Cancelled confirmation must not start a job.');
+  await evaluate(`window.confirm = () => true; document.querySelector('${rebuildPanel} button').click(); document.querySelector('${rebuildPanel} button').click()`);
+  await eventually(() => evaluate(`document.querySelector('${rebuildPanel} [role="status"]')?.textContent.includes('noch kein Abschlussnachweis')`), 'Job acceptance must not claim completion.');
+  assert.deepEqual(await evaluate(`window.hookFixture.jobRequests`), ['/api/application-context/sales-plattform/jobs/crm-subscription-maintenance/runs?tenantId=12345678-1234-4123-8123-123456789abc']);
+  for (const [mode, expected] of [['conflict', 'blockierenden Job'], ['forbidden', 'Nur Mandanten-Administratoren'], ['lost', 'Jobstart nicht bestätigt']]) {
+    await evaluate(`window.hookFixture.jobMode = ${JSON.stringify(mode)}; document.querySelector('${rebuildPanel} button').click()`);
+    await eventually(() => evaluate(`document.querySelector('${rebuildPanel} [role="alert"]')?.textContent.includes(${JSON.stringify(expected)})`), 'Missing safe job-start failure: ' + mode);
+    assert.ok(!await evaluate(`document.querySelector('${rebuildPanel}').textContent.includes('private')`));
+    assert.equal(await evaluate(`document.querySelector('${rebuildPanel} [role="status"]')`), null, 'A failed retry must clear old acceptance.');
+  }
+  assert.equal(await evaluate(`window.hookFixture.jobRequests.length`), 4, 'No duplicate click or automatic write retry.');
+  await evaluate(`window.hookFixture.jobMode = 'accepted'; document.querySelector('${rebuildPanel} button').click()`);
+  await eventually(() => evaluate(`document.querySelector('${rebuildPanel} [role="status"]') !== null`), 'Job-start recovery failed.');
+  await evaluate(`document.querySelector('.hook-overview button').click()`);
+  await eventually(() => evaluate(`document.querySelector('[aria-label="Hook-Ereignisse"] tbody tr') !== null`), 'Read-only refresh failed.');
+  assert.equal(await evaluate(`window.hookFixture.jobRequests.length`), 5, 'Read-only refresh must not start a job.');
+  const checkPanel = '[aria-label="Registrierung bei Zoho prüfen"]';
+  await evaluate(`document.querySelector('${checkPanel} button').click()`);
+  await eventually(() => evaluate(`document.querySelector('${checkPanel} [role="status"]') !== null`), 'Provider check result missing.');
+  assert.deepEqual(await evaluate(`window.hookFixture.checkedModules`), ['Calls']);
+  assert.ok(await evaluate(`document.querySelector('${checkPanel}').textContent.includes('Kein Nachweis einer erfolgreichen Callback-Zustellung')`));
+  assert.ok(await evaluate(`document.querySelector('${checkPanel}').textContent.includes('Bei Zoho gespeichert')`));
+  assert.ok(await evaluate(`document.querySelector('${checkPanel}').textContent.includes('Keine Feldfilter bei Zoho gesetzt')`));
+  assert.ok(await evaluate(`document.querySelector('${checkPanel}').textContent.includes('Verification-Token stimmt überein')`));
+  assert.ok(await evaluate(`document.querySelector('${checkPanel}').textContent.includes('Lokaler Channel stimmt überein, ist aktiv und gültig')`));
+  await evaluate(`(() => { const select = document.querySelector('${checkPanel} select'); select.value = 'Deals'; select.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await eventually(() => evaluate(`document.querySelector('${checkPanel} [role="status"]') === null`), 'Module change must discard the old result.');
+  await evaluate(`window.hookFixture.checkMode = 'scope-missing'; document.querySelector('${checkPanel} button').click()`);
+  await eventually(() => evaluate(`document.querySelector('${checkPanel} [role="status"]')?.textContent.includes('Erneut Zoho verbinden')`), 'Missing-scope guidance absent.');
+  assert.deepEqual(await evaluate(`window.hookFixture.checkedModules`), ['Calls', 'Deals']);
+  await evaluate(`window.hookFixture.checkMode = 'forbidden'; document.querySelector('${checkPanel} button').click()`);
+  await eventually(() => evaluate(`document.querySelector('${checkPanel} [role="alert"]') !== null`), 'Forbidden check must be shown.');
+  assert.ok(!await evaluate(`document.querySelector('${checkPanel}').textContent.includes('private error')`));
+  assert.equal(await evaluate(`document.querySelector('${checkPanel} [role="status"]')`), null, 'Failed check must not show stale success.');
+  await evaluate(`window.hookFixture.checkMode = 'verified'; document.querySelector('${checkPanel} button').click()`);
+  await eventually(() => evaluate(`document.querySelector('${checkPanel} [role="status"]') !== null`), 'Provider check recovery failed.');
+  for (const [mode, expected] of [['filters-present', 'Deals: (Call_Duration UND Subject)'],
+    ['token-not-verified', 'Verification-Token weicht ab.'], ['local-not-ready', 'Lokaler Channel ist abgelaufen.']]) {
+    await evaluate(`window.hookFixture.checkMode = ${JSON.stringify(mode)}; document.querySelector('${checkPanel} button').click()`);
+    await eventually(() => evaluate(`document.querySelector('${checkPanel} [role="status"]')?.textContent.includes(${JSON.stringify(expected)})`), 'Extended diagnostic missing: ' + mode);
+    assert.ok(await evaluate(`document.querySelector('${checkPanel} [role="status"]').classList.contains('error-message')`));
+  }
   await evaluate(`document.querySelector('[aria-label="Hook-Ereignisse"] summary').click()`);
   assert.ok(await evaluate(`document.querySelector('[aria-label="Hook-Ereignisse"] details').open`));
   assert.ok(await evaluate(`document.querySelector('[aria-label="Hook-Ereignisse"] details').textContent.includes('synthetic-event-0')`));

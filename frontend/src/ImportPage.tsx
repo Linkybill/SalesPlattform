@@ -86,6 +86,8 @@ export function ImportPage() {
     activeTenant,
     activeTenantId,
     authorizedFetch,
+    platformAuthorizedFetch,
+    applicationKey,
     error: platformError,
     user,
   } = useApplicationContext()
@@ -296,7 +298,9 @@ export function ImportPage() {
         {zohoMessage && <div className="message success-message">{zohoMessage}</div>}
       </section>
 
-      {user && activeTenantId && <WebhookOverview key={`${activeTenantId}:${user.username ?? user.email ?? user.displayName}`} authorizedFetch={authorizedFetch} jobsUrl={jobsRoute} onError={logHookError} />}
+      {user && activeTenantId && applicationKey && <WebhookOverview key={`${activeTenantId}:${user.username ?? user.email ?? user.displayName}`}
+        authorizedFetch={authorizedFetch} platformAuthorizedFetch={platformAuthorizedFetch} applicationKey={applicationKey}
+        tenantId={activeTenantId} jobsUrl={jobsRoute} onError={logHookError} />}
 
       <section className="sales-card integration-card">
         <div className="card-heading">

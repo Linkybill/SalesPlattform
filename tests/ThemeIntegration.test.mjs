@@ -9,7 +9,7 @@ test('Sales uses the published Common theme release, not a local package overrid
   const version = json('../frontend/package.json').dependencies['@hammer2fall/identity-platform-react'];
   const lock = json('../frontend/package-lock.json');
   const dependency = lock.packages['node_modules/@hammer2fall/identity-platform-react'];
-  assert.equal(version, '0.1.59');
+  assert.match(version, /^\d+\.\d+\.\d+$/, 'Common must use an exact published release version');
   assert.equal(dependency.version, version);
   assert.equal(lock.packages[''].dependencies['@hammer2fall/identity-platform-react'], version);
   assert.equal(json(installed + 'package.json').version, version);

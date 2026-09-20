@@ -17,7 +17,7 @@ public sealed record ZohoNotificationRegistration(
     string ChannelId,
     DateTimeOffset? ExpiresAt);
 
-public sealed class ZohoCrmAdapter(
+public sealed partial class ZohoCrmAdapter(
     IHttpClientFactory httpClientFactory,
     ZohoTokenService tokenService,
     ICrmApiUsageRecorder apiUsage,
@@ -320,23 +320,7 @@ public sealed class ZohoCrmAdapter(
         if (!long.TryParse(channelId, NumberStyles.None, CultureInfo.InvariantCulture, out _))
             throw new ArgumentException("Die Zoho-Channel-ID muss numerisch sein.", nameof(channelId));
 
-        var watch = new JsonObject
-        {
-            ["token"] = token,
-            ["notify_url"] = notifyUrl,
-            ["channel_id"] = channelId,
-            ["channel_expiry"] = DateTimeOffset.UtcNow
-                .AddDays(6)
-                .AddHours(23)
-                .ToString("O", CultureInfo.InvariantCulture),
-            ["return_affected_field_values"] = true,
-            ["notify_on_related_action"] = false
-        };
-        var events = new JsonArray();
-        foreach (var operation in NotificationOperations(module))
-            events.Add(operation);
-        watch["events"] = events;
-        var payload = new JsonObject { ["watch"] = new JsonArray(watch) };
+        var payload = BuildNotificationPayload(notifyUrl, token, channelId, module, DateTimeOffset.UtcNow);
         using var content = new StringContent(
             payload.ToJsonString(),
             Encoding.UTF8,
@@ -348,31 +332,29 @@ public sealed class ZohoCrmAdapter(
             content: content,
             recordsAffected: 1);
         using var document = await ParseDocumentAsync(response, cancellationToken);
-        foreach (var watchResult in GetArray(document.RootElement, "watch"))
-        {
-            var details = watchResult.TryGetProperty("details", out var detailsValue)
-                ? detailsValue
-                : default;
-            foreach (var eventDetails in GetArray(details, "events"))
-            {
-                var returnedChannelId = GetString(eventDetails, "channel_id");
-                if (string.IsNullOrWhiteSpace(returnedChannelId))
-                    continue;
-                var expiryText = GetString(eventDetails, "channel_expiry");
-                return new ZohoNotificationRegistration(
-                    returnedChannelId,
-                    DateTimeOffset.TryParse(
-                        expiryText,
-                        CultureInfo.InvariantCulture,
-                        DateTimeStyles.RoundtripKind,
-                        out var expiresAt)
-                        ? expiresAt.ToUniversalTime()
-                        : null);
-            }
-        }
+        return ParseRegistrationConfirmation(document.RootElement, channelId, module, DateTimeOffset.UtcNow);
+    }
 
-        throw new InvalidOperationException(
-            $"Zoho hat für das Modul '{module}' keine Notification-Subscription bestätigt.");
+    private static JsonObject BuildNotificationPayload(
+        string notifyUrl, string token, string channelId, string module, DateTimeOffset now)
+    {
+        var watch = new JsonObject
+        {
+            ["token"] = token,
+            ["notify_url"] = notifyUrl,
+            ["channel_id"] = channelId,
+            // Zoho watch rejects round-trip ("O") timestamps with fractional seconds.
+            // Keep an explicit UTC offset and stay below the seven-day expiry limit.
+            ["channel_expiry"] = now.AddDays(6).AddHours(23)
+                .ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture),
+            ["return_affected_field_values"] = true,
+            ["notify_on_related_action"] = false
+        };
+        var events = new JsonArray();
+        foreach (var operation in NotificationOperations(module))
+            events.Add(operation);
+        watch["events"] = events;
+        return new JsonObject { ["watch"] = new JsonArray(watch) };
     }
 
     public async Task DisableNotificationsAsync(
@@ -385,6 +367,8 @@ public sealed class ZohoCrmAdapter(
             HttpMethod.Delete,
             $"/crm/v8/actions/watch?channel_ids={Uri.EscapeDataString(channelId)}",
             cancellationToken);
+        using var document = await ParseDocumentAsync(response, cancellationToken);
+        ValidateDisableConfirmation(document.RootElement, channelId);
     }
 
     public async Task<IReadOnlyCollection<CrmDeletedRecord>> GetDeletedRecordsAsync(

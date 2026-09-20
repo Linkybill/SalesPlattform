@@ -20,7 +20,7 @@ public sealed class ZohoOptions
     public string WebhookUrl { get; set; } = string.Empty;
 
     public const string RequiredScopes =
-        "ZohoCRM.modules.READ,ZohoCRM.modules.emails.READ,ZohoCRM.modules.tasks.CREATE,ZohoCRM.modules.tasks.UPDATE,ZohoCRM.notifications.CREATE,ZohoCRM.notifications.DELETE,ZohoCRM.users.READ,ZohoCRM.org.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ,ZohoCRM.settings.layouts.READ,ZohoCRM.settings.pipeline.READ,ZohoCRM.settings.related_lists.READ";
+        "ZohoCRM.modules.READ,ZohoCRM.modules.emails.READ,ZohoCRM.modules.tasks.CREATE,ZohoCRM.modules.tasks.UPDATE,ZohoCRM.notifications.CREATE,ZohoCRM.notifications.DELETE,ZohoCRM.notifications.READ,ZohoCRM.users.READ,ZohoCRM.org.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ,ZohoCRM.settings.layouts.READ,ZohoCRM.settings.pipeline.READ,ZohoCRM.settings.related_lists.READ";
 
     public string Scopes { get; set; } = RequiredScopes;
 

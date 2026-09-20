@@ -19,6 +19,35 @@ Leitung belastbare Steuerungsinformationen geben.
 
 ## Aktueller technischer Stand
 
+Manueller Hook-Neuaufbau (20.09.2026, lokal): „Hooks aktualisieren“ startet nach
+Bestätigung den bestehenden Plattformjob. Jeder manuelle Lauf ersetzt gültige
+Modul-Hooks mit neuen Channels/Tokens; nur geplante Läufe behalten die
+36-Stunden-Frist. „Übersicht aktualisieren“ ist separat lesend. Neue Zuordnung
+vor alter Deaktivierung speichern, Fehler je Modul isolieren und sicher melden.
+Details/Grenzen in `02-datenmodell-und-zoho.md`, Abnahme im Betriebsstand.
+
+Zoho-Diagnoseerweiterung (20.09.2026, lokal): Der manuelle Prüfbutton zeigt nun
+auch Feldbedingungen, einen sicheren serverseitigen Token-Hash-Abgleich sowie
+lokalen Channel-Status/Ablauf. Unbekannte Filterdaten werden nicht als „keine
+Filter“ gewertet. Keine Registrierungsänderungen oder Callback-Proben;
+Bereitstellung erfordert Sales-Backend und -Frontend. Prüfstatus im Betriebsstand.
+
+Paketaktualisierung (19.09.2026): Shared **0.1.74** und Common-React **0.1.60**
+direkt aus lokalen Windows-Builds in GitHub Packages veröffentlicht und in
+Sales integriert. Registry-Restore, beide Builds, Typprüfung und zwölf
+Integrationsverträge bestanden. Kein Git-Push/Publish-Workflow oder Rollout.
+Details im [Betriebsstand](09-deployment-und-betriebsstand.md).
+
+Zoho-Liveprüfung (19.09.2026, lokal): Unter Import → Hooks und Ereignisse gibt
+es „Registrierung bei Zoho prüfen“ für ein gewähltes Modul (Default Calls).
+Tenant-Admins lesen damit die bei Zoho gespeicherte Registrierung des lokalen
+Channels; Vergleich von URL, Ablauf und Ereignissen, ohne Hook-Änderungen.
+`ZohoCRM.notifications.READ` ergänzt die OAuth-Defaults; bestehende Grants
+benötigen gegebenenfalls erneutes „Zoho verbinden“. Keine Tokens in der
+Antwort. Native Regressionen und Browserprüfung bestanden; noch kein Rollout.
+Details und Grenzen in `02-datenmodell-und-zoho.md` und
+`09-deployment-und-betriebsstand.md`.
+
 Tagesverbrauch (19.09.2026): Unter API-Verbrauch gibt es ein Diagramm für
 7/30/90 UTC-Kalendertage inklusive heute, getrennt nach Provider/Verbindung/
 Einheit. Requests, Fehler und geschätzte Credits sind auswählbar; Tageswerte
@@ -65,7 +94,7 @@ Noch kein produktiver Rolloutnachweis.
 ## Historische Umsetzungsschritte und Nachweise
 
 Die folgenden Versions-/Rolloutangaben sind datierte Historie. Aktuell:
-Shared 0.1.73, React 0.1.59; synthetische .NET-Prüfprogramme liegen unter `tests/`.
+Shared 0.1.74, React 0.1.60; synthetische .NET-Prüfprogramme liegen unter `tests/`.
 Die zentrale SSH-Auswahl und App-isolierte Routingkorrektur sind in der
 Plattform dokumentiert; dafür keine Sales-Neuinstallation oder Schlüsselrotation.
 

@@ -43,7 +43,7 @@ public sealed class ZohoCrmHookUpdateService(
     public CrmHookJobRegistration JobRegistration { get; } = new(
         "crm-zoho-hook-update",
         "Zoho-Hooks erneuern",
-        "Registriert, erneuert und verarbeitet Zoho-CRM-Hooks für die relevanten Sales-Module.",
+        "Manuell: Modul-Hooks neu registrieren. Geplant: fällige Hooks erneuern. Verarbeitet anschließend wartende Ereignisse.",
         "0 3 * * *");
 
     internal static readonly string[] RelevantModules =
@@ -87,7 +87,7 @@ public sealed class ZohoCrmHookUpdateService(
                     "Zoho-Hooks sind für diesen Mandanten deaktiviert; der Incremental-Crawl bleibt aktiv.",
                     "CRM-Hooks",
                     cancellationToken: cancellationToken);
-                return EmptyResult();
+                return SkippedResult(context.Trigger, "Hooks sind deaktiviert (crm.changeDetectionMode = crawl-only); kein Neuaufbau ausgeführt.");
             }
 
             var connection = await connections.GetActiveAsync(cancellationToken);
@@ -97,7 +97,7 @@ public sealed class ZohoCrmHookUpdateService(
                     "Zoho-Hooks übersprungen: keine aktive Zoho-Verbindung vorhanden.",
                     "CRM-Hooks",
                     cancellationToken: cancellationToken);
-                return EmptyResult();
+                return SkippedResult(context.Trigger, "Keine aktive Zoho-Verbindung; kein Neuaufbau ausgeführt.");
             }
 
             var webhookConfiguration = await webhookSettings.ResolveCurrentAsync(cancellationToken);
@@ -158,124 +158,111 @@ public sealed class ZohoCrmHookUpdateService(
                 }),
                 cancellationToken);
 
-            await using var session = await dbFactory.OpenAsync(cancellationToken);
-            var db = session.Context;
-            var subscriptions = await db.IntegrationSubscriptions
-                .Where(item => item.ProviderKey == ProviderKey
-                    && item.ConnectionKey == ConnectionKey)
-                .ToDictionaryAsync(item => item.Module, StringComparer.OrdinalIgnoreCase, cancellationToken);
             var now = DateTimeOffset.UtcNow;
+            var forceRebuild = IsManualRebuild(context.Trigger);
             var created = 0;
             var renewed = 0;
             var unchanged = 0;
             var warnings = new List<string>();
+            if (forceRebuild && availableModules.Length == 0)
+                warnings.Add("Keine verfügbaren relevanten Module im Schema-Cache; kein Hook neu registriert.");
+            await context.Logger.InfoAsync(forceRebuild
+                ? "Manueller Neuaufbau: alle verfügbaren Modul-Hooks erhalten neue Channel-IDs und Tokens."
+                : "Geplante Wartung: gültige Hooks außerhalb der Erneuerungsfrist bleiben bestehen.",
+                "CRM-Hooks", cancellationToken: cancellationToken);
 
             foreach (var module in availableModules)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                subscriptions.TryGetValue(module, out var subscription);
-                var notifyUrl = BuildTenantWebhookUrl(webhookBaseUrl, context.TenantId);
-                if (CanKeepSubscription(subscription, notifyUrl, now))
-                {
-                    subscription!.LastCheckedAt = now;
-                    unchanged++;
-                    continue;
-                }
-
                 try
                 {
+                    // An unsuccessful save must never remain tracked and get flushed
+                    // by another module or by queued-event processing later in the run.
+                    await using var moduleSession = await dbFactory.OpenAsync(cancellationToken);
+                    var moduleDb = moduleSession.Context;
+                    var subscription = await moduleDb.IntegrationSubscriptions.SingleOrDefaultAsync(
+                        item => item.ProviderKey == ProviderKey && item.ConnectionKey == ConnectionKey
+                            && item.Module == module, cancellationToken);
+                    var notifyUrl = BuildTenantWebhookUrl(webhookBaseUrl, context.TenantId);
+                    if (!forceRebuild && CanKeepSubscription(subscription, notifyUrl, now))
+                    {
+                        subscription!.LastCheckedAt = now;
+                        await moduleDb.SaveChangesAsync(cancellationToken);
+                        unchanged++;
+                        continue;
+                    }
+
                     var oldChannelId = subscription?.ChannelId;
                     var token = CreateVerificationToken();
-                    var requestedChannelId = CreateChannelId();
-                    var registration = await crm.RegisterNotificationsAsync(
-                        notifyUrl,
-                        token,
-                        requestedChannelId,
-                        module,
-                        cancellationToken);
-
-                    if (!string.IsNullOrWhiteSpace(oldChannelId)
-                        && !string.Equals(oldChannelId, registration.ChannelId, StringComparison.Ordinal))
+                    string requestedChannelId;
+                    do { requestedChannelId = CreateChannelId(); } while (requestedChannelId == oldChannelId);
+                    var wasMissing = subscription is null;
+                    await context.Logger.InfoAsync($"Neuaufbau des Zoho-Hooks '{module}' beginnt.", "CRM-Hooks",
+                        JsonSerializer.SerializeToElement(new { module, oldChannelId, requestedChannelId }), cancellationToken);
+                    var outcome = await ZohoHookReplacement.ExecuteAsync(oldChannelId,
+                        ct => crm.RegisterNotificationsAsync(notifyUrl, token, requestedChannelId, module, ct),
+                        async (registration, ct) =>
+                        {
+                            if (subscription is null)
+                            {
+                                subscription = new IntegrationSubscription
+                                {
+                                    Id = Guid.NewGuid(), TenantId = context.TenantId,
+                                    ProviderKey = ProviderKey, ConnectionKey = ConnectionKey, Module = module,
+                                    EventsJson = JsonSerializer.Serialize(Operations(module)),
+                                    ChannelId = registration.ChannelId, VerificationTokenHash = HashToken(token),
+                                    NotifyUrl = notifyUrl, Status = ActiveStatus
+                                };
+                                moduleDb.IntegrationSubscriptions.Add(subscription);
+                            }
+                            else
+                            {
+                                subscription.EventsJson = JsonSerializer.Serialize(Operations(module));
+                                subscription.ChannelId = registration.ChannelId;
+                                subscription.VerificationTokenHash = HashToken(token);
+                                subscription.NotifyUrl = notifyUrl;
+                                subscription.Status = ActiveStatus;
+                            }
+                            subscription.ExpiresAt = registration.ExpiresAt;
+                            subscription.LastCheckedAt = DateTimeOffset.UtcNow;
+                            subscription.LastRenewedAt = subscription.LastCheckedAt;
+                            subscription.Error = null;
+                            await moduleDb.SaveChangesAsync(ct);
+                        }, crm.DisableNotificationsAsync, cancellationToken);
+                    if (outcome.Installed)
                     {
-                        try
-                        {
-                            await crm.DisableNotificationsAsync(oldChannelId, cancellationToken);
-                        }
-                        catch (Exception exception) when (exception is not OperationCanceledException)
-                        {
-                            warnings.Add($"Alte Zoho-Subscription für '{module}' konnte nicht deaktiviert werden: {exception.Message}");
-                            logger.LogWarning(
-                                exception,
-                                "Old Zoho notification channel for {Module} could not be disabled.",
-                                module);
-                        }
+                        if (wasMissing) created++; else renewed++;
+                        await context.Logger.InfoAsync($"Zoho-Hook für '{module}' ist neu registriert und lokal gespeichert.",
+                            "CRM-Hooks", JsonSerializer.SerializeToElement(new
+                            {
+                                module, channelId = requestedChannelId, expiresAt = subscription!.ExpiresAt,
+                                operations = Operations(module), cleanupConfirmed = outcome.Warning is null
+                            }), cancellationToken);
                     }
-
-                    if (subscription is null)
+                    if (outcome.Warning is not null)
                     {
-                        subscription = new IntegrationSubscription
-                        {
-                            Id = Guid.NewGuid(),
-                            TenantId = context.TenantId,
-                            ProviderKey = ProviderKey,
-                            ConnectionKey = ConnectionKey,
-                            Module = module,
-                            EventsJson = JsonSerializer.Serialize(Operations(module)),
-                            ChannelId = registration.ChannelId,
-                            VerificationTokenHash = HashToken(token),
-                            NotifyUrl = notifyUrl,
-                            Status = ActiveStatus
-                        };
-                        db.IntegrationSubscriptions.Add(subscription);
-                        subscriptions[module] = subscription;
-                        created++;
+                        var message = $"Zoho-Hook '{module}': {outcome.Warning}";
+                        warnings.Add(message);
+                        await context.Logger.WarningAsync(message, "CRM-Hooks",
+                            JsonSerializer.SerializeToElement(new { module, stage = outcome.Stage,
+                                oldChannelId, requestedChannelId, installed = outcome.Installed }), cancellationToken);
                     }
-                    else
-                    {
-                        subscription.EventsJson = JsonSerializer.Serialize(Operations(module));
-                        subscription.ChannelId = registration.ChannelId;
-                        subscription.VerificationTokenHash = HashToken(token);
-                        subscription.NotifyUrl = notifyUrl;
-                        subscription.Status = ActiveStatus;
-                        renewed++;
-                    }
-
-                    subscription.ExpiresAt = registration.ExpiresAt ?? now.AddDays(6);
-                    subscription.LastCheckedAt = now;
-                    subscription.LastRenewedAt = now;
-                    subscription.Error = null;
-                    await db.SaveChangesAsync(cancellationToken);
-                    await context.Logger.InfoAsync(
-                        $"Zoho-Hook für '{module}' ist aktiv bis {subscription.ExpiresAt:O}.",
-                        "CRM-Hooks",
-                        JsonSerializer.SerializeToElement(new
-                        {
-                            module,
-                            channelId = subscription.ChannelId,
-                            expiresAt = subscription.ExpiresAt,
-                            operations = Operations(module)
-                        }),
-                        cancellationToken);
                 }
-                catch (Exception exception) when (exception is not OperationCanceledException)
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                catch (Exception exception)
                 {
-                    var message = $"Zoho-Hook für '{module}' konnte nicht registriert werden: {exception.Message}";
+                    var message = $"Zoho-Hook '{module}': Aktualisierung nicht vollständig abgeschlossen; Jobdetails und Registrierung prüfen.";
                     warnings.Add(message);
-                    if (subscription is not null)
-                    {
-                        subscription.Status = "failed";
-                        subscription.LastCheckedAt = now;
-                        subscription.Error = message[..Math.Min(message.Length, 4000)];
-                        await db.SaveChangesAsync(cancellationToken);
-                    }
                     await context.Logger.WarningAsync(
                         message,
                         "CRM-Hooks",
-                        JsonSerializer.SerializeToElement(new { module, error = exception.Message }),
+                        JsonSerializer.SerializeToElement(new { module, errorType = exception.GetType().Name }),
                         cancellationToken);
                 }
             }
 
+            await using var session = await dbFactory.OpenAsync(cancellationToken);
+            var db = session.Context;
             var eventResult = await ProcessQueuedEventsAsync(
                 context,
                 db,
@@ -298,7 +285,7 @@ public sealed class ZohoCrmHookUpdateService(
                 "Zoho-Hooks übersprungen: Zoho CRM ist für diesen Mandanten nicht ausgewählt.",
                 "CRM-Hooks",
                 cancellationToken: cancellationToken);
-            return EmptyResult();
+            return SkippedResult(context.Trigger, "Zoho ist nicht als CRM-Integration ausgewählt; kein Neuaufbau ausgeführt.");
         }
         finally
         {
@@ -543,6 +530,9 @@ public sealed class ZohoCrmHookUpdateService(
         return run;
     }
 
+    internal static bool IsManualRebuild(string trigger)
+        => string.Equals(trigger, "manual", StringComparison.OrdinalIgnoreCase);
+
     internal static bool CanKeepSubscription(IntegrationSubscription? subscription, string notifyUrl, DateTimeOffset now)
         => subscription?.ExpiresAt > now.Add(SubscriptionRenewalLeadTime)
             && string.Equals(subscription.NotifyUrl, notifyUrl, StringComparison.Ordinal)
@@ -576,7 +566,7 @@ public sealed class ZohoCrmHookUpdateService(
         return true;
     }
 
-    private static string BuildTenantWebhookUrl(Uri baseUri, Guid tenantId)
+    internal static string BuildTenantWebhookUrl(Uri baseUri, Guid tenantId)
     {
         var separator = string.IsNullOrWhiteSpace(baseUri.Query) ? "?" : "&";
         return $"{baseUri.AbsoluteUri}{separator}tenant_id={Uri.EscapeDataString(tenantId.ToString("D"))}";
@@ -602,6 +592,9 @@ public sealed class ZohoCrmHookUpdateService(
 
     private static CrmHookUpdateResult EmptyResult()
         => new(CrmProviders.Zoho, 0, 0, 0, 0, 0, 0, []);
+
+    private static CrmHookUpdateResult SkippedResult(string trigger, string reason)
+        => IsManualRebuild(trigger) ? new(CrmProviders.Zoho, 0, 0, 0, 0, 0, 0, [reason]) : EmptyResult();
 
     private sealed record WebhookProcessingResult(
         int Queued,

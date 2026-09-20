@@ -79,6 +79,7 @@ builder.Services.AddScoped<ZohoCrmHookUpdateService>();
 builder.Services.AddScoped<ZohoWebhookReceiver>();
 builder.Services.AddScoped<ZohoWebhookOverviewService>();
 builder.Services.AddScoped<ZohoWebhookSettingsService>();
+builder.Services.AddScoped<ZohoHookVerificationService>();
 builder.Services.AddSingleton<ZohoCrmRecordMapper>();
 builder.Services.AddSingleton<ICrmRecordMapper>(services =>
     services.GetRequiredService<ZohoCrmRecordMapper>());
@@ -129,7 +130,7 @@ builder.Services
         // to point to the same Platform job after the service refactor.
         Key: "crm-subscription-maintenance",
         Name: "CRM-Hooks erneuern",
-        Description: "Führt die registrierten CRM-Hook-Services standardmäßig einmal täglich aus; jeder Provider erneuert seine Hooks und verarbeitet gemeldete Änderungen gezielt. Der Zeitplan ist konfigurierbar.",
+        Description: "Manueller Start registriert die verfügbaren Zoho-Modul-Hooks mit neuen Channels/Tokens. Geplante Läufe erneuern nur fällige Hooks. Verarbeitet anschließend wartende Ereignisse; der Zeitplan ist konfigurierbar.",
         ScheduleMode: PlatformJobScheduleMode.Configurable,
         DefaultCronExpression: "0 3 * * *",
         DefaultTimeZoneId: "Europe/Berlin",

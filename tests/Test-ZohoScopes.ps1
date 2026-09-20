@@ -15,6 +15,7 @@ $required = @(
     'ZohoCRM.modules.READ', 'ZohoCRM.modules.emails.READ',
     'ZohoCRM.modules.tasks.CREATE', 'ZohoCRM.modules.tasks.UPDATE',
     'ZohoCRM.notifications.CREATE', 'ZohoCRM.notifications.DELETE',
+    'ZohoCRM.notifications.READ',
     'ZohoCRM.users.READ', 'ZohoCRM.org.READ',
     'ZohoCRM.settings.modules.READ', 'ZohoCRM.settings.fields.READ',
     'ZohoCRM.settings.layouts.READ', 'ZohoCRM.settings.pipeline.READ',

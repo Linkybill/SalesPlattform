@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { ZohoHookCheck } from './ZohoHookCheck'
+import { ZohoHookRebuild } from './ZohoHookRebuild'
 
 type Subscription = {
   module: string; status: string; expiresAt: string | null
@@ -25,8 +27,10 @@ const label = (value: string) => labels[value] ?? value
 const date = (value: string | null) => value ? new Date(value).toLocaleString('de-DE') : '—'
 
 // Mounted with a tenant/user key by ImportPage. Abort + disposed guard also prevent stale filter responses.
-export function WebhookOverview({ authorizedFetch, jobsUrl, onError }: {
+export function WebhookOverview({ authorizedFetch, platformAuthorizedFetch, applicationKey, tenantId, jobsUrl, onError }: {
   authorizedFetch: (url: string, init?: RequestInit) => Promise<Response>
+  platformAuthorizedFetch: (url: string, init?: RequestInit) => Promise<Response>
+  applicationKey: string; tenantId: string
   jobsUrl: string
   onError: () => void
 }) {
@@ -65,8 +69,10 @@ export function WebhookOverview({ authorizedFetch, jobsUrl, onError }: {
   return <section className="sales-card integration-card hook-overview" aria-labelledby="hook-title" aria-busy={loading}>
     <div className="card-heading">
       <div><p className="sales-eyebrow">ZOHO · EINGANG UND IMPORT</p><h2 id="hook-title">Hooks und Ereignisse</h2></div>
-      <button className="secondary-button" type="button" disabled={loading} onClick={() => setRefresh(x => x + 1)}>Hooks aktualisieren</button>
+      <button className="secondary-button" type="button" disabled={loading} onClick={() => setRefresh(x => x + 1)}>Übersicht aktualisieren</button>
     </div>
+    <ZohoHookRebuild platformAuthorizedFetch={platformAuthorizedFetch} applicationKey={applicationKey}
+      tenantId={tenantId} jobsUrl={jobsUrl} disabled={loading || !data} />
     <p>Zoho meldet Änderungen an diese Callback-URL. Die Registrierung pro Mandant und Modul übernimmt
       der Job „CRM-Hooks erneuern“ automatisch; keine einzelnen Hooks von Hand anlegen.</p>
     <p>Der Callback speichert zunächst nur das Ereignis. Der Job importiert danach die betroffenen Datensätze
@@ -81,6 +87,7 @@ export function WebhookOverview({ authorizedFetch, jobsUrl, onError }: {
         <small>Die Registrierung ergänzt <code>?tenant_id=…</code> automatisch. Konfiguration ist kein Erreichbarkeitsnachweis.</small></p>
       {data.callbackUrlError && <div className="message error-message">{data.callbackUrlError}</div>}
       {!data.schemaCached && <div className="message">Zuerst den Job „Zoho-Schema cachen“ starten. Ohne Schema werden keine Hooks registriert.</div>}
+      <ZohoHookCheck authorizedFetch={authorizedFetch} modules={data.subscriptions.map(x => x.module)} />
       <details>
         <summary>Modul-Hooks ({data.subscriptions.filter(x => x.status === 'active').length} registriert / {data.subscriptions.length} geprüft)</summary>
         <p>Registriert bedeutet lokal gespeicherte, noch nicht abgelaufene Subscription, kein Live-Test bei Zoho.

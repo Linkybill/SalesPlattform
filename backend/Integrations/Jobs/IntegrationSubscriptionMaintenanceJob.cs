@@ -40,8 +40,10 @@ public sealed class CrmHookUpdateJob(
         });
         var message = results.Count == 0
             ? "Keine CRM-Hook-Update-Services sind registriert."
-            : $"CRM-Hooks geprüft: {results.Sum(result => result.EventsProcessed)} Ereignisse verarbeitet, "
-                + $"{results.Sum(result => result.SubscriptionsRenewed)} Subscription(s) erneuert.";
+            : $"CRM-Hooks: {results.Sum(result => result.SubscriptionsCreated)} neu angelegt, "
+                + $"{results.Sum(result => result.SubscriptionsRenewed)} erneuert, "
+                + $"{results.Sum(result => result.SubscriptionsUnchanged)} unverändert; "
+                + $"{results.Sum(result => result.EventsProcessed)} Ereignisse verarbeitet, {warnings.Length} Warnung(en).";
         return warnings.Length > 0 || results.Any(result => result.EventsFailed > 0)
             ? PlatformJobResult.SuccessWithWarnings(message, details)
             : PlatformJobResult.Success(message, details);

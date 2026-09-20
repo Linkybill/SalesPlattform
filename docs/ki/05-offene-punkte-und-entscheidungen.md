@@ -1,5 +1,73 @@
 # Offene Punkte, Entscheidungen und Status
 
+## Echter manueller Hook-Neuaufbau (20.09.2026)
+
+Benutzerauftrag: „Hooks aktualisieren“ soll Hooks wirklich neu registrieren,
+mit Fehlerbehandlung. Bisher lud die Schaltfläche nur die lokale Übersicht.
+Sie startet künftig nach Bestätigung den bestehenden tenantadmin-geschützten
+Plattformjob. Jeder manuelle Lauf erneuert alle verfügbaren relevanten Module
+mit neuer Channel-ID/Token, auch bei noch gültiger Registrierung. Geplante
+Läufe behalten die 36-Stunden-Frist; „Übersicht aktualisieren“ bleibt lesend.
+Zentrale Queue, mandantenbezogene Exklusivgruppe und Jobprotokolle bleiben
+zuständig; kein paralleler HTTP-Direktlauf im Sales-Backend.
+
+Sichere Reihenfolge je Modul: Providerbestätigung prüfen, neue lokale Zuordnung
+speichern, erst danach alten Channel deaktivieren. Fehler vor dem Speichern
+dürfen die alte Zuordnung nicht als fehlgeschlagen markieren. Bei unbestätigtem
+DB-Commit nichts bei Zoho löschen (Commit-Ausgang kann unklar sein). Scheitert
+das Aufräumen, bleibt die neue Zuordnung erhalten; Warnung statt falschem
+Gesamterfolg. Fehler isoliert pro Modul, Cancellation respektieren, keine
+Rohantworten/Secrets protokollieren. Kein Anspruch auf atomaren Provider-/DB-
+Wechsel; Überschneidungen und verwaiste Channels bis zum Ablauf sind möglich.
+
+Lokal umgesetzt: manueller Trigger erzwingt Neuaufbau, geplanter Trigger behält
+die Frist. UI-Bestätigung, sicherer Jobstart und separate Übersichtaktualisierung;
+Providerbestätigungen beim Anlegen/Löschen werden fachlich geprüft. 276
+synthetische Zoho-Prüfungen, zehn Webhook-Vertragstests, Backend-Releasebuild
+ohne Warnungen/Fehler, Frontendbuild und nativer Chrome-Test bestanden.
+Browser prüft Abbrechen der Bestätigung, Doppelclick, Annahme statt falschem
+Abschluss, 403/409, verlorene Antwort ohne Schreib-Retry und Leserefresh.
+Keine Live-Registrierung, kein Deployment, Commit/Push oder neue Migration.
+
+## Erweiterte Hook-Diagnose (20.09.2026)
+
+Benutzerauftrag: Die bestehende manuelle Zoho-Prüfung um Feldbedingungen,
+Verification-Token-Abgleich und lokale Empfangsbereitschaft erweitern.
+Nur lesen: keine Registrierung ändern und keine Callback-Probe senden.
+Provider-Token ausschließlich serverseitig hashen und zeitkonstant vergleichen;
+weder Token noch Hash in Diagnoseantworten oder Logs ausgeben. Feldbedingungen
+nur als begrenzte Metadaten-Zusammenfassung, niemals als Roh-JSON anzeigen.
+Fehlende/unverständliche Filterangaben dürfen nicht als „keine Filter“ gelten.
+Der lokale Channel muss zum abgefragten Channel passen, aktiv und gültig sein.
+Ein positiver Befund bleibt ausdrücklich kein Zustellungsnachweis.
+
+Lokal umgesetzt und nativ unter Windows geprüft: Backend-Releasebuild ohne
+Warnungen/Fehler, 213 synthetische Zoho-Prüfungen (52 zusätzliche), neun
+Webhook-Vertragstests, TypeScript-/Frontendbuild und Chrome-Test einschließlich
+Filteranzeige, Token-Abweichung, abgelaufenem Channel und 390px-Layout bestanden.
+Bekannte Vite-Chunkgrößenwarnung bleibt. Keine Live-Zoho-Abfrage, keine Migration,
+keine Paketänderung durch diese Erweiterung, kein Deployment/Commit/Push.
+
+## Live-Prüfung der Zoho-Hook-Registrierung (19.09.2026)
+
+Benutzerauftrag: In der Hook-Übersicht eine explizite, tenantadmin-geschützte
+Prüfung direkt bei Zoho anbieten. Pro gewähltem Modul wird ausschließlich die
+im aktuellen Tenant gespeicherte Channel-ID abgefragt, nicht eine vom Browser
+vorgegebene ID/URL. Vergleich von Callback-Adresse, Ablauf und Ereignissen;
+kein Callback-Test, keine Registrierung/Erneuerung/Löschung. Keine Tokens,
+Rohantworten oder ungefilterten Providerfehler im Frontend/Log. Die notwendige
+OAuth-Leseberechtigung `ZohoCRM.notifications.READ` ergänzt die Defaults;
+bestehende Grants müssen bei fehlendem Scope neu autorisiert werden. Die
+Prüfung bleibt manuell und darf nicht durch Übersicht-Refresh/Polling starten.
+
+Lokal umgesetzt: modulweise Schaltfläche, Read-back über den Zoho-Adapter,
+sichere Vergleichsantwort und Fehlermeldung bei fehlendem Scope. 161 synthetische
+Webhook-/Settings-/Payload-Prüfungen, neun Webhook-Vertragstests, Scope-Tests,
+Release-/Frontendbuild und nativer Chrome-Test bestanden. Der Browser prüft
+manuellen Start, Modulwahl, Erfolg, fehlenden Scope, 403 ohne Rohfehleranzeige,
+Verwerfen alter Ergebnisse und Wiederholung. Keine Live-Zoho-Abfrage, kein
+Deployment, Commit/Push oder automatische Änderung der Kundenverbindung.
+
 ## Tagesdiagramm für den CRM-Verbrauch (19.09.2026)
 
 Benutzerauftrag: Verbrauch tagesweise als Chart anzeigen. Im bestehenden

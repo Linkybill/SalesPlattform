@@ -1,8 +1,10 @@
+using System.Globalization;
 using System.Reflection;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Extensions.Options;
@@ -18,6 +20,39 @@ void Check(bool value, string message)
 }
 static MethodInfo Method(Type type, string name) => type.GetMethod(name, BindingFlags.NonPublic | BindingFlags.Static)
     ?? throw new InvalidOperationException($"Missing production helper: {name}.");
+// Inspect the serialized production request, not a test-only date formatter.
+var buildNotification = Method(typeof(ZohoCrmAdapter), "BuildNotificationPayload");
+var previousCulture = CultureInfo.CurrentCulture;
+try
+{
+    foreach (var culture in new[] { "de-DE", "en-US", "ar-SA" })
+    foreach (var module in new[] { "Calls", "Tasks", "Events" })
+    {
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
+        var requestedAt = new DateTimeOffset(2026, 12, 27, 23, 45, 12, TimeSpan.Zero).AddTicks(1234567);
+        const string callback = "https://sales.example.test/api/integrations/zoho/webhook?tenant_id=00000000-0000-0000-0000-000000000001";
+        var payload = (JsonObject)buildNotification.Invoke(null,
+            [callback, "synthetic-token", "123456789", module, requestedAt])!;
+        using var json = JsonDocument.Parse(payload.ToJsonString());
+        var watch = json.RootElement.GetProperty("watch")[0];
+        var expiry = watch.GetProperty("channel_expiry").GetString();
+        Check(expiry == "2027-01-03T22:45:12+00:00",
+            $"{module}/{culture}: channel_expiry must use whole seconds and an explicit offset; got {expiry}.");
+        Check(DateTimeOffset.TryParseExact(expiry, "yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out var parsedExpiry), "Expiry must match Zoho's datetime format.");
+        Check(parsedExpiry > requestedAt && parsedExpiry < requestedAt.AddDays(7),
+            "Expiry must remain in the future and below Zoho's seven-day maximum.");
+        Check(watch.GetProperty("notify_url").GetString() == callback
+            && watch.GetProperty("token").GetString() == "synthetic-token"
+            && watch.GetProperty("channel_id").GetString() == "123456789", "Registration identity changed.");
+        Check(watch.GetProperty("events").EnumerateArray().Select(x => x.GetString())
+            .SequenceEqual(new[] { $"{module}.create", $"{module}.edit", $"{module}.delete" }),
+            "Registration operations changed.");
+        Check(!watch.TryGetProperty("notification_condition", out _) && !watch.TryGetProperty("field_selection", out _),
+            "Registration must not restrict field changes.");
+    }
+}
+finally { CultureInfo.CurrentCulture = previousCulture; }
 var validateUrl = Method(typeof(ZohoCrmHookUpdateService), "TryValidateWebhookUrl");
 var tenantUrl = Method(typeof(ZohoCrmHookUpdateService), "BuildTenantWebhookUrl");
 foreach (var url in new[] { "https://176.9.57.203:3003/api/integrations/zoho/webhook",
@@ -197,6 +232,124 @@ try { await settingsReader.ResolveCurrentAsync(); throw new Exception("Empty ten
 catch (InvalidOperationException) { checks++; }
 Check(settingsStore.Contexts.All(x => x.ApplicationKey == "sales-plattform" && x.TenantId != Guid.Empty), "Settings context lost app/tenant boundary.");
 Check(settingsStore.Contexts.Any(x => x.TenantId == tenantA) && settingsStore.Contexts.Any(x => x.TenantId == tenantB), "Both tenant contexts must be read independently.");
+// Read-back verification uses the provider parser and the same comparison returned by the API.
+var parseNotifications = Method(typeof(ZohoCrmAdapter), "ParseNotificationSnapshots");
+var evaluateNotification = Method(typeof(ZohoHookVerificationService), "Evaluate");
+var expectedCallback = $"https://sales.example.test/api/integrations/zoho/webhook?tenant_id={tenantA:D}";
+object NotificationRows(string? url = null, DateTimeOffset? expiry = null, string[]? events = null,
+    string channel = "12345", string module = "Calls", bool duplicate = false,
+    string? remoteToken = "never-return-provider-secret", object? conditions = null, object? fields = null)
+{
+    var row = new { channel_id = channel, resource_name = module, notify_url = url ?? expectedCallback,
+        channel_expiry = expiry ?? now.AddDays(1), events = events ?? ["Calls.create", "Calls.edit", "Calls.delete"],
+        token = remoteToken, notification_condition = conditions, fields, notify_on_related_action = false };
+    var response = JsonSerializer.SerializeToElement(new { watch = duplicate ? new[] { row, row } : new[] { row } });
+    return parseNotifications.Invoke(null, [response])!;
+}
+var localChannel = new IntegrationSubscription
+{
+    ProviderKey = "zoho", ConnectionKey = "default", Module = "Calls", EventsJson = "[]",
+    ChannelId = "12345", Status = "active", ExpiresAt = now.AddDays(1), NotifyUrl = expectedCallback,
+    VerificationTokenHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("never-return-provider-secret")))
+};
+ZohoHookVerification Verify(object rows) => (ZohoHookVerification)evaluateNotification.Invoke(null,
+    ["Calls", "12345", expectedCallback, rows, now, localChannel])!;
+Check(Verify(NotificationRows()).Status == "verified", "Valid provider registration should verify.");
+Check(Verify(NotificationRows(events: ["Calls.all"])).Status == "verified", "All-operation registration should verify.");
+Check(Verify(NotificationRows(expiry: now)).Status == "expired", "Expired provider entry must not verify.");
+Check(Verify(NotificationRows(events: ["Calls.edit"])).Status == "events-mismatch", "Missing create/delete must be visible.");
+Check(Verify(NotificationRows(url: expectedCallback.Replace(tenantA.ToString("D"), tenantB.ToString("D")))).Status == "url-mismatch", "Foreign tenant URL must not verify.");
+Check(Verify(NotificationRows(url: expectedCallback.Replace("sales.example.test", "wrong.example.test"))).Status == "url-mismatch", "Wrong host must not verify.");
+Check(Verify(NotificationRows(channel: "99999")).Status == "not-found", "Foreign channel must not be displayed or verify.");
+Check(Verify(NotificationRows(module: "Tasks")).Status == "not-found", "Foreign module must not verify.");
+Check(Verify(NotificationRows(duplicate: true)).Status == "ambiguous", "Duplicate entries must not verify.");
+Check(Verify(NotificationRows()).Filters?.Status == "none", "Explicit null conditions must mean no filters.");
+Check(Verify(NotificationRows(conditions: Array.Empty<object>())).Filters?.Status == "none", "Empty conditions must mean no filters.");
+Check(Verify(NotificationRows()).TokenCheck?.Status == "match", "Valid hashes must match irrespective of hex casing.");
+Check(Verify(NotificationRows()).LocalChannelCheck?.Status == "ready", "Active matching channel must be ready.");
+Check(Verify(NotificationRows()).NotifyOnRelatedAction == false, "Related-action switch must be displayed independently.");
+Check(Verify(NotificationRows(remoteToken: "other-token")).TokenCheck?.Status == "mismatch", "Token mismatch must be explicit.");
+Check(Verify(NotificationRows(remoteToken: "other-token")).Status != "verified", "Mismatching token must block success.");
+foreach (var absent in new string?[] { null, "", new string('x', 51) })
+    Check(Verify(NotificationRows(remoteToken: absent)).TokenCheck?.Status == "remote-missing", "Missing/invalid provider token must block success.");
+var correctHash = localChannel.VerificationTokenHash;
+foreach (var invalidHash in new[] { "", "invalid", "00" })
+{
+    localChannel.VerificationTokenHash = invalidHash;
+    Check(Verify(NotificationRows()).Status == "token-not-verified", "Missing/malformed local hashes must fail closed.");
+}
+localChannel.VerificationTokenHash = correctHash;
+foreach (var state in new[] { "inactive", "failed", "Active" })
+{
+    localChannel.Status = state;
+    Check(Verify(NotificationRows()).LocalChannelCheck?.Status == "inactive", "Match receiver's exact active-status check.");
+    Check(Verify(NotificationRows()).Status == "local-not-ready", "Inactive local channels must block success.");
+}
+localChannel.Status = "active";
+foreach (var expiry in new DateTimeOffset?[] { null, now, now.AddSeconds(-1) })
+{
+    localChannel.ExpiresAt = expiry;
+    Check(Verify(NotificationRows()).Status == "local-not-ready", "Unknown/expired local lifetime must block success.");
+}
+localChannel.ExpiresAt = now.AddDays(1);
+localChannel.ChannelId = "changed-during-check";
+Check(Verify(NotificationRows()).LocalChannelCheck?.Status == "changed", "Concurrent renewal must not verify stale state.");
+Check(Verify(NotificationRows()).TokenCheck?.Status == "not-checked", "Do not compare tokens across different channels.");
+localChannel.ChannelId = "12345";
+var noLocal = (ZohoHookVerification)evaluateNotification.Invoke(null,
+    ["Calls", "12345", expectedCallback, NotificationRows(), now, null])!;
+Check(noLocal.Status == "local-not-ready" && noLocal.LocalChannelCheck?.Status == "missing", "Removed local channel must block success.");
+object Field(string name) => new { field = new { api_name = name, id = "private-field-id" }, group = (object?)null };
+object Condition(object selection) => new { type = "field_selection", module = new { api_name = "Calls" }, field_selection = selection };
+var filters = new[] { Condition(new { group_operator = "and", group = new[] { Field("Call_Duration"),
+    new { group_operator = "or", group = new[] { Field("Subject"), Field("Call_Start_Time") } } } }) };
+var filtered = Verify(NotificationRows(conditions: filters));
+Check(filtered.Status == "filters-present", "Field filters must not appear as unrestricted success.");
+Check(filtered.Filters!.Conditions.Single() == "Calls: (Call_Duration UND (Subject ODER Call_Start_Time))", "Preserve safe field names and boolean grouping.");
+Check(Verify(NotificationRows(conditions: new[] { Condition(Field("Subject")) })).Filters?.Status == "present", "Single-field selection supported.");
+foreach (var invalidConditions in new object[] { "private-raw-secret", new[] { Condition(Field("<script>secret</script>")) },
+    new[] { new { type = "unexpected", secret = "private-raw-secret" } },
+    new[] { Condition(new { group_operator = "xor", group = new[] { Field("Subject") } }) },
+    Enumerable.Repeat(Condition(Field("Subject")), 11).ToArray() })
+{
+    var invalidFilterResult = Verify(NotificationRows(conditions: invalidConditions));
+    Check(invalidFilterResult.Status == "filters-unknown", "Unsupported filter shapes must not be silently ignored.");
+    Check(!JsonSerializer.Serialize(invalidFilterResult).Contains("private-raw-secret"), "Filter raw data leaked.");
+}
+object deep = Field("Subject");
+for (var depth = 0; depth < 8; depth++) deep = new { group_operator = "and", group = new[] { deep } };
+Check(Verify(NotificationRows(conditions: new[] { Condition(deep) })).Status == "filters-unknown", "Deep filter nesting must be bounded.");
+Check(Verify(NotificationRows(fields: new[] { "legacy-field" })).Status == "filters-unknown", "Nonempty legacy fields must not be called unrestricted.");
+var missingFilters = JsonSerializer.SerializeToElement(new { watch = new[] { new { channel_id = "12345", resource_name = "Calls",
+    notify_url = expectedCallback, channel_expiry = now.AddDays(1), events = new[] { "Calls.all" }, token = "never-return-provider-secret" } } });
+Check(Verify(parseNotifications.Invoke(null, [missingFilters])!).Status == "filters-unknown", "Absent filter metadata is unknown, not no filters.");
+var safeDiagnostic = JsonSerializer.Serialize(filtered);
+Check(!safeDiagnostic.Contains(correctHash, StringComparison.OrdinalIgnoreCase)
+    && !safeDiagnostic.Contains("never-return-provider-secret") && !safeDiagnostic.Contains("private-field-id"), "Diagnostic must never contain hashes, tokens or raw field IDs.");
+var parsedRows = NotificationRows();
+Check(!JsonSerializer.Serialize(parsedRows).Contains(correctHash, StringComparison.OrdinalIgnoreCase), "Internal snapshot serialization must omit token hashes.");
+var missingExpiry = JsonSerializer.SerializeToElement(new { watch = new[] { new { channel_id = "12345", resource_name = "Calls",
+    notify_url = expectedCallback, channel_expiry = "invalid", events = new[] { "Calls.all" } } } });
+Check(Verify(parseNotifications.Invoke(null, [missingExpiry])!).Status == "expiry-unknown", "Malformed expiry must not verify.");
+Check(Verify(parseNotifications.Invoke(null, [JsonSerializer.SerializeToElement(new { watch = Array.Empty<object>() })])!).Status == "not-found", "Empty response must not verify.");
+Rejected(() => parseNotifications.Invoke(null, [JsonSerializer.SerializeToElement(new { error = "bad" })]), "Malformed response must fail closed.");
+var secretUrl = expectedCallback.Replace("https://", "https://private-user:private-pass@") + "&token=private-query#private-fragment";
+var sanitized = JsonSerializer.Serialize(Verify(NotificationRows(url: secretUrl, events: ["Calls.create", "private-event-secret"])));
+foreach (var secret in new[] { "private-user", "private-pass", "private-query", "private-fragment", "private-event-secret", "never-return-provider-secret" })
+    Check(!sanitized.Contains(secret), "Verification leaked a provider secret.");
+var safeCallback = Method(typeof(ZohoHookVerificationService), "SafeCallbackUrl");
+Check(!((string)safeCallback.Invoke(null, ["https://sales.example.test/private-path-secret?token=private-query"])!).Contains("private-path-secret"), "Unexpected provider path must be hidden.");
+Check(safeCallback.Invoke(null, ["javascript:private-secret"]) is null, "Non-HTTP callback must not be displayed.");
+Check(!JsonSerializer.Serialize(Verify(NotificationRows(channel: "other", url: "https://foreign.example.test/private"))).Contains("foreign.example.test"), "Foreign channel URL leaked.");
+var safeFailure = Method(typeof(ZohoHookVerificationService), "SafeFailure");
+foreach (var (rawError, expectedStatus) in new[] { ("OAUTH_SCOPE_MISMATCH", "scope-missing"), ("HTTP 401", "authentication-error"),
+    ("HTTP 429", "rate-limited"), ("private-failure", "check-failed") })
+{
+    var failure = (ZohoHookVerification)safeFailure.Invoke(null, ["Calls", new InvalidOperationException(rawError + " private-token"), now])!;
+    Check(failure.Status == expectedStatus, "Incorrect safe provider diagnostic.");
+    Check(!JsonSerializer.Serialize(failure).Contains("private-token"), "Provider exception leaked credentials.");
+}
+await ReplacementChecks.Run(Check);
 Console.WriteLine($"Zoho webhook: {checks} checks passed (synthetic data; no live CRM calls).");
 
 sealed class SyntheticSettingsStore : IApplicationSettingsStore

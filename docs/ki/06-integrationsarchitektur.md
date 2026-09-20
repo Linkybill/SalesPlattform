@@ -413,8 +413,19 @@ der Erfolg der nachfolgenden Fachverarbeitung ist separat im Joblauf zu prüfen.
 Abgewiesene Aufrufe und ignorierte Dubletten sind keine neuen gespeicherten
 Ereignisse. Zeitplan, Batchgröße (100) und Versuchslimit (5) bleiben unverändert.
 
-Zoho-Subscriptions werden bei höchstens 36 Stunden Restlaufzeit erneuert,
-damit der tägliche Standardlauf sie rechtzeitig vor dem Ablauf berücksichtigt.
+Geplante Zoho-Wartungsläufe erneuern Subscriptions bei höchstens 36 Stunden
+Restlaufzeit, damit der tägliche Standardlauf sie rechtzeitig berücksichtigt.
+Manuelle Läufe bauen seit dem 20.09.2026 alle verfügbaren relevanten Modul-Hooks
+mit neuen Channels/Tokens neu auf, auch bei langer Restlaufzeit. Die Schaltfläche
+„Hooks aktualisieren“ startet nach Bestätigung denselben zentralen Job;
+„Übersicht aktualisieren“ liest dagegen nur die lokale Übersicht.
+Der Neuaufbau prüft die Providerbestätigung und speichert den neuen lokalen Stand
+vor dem Löschen des alten Channels. Modulweise DB-Kontexte isolieren Fehler.
+Bei unklarem DB-Commit keine Provider-Löschung; bei Cleanup-Fehler bleibt der
+neue Stand bestehen. Warnungen/Channel-IDs im Jobprotokoll, keine Rohfehler/Tokens.
+Es gibt keinen atomaren Wechsel über Provider/DB und keine automatische
+Bereinigung verwaister Channels nach Abbruch. Details in
+`02-datenmodell-und-zoho.md`, Abschnitt „Hooks wirklich aktualisieren“.
 Eine geänderte `NotifyUrl` erzwingt ebenfalls eine Neuregistrierung, auch bei
 noch langer Restlaufzeit. Remote setzt `appsettings.Deployment.json` den Wert
 den Standard `Zoho__WebhookUrl` über `BackendUrls` aus dem öffentlichen `Frontend`-Einstieg
@@ -469,8 +480,9 @@ Metadatenendpunkte auf. Kontakte werden weder synchronisiert noch als
 Subscription registriert; ein eventuell veralteter Contacts-Webhook wird
 verworfen. Für die Aktivierung sind die minimal nötigen Notifications-OAuth-
 Berechtigungen `ZohoCRM.notifications.CREATE` und
-`ZohoCRM.notifications.DELETE` sowie eine von Zoho erreichbare
-im Mandanten-Setting `zoho.webhookUrl` (alternativ Deployment-Standard
+`ZohoCRM.notifications.DELETE` (zusätzlich `ZohoCRM.notifications.READ` für
+die manuelle Live-Prüfung der Registrierung) sowie eine von Zoho erreichbare
+Callback-Adresse im Mandanten-Setting `zoho.webhookUrl` (alternativ Deployment-Standard
 `Zoho:WebhookUrl`) erforderlich. Seit der Scope-Korrektur vom 19.09.2026 wird
 auf Benutzerauftrag `ZohoCRM.modules.READ` für modulübergreifendes Lesen
 angefordert; die importierten Module bleiben unverändert. Zusätzlich bleiben

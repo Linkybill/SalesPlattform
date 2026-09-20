@@ -34,6 +34,25 @@ public static class ZohoEndpointExtensions
             }
         });
 
+        // Explicit manual check; unlike /hooks this consumes a read request at Zoho.
+        protectedGroup.MapPost("/hooks/check", async (
+            ZohoHookCheckRequest request, ClaimsPrincipal user, HttpContext httpContext,
+            TenantAdminAccessService tenantAdminAccess, ZohoHookVerificationService verification,
+            CancellationToken cancellationToken) =>
+        {
+            if (!await tenantAdminAccess.IsCurrentTenantAdminAsync(user, cancellationToken))
+                return Results.Forbid();
+            httpContext.Response.Headers.CacheControl = "no-store";
+            try
+            {
+                return Results.Ok(await verification.CheckAsync(request.Module, cancellationToken));
+            }
+            catch (ArgumentException)
+            {
+                return Results.BadRequest(new { message = "Unbekanntes Zoho-Modul." });
+            }
+        });
+
         protectedGroup.MapGet("/oauth/start", async (
             ClaimsPrincipal user,
             ZohoOAuthService oauth,
@@ -189,3 +208,5 @@ public static class ZohoEndpointExtensions
 public sealed record ZohoOAuthCompleteRequest(
     string Code,
     string State);
+
+public sealed record ZohoHookCheckRequest(string Module);

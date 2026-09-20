@@ -1,5 +1,118 @@
 # Sales: Deployment- und Betriebsstand
 
+## „Hooks aktualisieren“ baut Hooks neu auf – 20.09.2026
+
+Der Benutzerbefund `SubscriptionsUnchanged: 12`, `SubscriptionsRenewed: 0`
+belegte den bisherigen No-op bei einem manuellen Wartungslauf. Jetzt erzwingt
+`Trigger = manual` neue Channels/Tokens für alle verfügbaren relevanten Module.
+Geplante Läufe bleiben fristgesteuert. Der bisher irreführende reine Lesebutton
+heißt „Übersicht aktualisieren“. „Hooks aktualisieren“ startet nach Bestätigung
+den bestehenden tenantadmin-geschützten Plattformjob, einschließlich zentraler
+Queue/Exklusivgruppe, ohne neue Plattform-API oder Shared-Paketversion.
+
+Neu anlegen/bestätigen → lokal speichern → alten Channel deaktivieren/bestätigen.
+Fehler werden pro Modul isoliert und sicher im Jobprotokoll sichtbar. Bei
+Registrierungsfehler bleibt der alte lokale Status unangetastet, bei unklarem
+DB-Commit werden keine Channels gelöscht; bei Cleanup-Fehler bleibt die neue
+Zuordnung aktiv. Cancellation/Prozessabbruch können Channels bis zum Ablauf
+hinterlassen; keine automatische Orphan-Bereinigung. Der bestehende Crawl bleibt
+Lückenschluss. Siehe [Neuaufbau und Grenzen](02-datenmodell-und-zoho.md#hooks-wirklich-aktualisieren).
+
+Native Windows-Abnahme: **276 synthetische Zoho-Prüfungen**, **10 Webhook-
+Vertragstests**, Backend-Releasebuild ohne Warnungen/Fehler, TypeScript-/Vitebuild
+und Chrome-Test bestanden. Abgedeckt sind Bestätigung/Abbruch/Doppelclick,
+tenantbezogener POST, 403/409/unklare Antwort ohne automatischen Retry, sichere
+Providerbestätigungen, Registrierungs-/Speicher-/Cleanup-Fehler, unklarer Commit
+und Cancellation an den Phasengrenzen. Bekannte Vite-Chunkgrößenwarnung bleibt.
+
+Noch kein Rollout oder Live-Zoho-Schreibtest. Sales-Backend und -Frontend neu
+bereitstellen, danach im Tenant „Hooks aktualisieren“ bestätigen oder den Job
+manuell starten. Bei zwölf vorhandenen verfügbaren Hooks und vollständigem
+Erfolg erwartet: `SubscriptionsRenewed: 12`, `SubscriptionsUnchanged: 0`, keine
+Warnungen. Eine Cleanup-Warnung kann trotz erhöhtem Renewed-Zähler auftreten;
+immer Warnungen/Jobprotokoll prüfen, danach Live-Prüfung und neuen Testanruf.
+Keine OAuth-/Firewall-/Schlüsseländerung, keine Migration, kein Commit/Push.
+
+## Erweiterte Zoho-Hook-Diagnose – 20.09.2026
+
+Der vorhandene manuelle Prüfbutton ergänzt URL/Ablauf/Ereignisse um Feldfilter,
+sicheren Token-Hash-Vergleich und lokalen Channel-Status/Ablauf. Keine Rohdaten,
+Tokens oder Hashes im Browser/Log; keine Registrierungsschreibzugriffe oder
+Callback-Proben. Unbekannte Filterformate sind nicht prüfbar, nicht automatisch
+filterfrei. Nach dem Providerabruf nochmals gelesener lokaler Zustand schützt
+vor einer Bestätigung inzwischen erneuerter Channels. Details und Grenzen:
+[Zoho-Diagnose](02-datenmodell-und-zoho.md#registrierung-direkt-bei-zoho-prüfen).
+
+Native Windows-Abnahme: Backend-Releasebuild ohne Warnungen/Fehler, **213
+synthetische Zoho-Prüfungen**, **9 Webhook-Vertragstests**, TypeScript-/Vitebuild
+und Chrome-Smoke-Test bestanden. Browserfälle umfassen Erfolg, Feldbedingungen,
+Token-Abweichung, lokalen Ablauf, Scope/403, Wiederholung und 390px-Layout.
+Bekannte Vite-Warnung für einen JS-Chunk über 500 kB bleibt. Der erste Testlauf
+hatte veraltete Paketauflösung; Restore mit `backend/NuGet.Config` und bereits
+vorhandenen Paket-Credentials im Testprozess löste dies ohne Credentialänderung.
+
+Noch nicht ausgerollt. Für diese Erweiterung **nur Sales-Backend und -Frontend**
+neu bauen/deployen; keine Migration, kein Plattform-/Shared-Paketupdate.
+Danach im gewünschten Tenant **Import → Hooks und Ereignisse → Calls →
+Registrierung bei Zoho prüfen**. Die echte Providerantwort und Callback-Zustellung
+bleiben live abzunehmen. Zum damaligen Diagnosestand erzwang ein manueller Start
+noch keine Erneuerung; die nachfolgende Neuaufbau-Korrektur ändert dies explizit.
+Keine Live-Zoho-Abfrage, kein Commit/Push oder Serverdeployment in diesem Lauf.
+
+## Direkte Paketaktualisierung – 19.09.2026
+
+Shared **0.1.74** und Common-React **0.1.60** aus GitHub Packages integriert.
+Die Komponenten wurden lokal nativ gebaut und direkt veröffentlicht, ohne
+Git-Push oder Publish-Workflow. Die Korrekturen betreffen zentrale Trace-Suche
+und die lokale Diagnose von Logexportfehlern. Vorhandene Zoho-/UI-Änderungen
+bleiben erhalten. Kein Serverdeployment durch dieses Paketupdate.
+
+Nativ unter Windows: frischer Registry-Restore, Backend-/Frontendbuild,
+TypeScript-Prüfung und zwölf Root-/Theme-/Navigationsverträge bestanden.
+Der Theme-Vertrag prüft eine exakte Registry-Version samt Lockfile, installiertem
+Paket und Theme-Funktionen, ohne die historische Version 0.1.59 festzuschreiben.
+NuGet-Download und npm-Lockfile stimmen per Hash mit den veröffentlichten
+Artefakten überein.
+
+## Zoho-Registrierung live prüfen – 19.09.2026
+
+Frontend/Backend um **Import → Hooks und Ereignisse → Registrierung bei Zoho
+prüfen** erweitert. Modul wählen, manuelle lesende Zoho-Abfrage; die normale
+Übersicht ruft Zoho nicht auf. Lokale Channel-ID/Soll-URL werden tenantisoliert
+aufgelöst. Rückgabe ohne Tokens/Rohantworten; Vergleich von Callback-URL,
+Ablauf und Ereignissen. Kein automatisches Reparieren oder Zustelltest.
+Details: [Liveprüfung](02-datenmodell-und-zoho.md#registrierung-direkt-bei-zoho-prüfen).
+
+OAuth-Defaults und Overrides ergänzen `ZohoCRM.notifications.READ`. Bestehende
+Verbindungen benötigen bei Scope-Fehler nach dem Rollout eine erneute
+Autorisierung über **Zoho verbinden**; kein stilles Upgrade bestehender Grants.
+Kein Plattformupdate, keine Migration und keine neue Shared-/React-Version.
+
+Nativ unter Windows bestanden: Releasebuild mit **161 synthetischen Webhook-
+Prüfungen**, **9 Webhook-Verträge**, Scope-Tests, TypeScript-/Vitebuild sowie
+Chrome-Smoke-Test einschließlich neuer Liveprüfungs-UI und bestehender
+Theme-/Hook-/Usage-Fälle. Bekannte JS-Chunkgrößenwarnung bleibt. Keine echte
+Zoho-Lese-/Schreibanfrage in diesen Tests, kein Commit/Push oder Deployment.
+Zum Bereitstellen Sales-Backend und -Frontend neu bauen/ausrollen; Live-Abnahme
+und die Ursache der bisher fehlenden Zoho-Zustellung bleiben offen.
+
+## Hook-Registrierung: `channel_expiry` korrigiert – 19.09.2026
+
+Gemeldeter Livefehler: Zoho lehnt `channel_expiry` bei `/crm/v8/actions/watch`
+mit HTTP 400 / `INVALID_DATA` (erwartet `datetime`) ab. Der Sales-Adapter
+verwendet jetzt ganze Sekunden mit explizitem Offset statt `.ToString("O")`.
+Die Laufzeit bleibt unverändert unter sieben Tagen. Details:
+[Zoho-Hook-Datumsformat](02-datenmodell-und-zoho.md#zoho-hook-registrierung-datumsformat).
+
+Regression zuerst mit altem Format reproduziert (Zeitstempel mit sieben
+Nachkommastellen), danach nativ unter Windows bestanden: **132 Webhook-/Settings-
+Prüfungen** einschließlich 45 neuer Payload-Prüfungen sowie **34 Task-Payload-
+Fälle**, jeweils mit Release-Build. Nur synthetische Daten, keine CRM-Aufrufe.
+Kein Deployment, Push oder neuer Commit in diesem Korrekturlauf. Sales-Backend
+neu bauen/ausrollen, anschließend `CRM-Hooks erneuern` manuell starten und
+eine neue Zoho-Änderung bis Eingang und Verarbeitung prüfen. Live-Abnahme offen.
+Für diesen Fix keine Plattform-, Shared-Paket- oder Datenbankänderung erforderlich.
+
 ## Aktueller Quellenabgleich und Sicherungsstand – 19.09.2026
 
 Der gesamte lokale Arbeitsstand wird je Repository committed; dieser Auftrag

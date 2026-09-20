@@ -38,3 +38,49 @@ test('hook worker and overview use the same tenant settings resolver, not proces
     assert.doesNotMatch(source, /options(?:\.Value)?\.WebhookUrl/);
   }
 });
+test('live verification is authenticated, tenant-admin guarded and does not accept a channel or URL', () => {
+  const source = readFileSync(new URL('../backend/Integrations/Zoho/ZohoEndpointExtensions.cs', import.meta.url), 'utf8');
+  const check = source.split('protectedGroup.MapPost("/hooks/check"')[1].split('protectedGroup.MapGet("/oauth/start"')[0];
+  assert.match(source, /RequireAuthorization\("sales-user"\)/);
+  assert.match(check, /IsCurrentTenantAdminAsync/);
+  assert.ok(check.indexOf('IsCurrentTenantAdminAsync') < check.indexOf('verification.CheckAsync'));
+  assert.match(check, /CacheControl = "no-store"/);
+  assert.match(source, /record ZohoHookCheckRequest\(string Module\)/);
+});
+test('live verification never writes subscriptions and only reads scoped channel IDs', () => {
+  const source = readFileSync(new URL('../backend/Integrations/Zoho/ZohoHookVerificationService.cs', import.meta.url), 'utf8');
+  assert.match(source, /OpenReadOnlyAsync/);
+  assert.match(source, /ProviderKey == "zoho" && x.ConnectionKey == "default" && x.Module == module/);
+  assert.match(source, /Select\(x => x.ChannelId\)/);
+  assert.doesNotMatch(source, /SaveChanges|RegisterNotificationsAsync|DisableNotificationsAsync/);
+  assert.match(source, /VerificationTokenHash = x.VerificationTokenHash/);
+  assert.match(source, /CryptographicOperations.FixedTimeEquals/);
+  const adapter = readFileSync(new URL('../backend/Integrations/Zoho/ZohoCrmAdapter.NotificationDiagnostics.cs', import.meta.url), 'utf8');
+  assert.match(adapter, /SendAsync\(HttpMethod.Get/);
+  assert.match(adapter, /channel_id=/);
+  assert.doesNotMatch(adapter, /HttpMethod.Post|HttpMethod.Delete/);
+  assert.match(adapter, /\[property: JsonIgnore\] string\? TokenHash/);
+});
+test('live verification is explicit, abortable and independent of overview refresh', () => {
+  const source = readFileSync(new URL('../frontend/src/ZohoHookCheck.tsx', import.meta.url), 'utf8');
+  assert.match(source, /onClick=\{\(\) => void check\(\)\}/);
+  assert.match(source, /method: 'POST'/);
+  assert.match(source, /signal: controller.signal/);
+  assert.match(source, /active.current === controller/);
+  assert.match(source, /notifications.READ/);
+});
+test('hook rebuild uses the central manual job queue with tenant scope and confirmation', () => {
+  const source = readFileSync(new URL('../frontend/src/ZohoHookRebuild.tsx', import.meta.url), 'utf8');
+  assert.match(source, /window.confirm/);
+  assert.match(source, /platformAuthorizedFetch/);
+  assert.match(source, /crm-subscription-maintenance\/runs\?tenantId=/);
+  assert.match(source, /method: 'POST'/);
+  assert.match(source, /active.current === controller/);
+  assert.match(source, /response.status === 409/);
+  const worker = readFileSync(new URL('../backend/Integrations/Zoho/ZohoSubscriptionAdapter.cs', import.meta.url), 'utf8');
+  assert.match(worker, /IsManualRebuild\(context.Trigger\)/);
+  assert.match(worker, /!forceRebuild && CanKeepSubscription/);
+  assert.match(worker, /await using var moduleSession = await dbFactory.OpenAsync/);
+  assert.doesNotMatch(worker, /subscription.Status = "failed"/);
+  assert.doesNotMatch(worker.split('var forceRebuild')[1].split('var eventResult')[0], /exception.Message/);
+});
