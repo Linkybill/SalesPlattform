@@ -146,6 +146,7 @@ app.MapIdentityPlatformEndpoints();
 app.MapApplicationSettingsEndpoints();
 app.MapZohoIntegrationEndpoints();
 app.MapCrmApiUsageEndpoints();
+app.MapAnnualTargetEndpoints();
 
 app.MapGet("/api/reports/dashboard", async (
     ClaimsPrincipal user,

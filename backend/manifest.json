@@ -96,7 +96,7 @@
     {
       "key": "zoho.webhookUrl",
       "name": "Zoho Webhook-URL",
-      "description": "Öffentliche Sales-Callback-Basis-URL dieses Mandanten, z. B. https://sales.kunde.de/api/integrations/zoho/webhook. Ohne Query oder Token eintragen; die Tenant-ID wird automatisch ergänzt. Leer verwendet den Deployment-Standard. Nach einer Änderung den Job CRM-Hooks erneuern starten. Die Adresse muss bereits als erreichbarer Sales-Einstieg eingerichtet sein.",
+      "description": "Öffentliche Sales-Callback-Basis-URL dieses Mandanten, z. B. https://sales.kunde.de/api/integrations/zoho/webhook. Ohne Query oder Token eintragen; die Tenant-ID wird automatisch ergänzt. Nach einer Änderung den Job CRM-Hooks erneuern starten. Die Adresse muss bereits als erreichbarer Sales-Einstieg eingerichtet sein.",
       "category": "Zoho CRM",
       "type": "string",
       "defaultValue": "",

@@ -141,8 +141,9 @@ public sealed class ZohoCrmHookUpdateService(
                     [message]);
             }
 
-            var availableModules = RelevantModules
-                .Where(module => schema.AvailableModules.Contains(module, StringComparer.OrdinalIgnoreCase))
+            var hookTargets = ResolveHookTargets(schema);
+            var availableModules = hookTargets
+                .Select(target => target.Module)
                 .ToArray();
             var skippedModules = RelevantModules
                 .Except(availableModules, StringComparer.OrdinalIgnoreCase)
@@ -153,6 +154,10 @@ public sealed class ZohoCrmHookUpdateService(
                 JsonSerializer.SerializeToElement(new
                 {
                     modules = availableModules,
+                    generatedSignalModules = hookTargets
+                        .Where(target => target.UseAllOperations)
+                        .Select(target => target.Module)
+                        .ToArray(),
                     skippedModules,
                     reason = "module-not-in-local-schema-cache"
                 }),
@@ -171,8 +176,9 @@ public sealed class ZohoCrmHookUpdateService(
                 : "Geplante Wartung: gültige Hooks außerhalb der Erneuerungsfrist bleiben bestehen.",
                 "CRM-Hooks", cancellationToken: cancellationToken);
 
-            foreach (var module in availableModules)
+            foreach (var target in hookTargets)
             {
+                var module = target.Module;
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
@@ -184,7 +190,8 @@ public sealed class ZohoCrmHookUpdateService(
                         item => item.ProviderKey == ProviderKey && item.ConnectionKey == ConnectionKey
                             && item.Module == module, cancellationToken);
                     var notifyUrl = BuildTenantWebhookUrl(webhookBaseUrl, context.TenantId);
-                    if (!forceRebuild && CanKeepSubscription(subscription, notifyUrl, now))
+                    var expectedOperations = Operations(module, target.UseAllOperations);
+                    if (!forceRebuild && CanKeepSubscription(subscription, notifyUrl, expectedOperations, now))
                     {
                         subscription!.LastCheckedAt = now;
                         await moduleDb.SaveChangesAsync(cancellationToken);
@@ -200,7 +207,14 @@ public sealed class ZohoCrmHookUpdateService(
                     await context.Logger.InfoAsync($"Neuaufbau des Zoho-Hooks '{module}' beginnt.", "CRM-Hooks",
                         JsonSerializer.SerializeToElement(new { module, oldChannelId, requestedChannelId }), cancellationToken);
                     var outcome = await ZohoHookReplacement.ExecuteAsync(oldChannelId,
-                        ct => crm.RegisterNotificationsAsync(notifyUrl, token, requestedChannelId, module, ct),
+                        ct => crm.RegisterNotificationsAsync(
+                            webhookBaseUrl,
+                            context.TenantId,
+                            token,
+                            requestedChannelId,
+                            module,
+                            target.UseAllOperations,
+                            ct),
                         async (registration, ct) =>
                         {
                             if (subscription is null)
@@ -209,7 +223,7 @@ public sealed class ZohoCrmHookUpdateService(
                                 {
                                     Id = Guid.NewGuid(), TenantId = context.TenantId,
                                     ProviderKey = ProviderKey, ConnectionKey = ConnectionKey, Module = module,
-                                    EventsJson = JsonSerializer.Serialize(Operations(module)),
+                                    EventsJson = JsonSerializer.Serialize(expectedOperations),
                                     ChannelId = registration.ChannelId, VerificationTokenHash = HashToken(token),
                                     NotifyUrl = notifyUrl, Status = ActiveStatus
                                 };
@@ -217,7 +231,7 @@ public sealed class ZohoCrmHookUpdateService(
                             }
                             else
                             {
-                                subscription.EventsJson = JsonSerializer.Serialize(Operations(module));
+                                subscription.EventsJson = JsonSerializer.Serialize(expectedOperations);
                                 subscription.ChannelId = registration.ChannelId;
                                 subscription.VerificationTokenHash = HashToken(token);
                                 subscription.NotifyUrl = notifyUrl;
@@ -236,7 +250,9 @@ public sealed class ZohoCrmHookUpdateService(
                             "CRM-Hooks", JsonSerializer.SerializeToElement(new
                             {
                                 module, channelId = requestedChannelId, expiresAt = subscription!.ExpiresAt,
-                                operations = Operations(module), cleanupConfirmed = outcome.Warning is null
+                                operations = expectedOperations,
+                                generatedSignalOnly = target.UseAllOperations,
+                                cleanupConfirmed = outcome.Warning is null
                             }), cancellationToken);
                     }
                     if (outcome.Warning is not null)
@@ -343,6 +359,10 @@ public sealed class ZohoCrmHookUpdateService(
             context.TenantId,
             "system:zoho-webhook",
             cancellationToken);
+        var generatedSignalModules = (await schemaCache.GetCachedAsync(cancellationToken))
+            ?.GetGeneratedHookModules()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase)
+            ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         for (var index = 0; index < events.Length; index++)
         {
@@ -364,6 +384,32 @@ public sealed class ZohoCrmHookUpdateService(
                     cancellationToken);
                 runItem.Status = ProcessingStatus;
                 runItem.StartedAt ??= DateTimeOffset.UtcNow;
+                if (generatedSignalModules.Contains(payload.Module))
+                {
+                    runItem.RecordsRead += payload.RecordIds.Count;
+                    syncRun.RecordsRead += payload.RecordIds.Count;
+                    runItem.Status = "succeeded";
+                    runItem.FinishedAt = DateTimeOffset.UtcNow;
+                    webhookEvent.Status = ProcessedStatus;
+                    webhookEvent.ProcessedAt = DateTimeOffset.UtcNow;
+                    webhookEvent.Error = null;
+                    processed++;
+                    await db.SaveChangesAsync(cancellationToken);
+                    await context.Logger.InfoAsync(
+                        $"Zoho-Hook-Signal verarbeitet: {payload.Module} {payload.Operation}, {payload.RecordIds.Count} generierte Datensätze gemeldet.",
+                        "CRM-Hook-Ereignisse",
+                        JsonSerializer.SerializeToElement(new
+                        {
+                            eventId = webhookEvent.Id,
+                            module = payload.Module,
+                            operation = payload.Operation,
+                            records = payload.RecordIds.Count,
+                            handling = "generated-module-signal-only",
+                            reason = "Subform/MxN-Hooks werden registriert; kanonisches Parent-Mapping erfolgt über den regulären Crawl."
+                        }),
+                        cancellationToken);
+                    continue;
+                }
 
                 foreach (var externalId in payload.RecordIds)
                 {
@@ -533,10 +579,15 @@ public sealed class ZohoCrmHookUpdateService(
     internal static bool IsManualRebuild(string trigger)
         => string.Equals(trigger, "manual", StringComparison.OrdinalIgnoreCase);
 
-    internal static bool CanKeepSubscription(IntegrationSubscription? subscription, string notifyUrl, DateTimeOffset now)
+    internal static bool CanKeepSubscription(
+        IntegrationSubscription? subscription,
+        string notifyUrl,
+        IReadOnlyCollection<string> expectedEvents,
+        DateTimeOffset now)
         => subscription?.ExpiresAt > now.Add(SubscriptionRenewalLeadTime)
             && string.Equals(subscription.NotifyUrl, notifyUrl, StringComparison.Ordinal)
-            && string.Equals(subscription.Status, ActiveStatus, StringComparison.OrdinalIgnoreCase);
+            && string.Equals(subscription.Status, ActiveStatus, StringComparison.OrdinalIgnoreCase)
+            && HasExpectedEvents(subscription.EventsJson, expectedEvents);
 
     internal static bool TryValidateWebhookUrl(string? webhookUrl, out Uri uri, out string error)
     {
@@ -549,7 +600,7 @@ public sealed class ZohoCrmHookUpdateService(
             || !string.IsNullOrEmpty(uri.Fragment)
             || !uri.AbsolutePath.EndsWith("/api/integrations/zoho/webhook", StringComparison.Ordinal))
         {
-            error = "In den Sales-AppSettings unter Zoho Webhook-URL (zoho.webhookUrl) eine öffentliche HTTP(S)-URL zum /api/integrations/zoho/webhook ohne Zugangsdaten, Query oder Fragment eintragen. Leer verwendet den Deployment-Standard.";
+            error = "In den Sales-AppSettings unter Zoho Webhook-URL (zoho.webhookUrl) eine öffentliche HTTP(S)-URL zum /api/integrations/zoho/webhook ohne Zugangsdaten, Query oder Fragment eintragen.";
             uri = null!;
             return false;
         }
@@ -568,8 +619,31 @@ public sealed class ZohoCrmHookUpdateService(
 
     internal static string BuildTenantWebhookUrl(Uri baseUri, Guid tenantId)
     {
-        var separator = string.IsNullOrWhiteSpace(baseUri.Query) ? "?" : "&";
-        return $"{baseUri.AbsoluteUri}{separator}tenant_id={Uri.EscapeDataString(tenantId.ToString("D"))}";
+        if (tenantId == Guid.Empty)
+            throw new ArgumentException("Für den Zoho-Callback ist eine gültige Tenant-ID erforderlich.", nameof(tenantId));
+        if (!TryValidateWebhookUrl(baseUri.OriginalString, out var validatedUri, out var error))
+            throw new ArgumentException(error, nameof(baseUri));
+        return $"{validatedUri.AbsoluteUri}?tenant_id={tenantId:D}";
+    }
+
+    internal static IReadOnlyCollection<ZohoHookTarget> ResolveHookTargets(
+        ZohoSchemaCacheSnapshot schema)
+    {
+        var targets = RelevantModules
+            .Where(module => schema.AvailableModules.Contains(module, StringComparer.OrdinalIgnoreCase))
+            .Select(module => new ZohoHookTarget(module, false))
+            .ToList();
+        var known = targets
+            .Select(target => target.Module)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var module in schema.GetGeneratedHookModules())
+        {
+            if (known.Add(module))
+                targets.Add(new ZohoHookTarget(module, true));
+        }
+
+        return targets;
     }
 
     private static string CreateChannelId()
@@ -585,8 +659,23 @@ public sealed class ZohoCrmHookUpdateService(
     internal static string HashToken(string token)
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token))).ToLowerInvariant();
 
-    private static string[] Operations(string module)
-        => module.Equals("Users", StringComparison.OrdinalIgnoreCase)
+    private static bool HasExpectedEvents(string eventsJson, IReadOnlyCollection<string> expectedEvents)
+    {
+        try
+        {
+            var storedEvents = JsonSerializer.Deserialize<string[]>(eventsJson) ?? [];
+            return storedEvents.Length == expectedEvents.Count
+                && storedEvents.ToHashSet(StringComparer.OrdinalIgnoreCase)
+                    .SetEquals(expectedEvents);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static string[] Operations(string module, bool allOperations)
+        => allOperations || module.Equals("Users", StringComparison.OrdinalIgnoreCase)
             ? [module + ".all"]
             : [module + ".create", module + ".edit", module + ".delete"];
 
@@ -601,6 +690,8 @@ public sealed class ZohoCrmHookUpdateService(
         int Processed,
         int Failed,
         IReadOnlyCollection<string> Warnings);
+
+    internal sealed record ZohoHookTarget(string Module, bool UseAllOperations);
 }
 
 public sealed class ZohoWebhookReceiver(

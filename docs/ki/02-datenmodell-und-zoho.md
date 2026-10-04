@@ -14,6 +14,17 @@ Gründe sind API-Limits, Antwortzeiten und die dauerhafte Speicherung
 historischer Daten. Anbieter-IDs werden über eine externe Identitätszuordnung
 vom kanonischen Domainmodell getrennt.
 
+## Pipeline-Zuordnung (28.09.2026)
+
+Der Deal-Mapper verwendet bei vorhandener Stufe und fehlender Pipeline denselben
+`default`-Schlüssel wie der bestehende Schema-Fallback. Bisher konnten Schema-
+Stufen vorhanden sein, Deals blieben aber ohne Pipeline und dadurch ohne
+Stufenzuordnung. Explizite Pipeline-Namen und -IDs bleiben erhalten; ohne Stufe
+wird keine Pipeline ergänzt. Lokal: 153 native Report-/Mapping-Prüfungen
+bestanden. Kein Rollout oder Live-Daten-Nachweis. Nach Backend-Rollout Schema-
+Cache aktualisieren und CRM-Vollimport ausführen, damit auch unveränderte
+Bestandsdeals neu zugeordnet werden.
+
 ## Sync-Zeitplan
 
 - `crm-full-import`: tenantadmin-konfigurierbarer Standardzeitplan täglich um
@@ -108,6 +119,24 @@ außerhalb der 36-Stunden-Frist bei. Jeder manuelle Jobstart baut seit der
 Neuaufbau-Korrektur vom 20.09.2026 alle verfügbaren relevanten Modul-Hooks mit
 neuen Channels/Tokens ohne Feldbedingungen neu auf. Die lesende Diagnose selbst
 ändert weiterhin nichts und nimmt keine automatische Reparatur vor.
+
+Korrektur vom 20.09.2026: Die Hook-Registrierung folgt auch dem Zoho-Vertrag
+für generierte Subform-/MxN-Module. Normale CRM-Module bleiben bei expliziten
+`create`/`edit`/`delete`-Events, `Users` sowie aus dem Schema-Cache erkannte
+generierte Hook-Module werden mit `{Module}.all` registriert. Die Registrierung
+setzt weiterhin `return_affected_field_values = true`. Generierte Hook-Module
+werden aus den gecachten Felddefinitionen abgeleitet: Subform-Felder bzw.
+Multi-Lookup-Felder, deren API-Name auch als verfügbares Modul im Schema steht.
+Bestehende Channels werden nur behalten, wenn URL, Status, Ablaufzeit **und**
+Events zur aktuellen Sollregistrierung passen.
+
+Callbacks für solche generierten Module werden aktuell als Signal verarbeitet
+und protokolliert, aber nicht als kanonischer Sales-Datensatz gemappt. Damit
+laufen Subform-Hooks nicht mehr in Importfehler, während die reguläre
+Incremental-/Voll-Reconciliation weiterhin die fachliche Datenbasis sichert.
+Wenn aus einem konkreten Subform-Modul direkt Parent-Datensätze aktualisiert
+werden sollen, muss das Parent-Mapping je Zoho-Fachmodell explizit ergänzt
+werden.
 
 ### Hooks wirklich aktualisieren
 
@@ -329,3 +358,13 @@ Eine eigene Ansicht muss mindestens Deals ohne Betrag, verlorene Deals ohne
 Verlustgrund, Accounts ohne Branche, kombinierte Produktangaben sowie nicht
 verortbare Kunden anzeigen. `NULL` und `1900-01-01` bei Kontaktangaben werden
 vor der Berechnung als „nie kontaktiert“ normalisiert.
+
+## Tenant-ID im ausgehenden Callback (30.09.2026)
+
+Der Registrierungsadapter nimmt Basis-URI und Tenant-ID separat entgegen.
+Er bildet notify_url unmittelbar im Zoho-Payload als
+`<Basis-URL>?tenant_id=<Mandanten-ID>`. Guid.Empty sowie Basis-URLs mit
+Query werden vor dem Provideraufruf abgewiesen. Der Wartungsjob speichert
+dieselbe vollständige URL; URL-Abweichungen erzwingen weiterhin Erneuerung.
+Die Ergänzung im Worker bestand bereits; die Adapter-Schnittstelle verhindert
+jetzt auch die direkte Registrierung einer bloßen Basis-URL.

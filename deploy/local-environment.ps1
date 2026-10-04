@@ -10,5 +10,4 @@ $scopes = @(@($configured) + @($defaults) |
     Select-Object -Unique) -join ','
 @{ name = 'SalesNotifications__Mail__Host'; value = "$($Plan.Names.Platform)-mailpit"; valueFrom = $null }
 @{ name = 'SalesNotifications__Mail__Port'; value = '1025'; valueFrom = $null }
-@{ name = 'Zoho__WebhookUrl'; value = [string]$env:ZOHO_WEBHOOK_URL; valueFrom = $null }
 @{ name = 'Zoho__Scopes'; value = $scopes; valueFrom = $null }

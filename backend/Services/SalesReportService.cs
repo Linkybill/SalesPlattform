@@ -56,6 +56,7 @@ public sealed partial class SalesReportService(
             BuildService(model, period, now),
             BuildCommercial(model, period, now))
         {
+            CanManageAnnualTargets = CanManageAnnualTargets(user),
             SourceSync = sourceSync,
             Evidence = BuildEvidence(model, period, now, rules.DealInactiveDays, rules.ContractRenewalHorizonDays,
                 canSeeManagement, canSeeCleanup)
@@ -591,6 +592,7 @@ public sealed record SalesDashboardResponse(
     SalesServiceReport Service,
     SalesCommercialReport Commercial)
 {
+    public bool CanManageAnnualTargets { get; init; }
     public SalesReportEvidence Evidence { get; init; } = new([], []);
     public SalesReportSyncState? SourceSync { get; init; }
 }

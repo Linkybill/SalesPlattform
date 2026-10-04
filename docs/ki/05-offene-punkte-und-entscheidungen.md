@@ -1,5 +1,48 @@
 # Offene Punkte, Entscheidungen und Status
 
+## Pipeline-Stufen bei impliziter Zoho-Standardpipeline (28.09.2026)
+
+Screenshot: offene Deals werden unter „Ohne Pipeline · Ohne Stufe“ gesammelt.
+Codebefund: Schema-Fallback ordnet Stufen ohne Pipeline dem Schlüssel `default`
+zu, während der Deal-Mapper keine Pipeline liefert. Deal-Mapping wird an den
+vorhandenen Schema-Fallback angeglichen, wenn eine Stufe vorhanden ist und
+Pipeline-Name sowie -ID fehlen. Explizite Pipelines bleiben erhalten. Keine
+frei erfundenen Stufen oder Änderungen in Zoho. Produktive Ursache je Deal
+ist ohne Importdatenprüfung nicht bestätigt; bestehende Deals benötigen nach
+dem Backend-Rollout einen Vollimport mit verfügbarem Pipeline-/Stufenschema.
+
+## Jahresziele lokal pflegen (28.09.2026)
+
+Benutzerauftrag: Maske „Jahresziel festlegen“ in Sales; Speicherung nur in der
+mandantenisolierten App-Datenbank, keine Synchronisierung nach Zoho. Gemäß
+bestehendem Zielmodell Jahresumsatzziele je Mitarbeiter in EUR; deren Summe
+bildet das Cockpit-Ziel. Bearbeitung durch sales-manager/sales-management.
+Das aktuelle offene Geschäftsjahr wird verwendet, ohne Konfiguration das
+laufende Kalenderjahr beim ersten Speichern angelegt. Leeres Feld entfernt
+das Mitarbeiter-Jahresziel, 0 bleibt ein explizites Ziel. Monats-/Quartalsziele
+bleiben separat. Veraltete Formularstände werden beim Speichern abgewiesen.
+
+## Fehlende Beträge zählen als null Euro (28.09.2026)
+
+Benutzerentscheidung: Ein fehlender Betrag zählt in Report-Summen als 0;
+vorhandene Beträge werden weiterhin summiert. Dies gilt auch für die offene
+Pipeline und ihre Stufen sowie abhängige Quoten. Die Berechnungsbeschreibung
+nennt die Regel. Importierte Rohwerte bleiben unverändert. Ein fehlendes
+Jahresziel wird dadurch nicht angelegt; explizite gemischte Währungen benötigen
+weiterhin eine Umrechnung. Lokal umgesetzt; Prüfstatus in der KPI-Dokumentation.
+
+## Euro als Standardwährung für Reports (28.09.2026)
+
+Benutzerentscheidung: Bei fehlender Währung von Euro ausgehen. Report-Summen
+und Nachweiszeilen verwenden für NULL, leere und reine Leerraumangaben EUR.
+Explizite Währungen bleiben erhalten; verschiedene Währungen werden ohne
+Umrechnung weiterhin nicht summiert. Fehlende Jahresziele bleiben nicht
+berechenbar; für fehlende Beträge gilt die Folgeentscheidung oben.
+Die Vorgabe gilt auch für bereits importierte
+Daten ohne Neuimport oder Änderung der CRM-Daten.
+
+Status: lokale Umsetzung; Prüfung und Rolloutstatus siehe KPI-Dokumentation.
+
 ## Echter manueller Hook-Neuaufbau (20.09.2026)
 
 Benutzerauftrag: „Hooks aktualisieren“ soll Hooks wirklich neu registrieren,
@@ -160,13 +203,14 @@ Paket ohne lokalen Alias; Dark/Light/System, Reload-Persistenz und 390px-Layout
 sind geprüft. Kein Serverrollout und kein Commit/Push dieses Arbeitsstands bei
 dieser Integration. Kein NuGet-Update. Aufmass bleibt separat zu integrieren.
 
-## Öffentlicher Zoho-Webhook (19.09.2026)
+## Öffentlicher Zoho-Webhook (19.09.2026, korrigiert am 20.09.2026)
 
-Benutzerauftrag: URL automatisch im Deployment konfigurieren und die sichere
-öffentliche Durchleitung ergänzen. `Zoho__WebhookUrl` wird in den Remote-
-Deploymentprofilen aus dem öffentlichen Frontend-Einstieg und dem app-eigenen
-Webhook-Pfad abgeleitet. Local bleibt ohne öffentlich erreichbaren Override
-absichtlich deaktiviert. Sales registriert genau diesen POST-Empfänger im
+Benutzerauftrag ursprünglich: URL automatisch im Deployment konfigurieren und
+die sichere öffentliche Durchleitung ergänzen. Korrektur vom 20.09.2026:
+`Zoho__WebhookUrl` wird nicht mehr in Deploymentprofilen gesetzt. Die
+Callback-Basis-URL ist ausschließlich das Tenant-AppSetting `zoho.webhookUrl`,
+weil unterschiedliche Kunden unterschiedliche Sales-Hosts verwenden können.
+Local bleibt ohne Mandantenwert absichtlich deaktiviert. Sales registriert genau diesen POST-Empfänger im
 generischen Manifestvertrag `webhooks`; Plattform-API und Application Router
 müssen diesen Vertrag vor dem Sales-Rollout unterstützen. Die Tenant-ID ist
 Routingkontext, kein Tokenersatz. Sales prüft weiterhin Channel, Modul und
@@ -435,3 +479,12 @@ keine stillschweigend getroffenen Anforderungen:
 Jede neue Implementierung soll diese Tabelle und die betroffenen Infodateien
 mitpflegen. Ein Eintrag „vorhanden“ im Startgerüst bedeutet nicht, dass der
 gesamte fachliche Zielumfang umgesetzt ist.
+
+## Tenantgebundene Zoho-Registrierung (30.09.2026)
+
+Support meldet eine Zustellung an die Basis-URL ohne Tenant-Query. Der
+Zoho-Adapter soll deshalb Basis-URI und Tenant-ID zwingend separat annehmen
+und die vollständige notify_url erst beim Aufbau des Provider-Payloads bilden.
+Eine leere Tenant-ID muss vor jedem Provideraufruf abgewiesen werden.
+Der laufende Serverstand und die tatsächliche Zoho-Registrierung sind damit
+noch nicht verifiziert.

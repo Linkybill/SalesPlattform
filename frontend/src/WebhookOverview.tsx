@@ -82,8 +82,8 @@ export function WebhookOverview({ authorizedFetch, platformAuthorizedFetch, appl
     {loading && <p role="status">Hook-Übersicht wird geladen …</p>}
     {data && <>
       <p>Wirksame Basis-URL: <code className="hook-url">{data.callbackBaseUrl ?? 'Nicht konfiguriert / ungültig'}</code><br />
-        Quelle: {data.callbackUrlSource === 'tenantApp' ? 'Mandanten-AppSetting zoho.webhookUrl' : data.callbackUrlSource === 'deployment' ? 'Deployment-Standard (kein Mandantenwert gesetzt)' : 'Nicht konfiguriert'}.<br />
-        Ändern unter Tenant-Portal → SalesPlattform → AppSettings → Zoho Webhook-URL.<br />
+        Quelle: {data.callbackUrlSource === 'tenantApp' ? 'Mandanten-AppSetting zoho.webhookUrl' : 'Nicht konfiguriert'}.<br />
+        Einrichten/ändern unter Tenant-Portal → SalesPlattform → AppSettings → Zoho Webhook-URL.<br />
         <small>Die Registrierung ergänzt <code>?tenant_id=…</code> automatisch. Konfiguration ist kein Erreichbarkeitsnachweis.</small></p>
       {data.callbackUrlError && <div className="message error-message">{data.callbackUrlError}</div>}
       {!data.schemaCached && <div className="message">Zuerst den Job „Zoho-Schema cachen“ starten. Ohne Schema werden keine Hooks registriert.</div>}

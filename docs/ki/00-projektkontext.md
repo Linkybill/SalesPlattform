@@ -1,5 +1,36 @@
 # Projektkontext
 
+## Sicherungsstand 04.10.2026
+
+Auf Benutzerauftrag werden alle offenen Sales-Änderungen lokal committed.
+Der Quellstand umfasst die tenantbezogene Zoho-Webhook-Basisadresse mit
+erzwungener Tenant-ID im Callback, erweiterte Hook-/Schema-Verarbeitung,
+Pipeline-Zuordnung sowie Reportkorrekturen und die lokale Jahreszielpflege.
+Die Jahresziele bleiben in der Sales-Datenbank; es erfolgt kein Rückschreiben
+nach Zoho. Details stehen in [Datenmodell und Zoho](02-datenmodell-und-zoho.md),
+[Regelwerk und KPIs](03-regelwerk-und-kpis.md) und
+[Betriebsstand](09-deployment-und-betriebsstand.md).
+
+Die datierten bisherigen Test- und Rolloutnachweise bleiben zeitlich gebunden.
+Frühere Angaben „uncommittiert“ beziehen sich auf den damaligen Arbeitslauf;
+der aktuelle Git-Stand ist maßgeblich. Dieser Sicherungsauftrag umfasst keinen
+Push, kein Deployment und keine Zoho-Live-Neuregistrierung.
+
+## Zuständigkeitsabgleich 03.10.2026
+
+Für den Zeitraum 02.–03.10. wurden im lokalen Sales-Repository keine neuen
+Commits gefunden. Vorhandene uncommittierte Zoho-/Report-/Jahreszieländerungen
+bleiben ihren bereits dokumentierten Arbeitsständen zugeordnet; ihr Datum
+und ein neuer Rollout lassen sich daraus nicht ableiten. Details und Grenzen
+stehen im [Betriebsstand](09-deployment-und-betriebsstand.md).
+
+Die zuletzt besprochenen GAEB-/Zeichen-/PDF-Arbeiten gehören ausschließlich in
+den [Aufmass-Kontext](../../../../AufmassApp/AufmassApp/docs/ki-kontext.md).
+Azure-Loginfehleralarme, Stream-Analytics-Query, Function-Ausgabe und zentrale
+Migrationssteuerung gehören in den
+[Identity-Platform-Kontext](../../../../IdentityPlattform/docs/ki-kontext.md).
+Die im IDE geöffnete `ZohoOptions.cs` ändert diese fachliche Zuordnung nicht.
+
 Dokumentationsabgleich: **19.09.2026**. Zuerst den
 [konsolidierten Deployment- und Betriebsstand](09-deployment-und-betriebsstand.md)
 lesen. Die folgenden datierten Abschnitte enthalten auch Zwischenstände:
@@ -18,6 +49,13 @@ Vertriebsmitarbeiter beim Öffnen eine priorisierte Tagesarbeit zeigen und der
 Leitung belastbare Steuerungsinformationen geben.
 
 ## Aktueller technischer Stand
+
+Jahresziel-Maske (28.09.2026, lokal): In Steuerung können sales-manager und
+sales-management EUR-Jahresumsatzziele je Mitarbeiter in der Sales-Datenbank
+pflegen. Cockpit verwendet deren Summe. Keine Synchronisierung nach Zoho;
+Mandantenbindung, Eingabevalidierung und Konfliktschutz serverseitig.
+147 .NET-Prüfungen, TypeScript und Browser-Smoke-Test bestanden; noch kein
+Rollout oder produktiver DB-Nachweis. Details in `03-regelwerk-und-kpis.md`.
 
 Manueller Hook-Neuaufbau (20.09.2026, lokal): „Hooks aktualisieren“ startet nach
 Bestätigung den bestehenden Plattformjob. Jeder manuelle Lauf ersetzt gültige
@@ -57,8 +95,8 @@ Test bestanden; Live-Abnahme dieses Quellstands separat. Keine Paket-/Datenbankm
 
 Mandantenkorrektur Hook-URL (19.09.2026): **Zoho Webhook-URL** (`zoho.webhookUrl`)
 ist ein Tenant-AppSetting. Je Kunde sind unterschiedliche Frontend-Hosts möglich.
-Registrierung und Übersicht lesen denselben aktuellen Tenant-Wert; leer nutzt
-den bisherigen Deployment-Standard. Kein stiller Fallback bei ungültigem Wert.
+Registrierung und Übersicht lesen denselben aktuellen Tenant-Wert; ohne
+Mandantenwert werden keine Hooks registriert. Es gibt keinen Deployment-Fallback.
 Eine geänderte URL erzwingt Neuregistrierung beim nächsten Hook-Job. Das neue
 Setting wird beim Start des aktualisierten Backends registriert; dessen Rollout
 ist im Rahmen dieses Dokumentationsabgleichs nicht verifiziert.

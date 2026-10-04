@@ -14,12 +14,16 @@ public sealed record SalesReportRow(string Key, string Kind, string Name, string
 
 public sealed class SalesEvidenceBuilder
 {
+    private static string CurrencyOrEuro(string? currency)
+        => string.IsNullOrWhiteSpace(currency) ? "EUR" : currency.Trim().ToUpperInvariant();
+
     public SalesReportEvidence Result { get; } = new([], []);
     public void Add(string key, string label, IEnumerable<SalesReportRow> records, decimal? value, string unit,
         string period, string source, string calculation, string? unavailable = null, string? currency = null)
     {
         var rows = records.DistinctBy(r => r.Key).ToArray();
-        foreach (var row in rows) Result.Records.TryAdd(row.Key, row);
+        foreach (var row in rows)
+            Result.Records.TryAdd(row.Key, row.Amount.HasValue ? row with { Currency = CurrencyOrEuro(row.Currency) } : row);
         Result.Metrics.Add(key, new(key, label, value, unit, currency, period, source, calculation, unavailable,
             rows.Select(r => r.Key).ToArray()));
     }
@@ -31,11 +35,10 @@ public sealed class SalesEvidenceBuilder
     public void Money(string key, string label, IEnumerable<SalesReportRow> records, string period, string source, string calculation)
     {
         var rows = records.DistinctBy(r => r.Key).ToArray();
-        var currencies = rows.Select(r => r.Currency?.Trim().ToUpperInvariant()).Distinct().ToArray();
-        var error = rows.Any(r => r.Amount is null) ? "Beträge fehlen – keine vollständige Summe."
-            : currencies.Contains(null) || currencies.Contains("") ? "Währungsangaben fehlen."
-            : currencies.Length > 1 ? "Mehrere Währungen – keine Umrechnung hinterlegt." : null;
-        Add(key, label, rows, error is null ? rows.Sum(r => r.Amount ?? 0) : null, "money", period, source, calculation,
+        var currencies = rows.Select(r => CurrencyOrEuro(r.Currency)).Distinct().ToArray();
+        var error = currencies.Length > 1 ? "Mehrere Währungen – keine Umrechnung hinterlegt." : null;
+        Add(key, label, rows, error is null ? rows.Sum(r => r.Amount ?? 0) : null, "money", period, source,
+            calculation + " Fehlende Währungsangaben werden als EUR behandelt. Fehlende Beträge zählen als 0.",
             error, currencies.Length == 1 ? currencies[0] : rows.Length == 0 ? "EUR" : null);
     }
 }

@@ -10,6 +10,7 @@ using Microsoft.Extensions.Primitives;
 using Microsoft.Extensions.Options;
 using IdentityPlatform.Shared.ApplicationSettings;
 using SalesPlattform.Backend.Data;
+using SalesPlattform.Backend.Integrations.Abstractions;
 using SalesPlattform.Backend.Integrations.Zoho;
 
 var checks = 0;
@@ -22,6 +23,23 @@ static MethodInfo Method(Type type, string name) => type.GetMethod(name, Binding
     ?? throw new InvalidOperationException($"Missing production helper: {name}.");
 // Inspect the serialized production request, not a test-only date formatter.
 var buildNotification = Method(typeof(ZohoCrmAdapter), "BuildNotificationPayload");
+foreach (var invalidCallback in new[]
+{
+    (Url: "https://sales.example.test/api/integrations/zoho/webhook", Tenant: Guid.Empty),
+    (Url: "https://sales.example.test/api/integrations/zoho/webhook?tenant_id=00000000-0000-0000-0000-000000000002", Tenant: Guid.NewGuid())
+})
+{
+    try
+    {
+        buildNotification.Invoke(null, [new Uri(invalidCallback.Url), invalidCallback.Tenant,
+            "synthetic-token", "123456789", "Calls", false, DateTimeOffset.UtcNow]);
+        Check(false, "Invalid tenant routing must never produce a Zoho registration payload.");
+    }
+    catch (TargetInvocationException exception) when (exception.InnerException is ArgumentException)
+    {
+        Check(true, "Invalid tenant routing rejected before sending.");
+    }
+}
 var previousCulture = CultureInfo.CurrentCulture;
 try
 {
@@ -32,7 +50,7 @@ try
         var requestedAt = new DateTimeOffset(2026, 12, 27, 23, 45, 12, TimeSpan.Zero).AddTicks(1234567);
         const string callback = "https://sales.example.test/api/integrations/zoho/webhook?tenant_id=00000000-0000-0000-0000-000000000001";
         var payload = (JsonObject)buildNotification.Invoke(null,
-            [callback, "synthetic-token", "123456789", module, requestedAt])!;
+            [new Uri(callback.Split('?')[0]), Guid.Parse("00000000-0000-0000-0000-000000000001"), "synthetic-token", "123456789", module, false, requestedAt])!;
         using var json = JsonDocument.Parse(payload.ToJsonString());
         var watch = json.RootElement.GetProperty("watch")[0];
         var expiry = watch.GetProperty("channel_expiry").GetString();
@@ -53,6 +71,52 @@ try
     }
 }
 finally { CultureInfo.CurrentCulture = previousCulture; }
+{
+    const string callback = "https://sales.example.test/api/integrations/zoho/webhook?tenant_id=00000000-0000-0000-0000-000000000001";
+    var requestedAt = new DateTimeOffset(2026, 12, 27, 23, 45, 12, TimeSpan.Zero);
+    var payload = (JsonObject)buildNotification.Invoke(null,
+        [new Uri(callback.Split('?')[0]), Guid.Parse("00000000-0000-0000-0000-000000000001"), "synthetic-token", "123456789", "Project_Details", true, requestedAt])!;
+    using var json = JsonDocument.Parse(payload.ToJsonString());
+    var watch = json.RootElement.GetProperty("watch")[0];
+    Check(watch.GetProperty("return_affected_field_values").GetBoolean(),
+        "Generated module hooks must request affected field values.");
+    Check(watch.GetProperty("events").EnumerateArray().Select(x => x.GetString())
+            .SequenceEqual(new[] { "Project_Details.all" }),
+        "Generated subform modules must be registered with .all.");
+}
+{
+    var fields = new Dictionary<string, IReadOnlyCollection<CrmFieldMetadata>>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Leads"] = [new CrmFieldMetadata("Project_Details", "Project Details", "subform")],
+        ["Deals"] = [new CrmFieldMetadata("Deal_Name", "Deal Name", "text")]
+    };
+    var schema = new ZohoSchemaCacheSnapshot(
+        ["Leads", "Deals", "Calls", "Project_Details"],
+        fields,
+        new Dictionary<string, IReadOnlyCollection<JsonElement>>(StringComparer.OrdinalIgnoreCase),
+        [],
+        new Dictionary<string, IReadOnlyCollection<JsonElement>>(StringComparer.OrdinalIgnoreCase),
+        DateTimeOffset.UtcNow,
+        "org-id");
+    Check(schema.GetGeneratedHookModules().SequenceEqual(new[] { "Project_Details" }),
+        "Subform module names must be derived from cached field metadata.");
+    var resolveHookTargets = typeof(ZohoCrmHookUpdateService).GetMethod(
+        "ResolveHookTargets",
+        BindingFlags.NonPublic | BindingFlags.Static)
+        ?? throw new InvalidOperationException("Missing production helper: ResolveHookTargets.");
+    var targets = ((System.Collections.IEnumerable)resolveHookTargets.Invoke(null, [schema])!)
+        .Cast<object>()
+        .Select(target => new
+        {
+            Module = (string)target.GetType().GetProperty("Module")!.GetValue(target)!,
+            UseAllOperations = (bool)target.GetType().GetProperty("UseAllOperations")!.GetValue(target)!
+        })
+        .ToArray();
+    Check(targets.Any(target => target.Module == "Project_Details" && target.UseAllOperations),
+        "Subform modules must be included in hook registration with .all operations.");
+    Check(targets.Any(target => target.Module == "Calls" && !target.UseAllOperations),
+        "Normal module hooks must keep explicit create/edit/delete operations.");
+}
 var validateUrl = Method(typeof(ZohoCrmHookUpdateService), "TryValidateWebhookUrl");
 var tenantUrl = Method(typeof(ZohoCrmHookUpdateService), "BuildTenantWebhookUrl");
 foreach (var url in new[] { "https://176.9.57.203:3003/api/integrations/zoho/webhook",
@@ -118,7 +182,9 @@ subscription.Status = "active";
 subscription.VerificationTokenHash = "malformed";
 Check(!Accept(subscription), "Malformed stored hash must fail closed, not throw.");
 var keep = Method(typeof(ZohoCrmHookUpdateService), "CanKeepSubscription");
-bool Keep(string url) => (bool)keep.Invoke(null, [subscription, url, now])!;
+string[] expectedHookEvents = ["Leads.create", "Leads.edit", "Leads.delete"];
+subscription.EventsJson = JsonSerializer.Serialize(expectedHookEvents);
+bool Keep(string url) => (bool)keep.Invoke(null, [subscription, url, expectedHookEvents, now])!;
 subscription.ExpiresAt = now.AddDays(5);
 Check(Keep(subscription.NotifyUrl), "Valid current callback should not consume another registration call.");
 Check(!Keep("https://new.example.com/api/integrations/zoho/webhook"), "Changed callback URL must force re-registration.");
@@ -175,10 +241,8 @@ var tenantB = Guid.NewGuid();
 var tenantC = Guid.NewGuid();
 var settingsStore = new SyntheticSettingsStore();
 var accessor = new HttpContextAccessor();
-var deploymentUrl = "https://shared.example.test/api/integrations/zoho/webhook";
-var options = new ZohoOptions { WebhookUrl = deploymentUrl };
 var settingsReader = new ZohoWebhookSettingsService(settingsStore,
-    Options.Create(new ApplicationSettingsOptions { ApplicationKey = "sales-plattform" }), Options.Create(options), accessor);
+    Options.Create(new ApplicationSettingsOptions { ApplicationKey = "sales-plattform" }), accessor);
 void SelectTenant(Guid tenant, bool interactive = false)
 {
     accessor.HttpContext = new DefaultHttpContext();
@@ -221,12 +285,9 @@ Check(!invalid.Error!.Contains("password"), "URL validation error leaked credent
 Put(tenantA, 123);
 Check((await settingsReader.ResolveCurrentAsync()).BaseUri is null, "Wrong setting type must fail closed.");
 Put(tenantA, " ");
-var fallback = await settingsReader.ResolveCurrentAsync();
-Check(fallback.BaseUri?.AbsoluteUri == deploymentUrl && fallback.Source == "deployment", "Empty override should use the explicit deployment default.");
+Check((await settingsReader.ResolveCurrentAsync()) is { BaseUri: null, Source: "missing", Error: not null }, "Empty tenant URL must not fall back to a deployment default.");
 SelectTenant(tenantC);
-Check((await settingsReader.ResolveCurrentAsync()).Source == "deployment", "Missing override must not borrow another tenant's URL.");
-options.WebhookUrl = "";
-Check((await settingsReader.ResolveCurrentAsync()) is { BaseUri: null, Source: "missing", Error: not null }, "Missing URL must be visible.");
+Check((await settingsReader.ResolveCurrentAsync()) is { BaseUri: null, Source: "missing", Error: not null }, "Missing URL must not borrow another tenant's URL.");
 SelectTenant(Guid.Empty);
 try { await settingsReader.ResolveCurrentAsync(); throw new Exception("Empty tenant accepted."); }
 catch (InvalidOperationException) { checks++; }

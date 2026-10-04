@@ -301,6 +301,15 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
     {
         var pipeline = ZohoFieldReader.String(record.Payload, "Pipeline");
         var stage = ZohoFieldReader.String(record.Payload, "Stage");
+        var pipelineExternalId = ZohoFieldReader.LookupId(record.Payload, "Pipeline");
+        // Match GetPipelinePayloadsFromDealsAsync: stages without an explicit
+        // pipeline belong to the implicit default pipeline in the schema cache.
+        if (string.IsNullOrWhiteSpace(pipeline) && string.IsNullOrWhiteSpace(pipelineExternalId)
+            && !string.IsNullOrWhiteSpace(stage))
+        {
+            pipeline = "default";
+            pipelineExternalId = "default";
+        }
         return new(
             CrmProviders.Zoho,
             record.ConnectionKey(),
@@ -323,7 +332,7 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             ZohoFieldReader.String(record.Payload, "Reason_for_Loss__s", "Loss_Reason", "verlustgrund"),
             NormalizePlaceholderDate(ZohoFieldReader.DateTimeOffset(record.Payload, "Last_Activity_Time")),
             ZohoFieldReader.LookupId(record.Payload, "Owner", "owner"),
-            ZohoFieldReader.LookupId(record.Payload, "Pipeline") ?? pipeline,
+            pipelineExternalId ?? pipeline,
             ZohoFieldReader.LookupId(record.Payload, "Stage") ?? stage,
             ZohoFieldReader.LookupId(record.Payload, "Product", "Product_Name"));
     }

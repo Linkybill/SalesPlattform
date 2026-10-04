@@ -427,20 +427,17 @@ Es gibt keinen atomaren Wechsel über Provider/DB und keine automatische
 Bereinigung verwaister Channels nach Abbruch. Details in
 `02-datenmodell-und-zoho.md`, Abschnitt „Hooks wirklich aktualisieren“.
 Eine geänderte `NotifyUrl` erzwingt ebenfalls eine Neuregistrierung, auch bei
-noch langer Restlaufzeit. Remote setzt `appsettings.Deployment.json` den Wert
-den Standard `Zoho__WebhookUrl` über `BackendUrls` aus dem öffentlichen `Frontend`-Einstieg
-und `/api/integrations/zoho/webhook` zusammen. Für die Installation auf ax42-1
-ist das `https://176.9.57.203:3003/api/integrations/zoho/webhook`; eine Platzierung
-auf ax42-2 nutzt weiterhin den öffentlichen Einstieg der zugehörigen Plattform.
-Vorrang hat das Tenant-App-Setting **Zoho Webhook-URL** (`zoho.webhookUrl`), damit
-jeder Kunde seinen eigenen Frontend-Host verwenden kann. Nur leer/nicht gesetzt
-fällt auf den Deployment-Standard zurück; ungültige explizite Werte blockieren
-die Registrierung. `ZohoWebhookSettingsService` liest für Job und Übersicht
+noch langer Restlaufzeit. `appsettings.Deployment.json` setzt keinen globalen
+`Zoho__WebhookUrl`-Wert mehr. Maßgeblich ist ausschließlich das Tenant-App-Setting
+**Zoho Webhook-URL** (`zoho.webhookUrl`), damit jeder Kunde seinen eigenen
+Frontend-Host verwenden kann. Leer/nicht gesetzt blockiert die Registrierung
+sichtbar; ungültige Werte blockieren ebenfalls und werden nicht ersetzt.
+`ZohoWebhookSettingsService` liest für Job und Übersicht
 denselben aktuellen Wert direkt aus dem Tenant-App-Settings-Store (ohne Secrets,
 OAuth-Aufrufe oder Schreibzugriffe). Änderungen benötigen kein Neuverbinden.
 Die Registrierung ergänzt selbst `?tenant_id=<Tenant-GUID>`; nicht manuell in
-der Basis-URL eintragen. Local benötigt eine öffentlich erreichbare URL im
-Mandanten-Setting oder im `ZOHO_WEBHOOK_URL`-Standard (kein localhost-Callback).
+der Basis-URL eintragen. Local benötigt ebenfalls eine öffentlich erreichbare URL
+im Mandanten-Setting; localhost-Callbacks werden abgewiesen.
 
 Das Sales-Manifest registriert ausschließlich diesen POST-Pfad unter `webhooks`
 mit `componentKey: backend`. Die Plattform prüft Manifestfreigabe, aktiven Tenant,
@@ -482,8 +479,7 @@ verworfen. Für die Aktivierung sind die minimal nötigen Notifications-OAuth-
 Berechtigungen `ZohoCRM.notifications.CREATE` und
 `ZohoCRM.notifications.DELETE` (zusätzlich `ZohoCRM.notifications.READ` für
 die manuelle Live-Prüfung der Registrierung) sowie eine von Zoho erreichbare
-Callback-Adresse im Mandanten-Setting `zoho.webhookUrl` (alternativ Deployment-Standard
-`Zoho:WebhookUrl`) erforderlich. Seit der Scope-Korrektur vom 19.09.2026 wird
+Callback-Adresse im Mandanten-Setting `zoho.webhookUrl` erforderlich. Seit der Scope-Korrektur vom 19.09.2026 wird
 auf Benutzerauftrag `ZohoCRM.modules.READ` für modulübergreifendes Lesen
 angefordert; die importierten Module bleiben unverändert. Zusätzlich bleiben
 `ZohoCRM.modules.emails.READ`, Benutzer-/Organisations- und die gezielten

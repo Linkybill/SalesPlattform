@@ -1,5 +1,62 @@
 # Sales: Deployment- und Betriebsstand
 
+## Lokale Sicherung 04.10.2026
+
+Alle offenen Code-, Test- und Kontextänderungen werden auf Benutzerauftrag
+gemeinsam committed. Enthalten sind Zoho-Callback-/Schema-/Mapping-Korrekturen,
+die ausschließliche Webhook-Konfiguration über Tenant-AppSettings,
+Reportannahmen für fehlende EUR-Währung bzw. fehlenden Betrag und die
+Jahresziel-Maske samt API, Validierung und Konfliktschutz. Die nachfolgenden
+Arbeitsberichte behalten ihre ursprünglichen Datums- und Rolloutgrenzen.
+Keine erneute Live-Zoho-Registrierung, kein Deployment oder Paket-Publish;
+ein lokaler Commit ist kein Nachweis der produktiven Wirksamkeit.
+
+Vor der Sicherung nativ unter Windows erneut geprüft: **153 Report-/Mapping-
+Prüfungen, 282 synthetische Zoho-Webhook-Prüfungen, zehn Webhook-Vertragstests
+und die Frontend-TypeScript-Prüfung bestanden**. Die Tests schreiben weder
+in eine produktive Datenbank noch nach Zoho.
+
+## Dokumentationsabgleich 02.–03.10.2026
+
+Git-Historie und Arbeitsbaum wurden am 03.10. gelesen. Keine neuen Sales-Commits
+in diesem Zeitfenster; bestehende lokale Änderungen betreffen Zoho-Adapter,
+Schema-/Hook-Verarbeitung, Webhook-Settings und Deployment-Defaults sowie
+Reports/Jahresziele mit Frontend und Tests. Die folgenden datierten Abschnitte
+bleiben deren Nachweise. Weder neue Tests noch ein Sales-Rollout oder eine
+Zoho-Live-Neuregistrierung wurden durch diesen Dokuauftrag durchgeführt.
+Plattform-Shared 0.1.77 in Aufmass ist kein automatisches Sales-Paketupdate.
+GAEB und Azure-Security sind in ihren jeweiligen Repository-Kontexten verlinkt,
+siehe [Projektkontext](00-projektkontext.md).
+
+## Callback-Registrierung erzwingt Tenant-ID – 30.09.2026
+
+Lokal: Zoho-Adapter erhält Basis-URI und Tenant-ID getrennt und baut daraus
+die vollständige notify_url direkt im Request-Payload. Ungültige Tenant-ID
+oder Query in der Basisadresse werden vor Versand abgewiesen.
+Native Windows-Abnahme: 282 synthetische Zoho-Prüfungen einschließlich
+Releasebuild und zehn Webhook-Vertragstests bestanden. Zwei bereits
+veraltete Teststellen (fehlender Abstractions-Import und Event-Parameter
+bei CanKeepSubscription) an den vorhandenen Produktionsstand angepasst.
+Kein Deployment, keine Live-Neuregistrierung oder erfolgreiche Zustellung
+in diesem Lauf nachgewiesen. Der Supportbefund vom 28.09. bleibt dadurch
+nicht als produktiv behoben gewertet.
+
+## Zoho-Webhook-URL nur noch Mandanten-AppSetting – 20.09.2026
+
+`Zoho__WebhookUrl` wird nicht mehr in `appsettings.Deployment.json`, im lokalen
+Deployment-Environment oder über `Zoho:WebhookUrl` konfiguriert. Die Hook-
+Basisadresse bleibt als Manifest-Setting `zoho.webhookUrl` im Scope `tenantApp`
+erhalten und muss pro Mandant unter Tenant-Portal → SalesPlattform → AppSettings
+gesetzt werden. Fehlt der Wert, blockieren Hook-Job, Übersicht und Live-Prüfung
+sichtbar statt auf einen globalen Deployment-Default zurückzufallen. Die
+Tenant-ID wird bei Registrierung weiterhin automatisch als Query ergänzt.
+
+Statisch geprüft: Deploymentprofile und lokales Environment enthalten keinen
+Webhook-Default mehr, der Backend-Resolver hängt nicht mehr von `ZohoOptions`
+ab, und Doku/UI verweisen nicht mehr auf einen Deployment-Fallback. Native
+Windows-Regressionen sind noch offen, weil Windows-PowerShell aus der aktuellen
+WSL-Sitzung mit `UtilBindVsockAnyPort` nicht gestartet werden konnte.
+
 ## „Hooks aktualisieren“ baut Hooks neu auf – 20.09.2026
 
 Der Benutzerbefund `SubscriptionsUnchanged: 12`, `SubscriptionsRenewed: 0`
@@ -167,10 +224,10 @@ Vite-Warnung wegen eines JavaScript-Chunks über 500 kB bleibt unverändert.
 Das Sales-Manifest registriert jetzt `zoho.webhookUrl` im Scope `tenantApp`,
 Anzeige **Zoho Webhook-URL** unter Tenant-Portal → SalesPlattform → AppSettings.
 Kunden mit verschiedenen Frontend-Hosts verwenden jeweils ihre eigene URL.
-Job und Übersicht lesen denselben Tenant-Wert; nur leer/nicht gesetzt nutzt
-den bisherigen Deployment-Standard. Ungültige explizite URLs blockieren die
-Registrierung; sie werden nicht durch eine andere Adresse ersetzt. Eine Änderung
-wirkt beim nächsten Hook-Job ohne OAuth-Neuverbinden oder Backend-Neustart.
+Job und Übersicht lesen denselben Tenant-Wert; leer/nicht gesetzt blockiert
+die Hook-Registrierung sichtbar. Es gibt keinen Deployment-Fallback. Ungültige
+URLs blockieren die Registrierung; sie werden nicht durch eine andere Adresse
+ersetzt. Eine Änderung wirkt beim nächsten Hook-Job ohne OAuth-Neuverbinden oder Backend-Neustart.
 Zum Bereitstellen des neuen Settings muss dieser Backend-/Manifeststand ausgerollt
 werden; Anzeige der Quelle benötigt auch das neue Frontend. Keine neue
 Paketversion/Migration. Keine Domains/Zertifikate provisioniert, kein Live-Rollout.
@@ -218,8 +275,9 @@ NuGet-Version erforderlich. Aufmass wurde in dieser Sales-Integration nicht ver�
 
 ## Webhook-Anbindung 19.09.2026 – lokaler Implementierungsstand
 
-Remote-Deploymentprofile setzen `Zoho__WebhookUrl` automatisch aus dem
-öffentlichen Sales-Einstieg. Das Backend-Manifest meldet den exakten POST-Pfad
+Remote-Deploymentprofile setzen keine `Zoho__WebhookUrl` mehr. Die öffentliche
+Callback-Basis-URL ist ausschließlich das Tenant-AppSetting `zoho.webhookUrl`.
+Das Backend-Manifest meldet den exakten POST-Pfad
 über den generischen `webhooks`-Vertrag an der Plattform an. Hierfür sind
 **zuerst Plattform-API und Application Router, danach Sales** neu auszurollen;
 anders als beim separaten ValidateSet-Skriptfix ist das eine Laufzeitänderung.
@@ -227,7 +285,7 @@ Shared 0.1.73 überträgt das Manifest bereits unverändert; keine neuen NuGet-/
 Pakete und keine Datenbankmigration. Danach im Tenant `CRM-Hooks erneuern`
 manuell starten; dort werden Channel und Token automatisch verwaltet. Keine
 manuelle Channel-/Tokenpflege; die Tenant-ID wird bei Registrierung ergänzt.
-Abweichende URLs werden je Tenant unter `zoho.webhookUrl` gepflegt (siehe Korrektur oben).
+URLs werden je Tenant unter `zoho.webhookUrl` gepflegt (siehe Korrektur oben).
 
 Geprüft unter nativem Windows: synthetische Webhook-Sicherheits-/URL-/Erneuerungs-
 Tests (`tests/ZohoWebhook`), vier Sales-Deployment-Vertragstests und Rendern der

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import * as L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useApplicationContext, usePlatformLog, createPlatformLogOperation } from '@hammer2fall/identity-platform-react'
+import { AnnualTargetsEditor } from './AnnualTargetsEditor'
 import { DashboardContentEditor, type LayoutNode, type ReportDefinition } from './DashboardContentEditor'
 import { reportSections, filterReportLayout } from './salesNavigation'
 import { ReportEvidenceProvider, MetricTile, MetricLink, EvidenceChart, EvidenceTable, safeCrmUrl, type ReportEvidence } from './ReportEvidence'
@@ -20,7 +21,7 @@ type Cleanup = { duplicates: { id: string; customerA: string; customerB: string;
 type Service = { periodName: string; totalCases: number; openCases: number; overdueCases: number; urgentCases: number; byStatus: Breakdown[]; byPriority: Breakdown[]; urgentItems: { id: string; subject: string; status: string; priority: string; openedAt: string | null; dueAt: string | null; customerName: string | null; externalUrl: string | null }[] }
 type Commercial = { periodName: string; offerCount: number; openOfferCount: number; offerAmount: number; overdueOfferCount: number; orderCount: number; openOrderCount: number; orderAmount: number; overdueOrderCount: number; invoiceCount: number; openInvoiceCount: number; openInvoiceAmount: number; overdueInvoiceCount: number; statusBreakdown: Breakdown[] }
 type LayoutResponse = { nodes: LayoutNode[]; availableReports: ReportDefinition[]; isDefault: boolean; canEdit: boolean }
-type Dashboard = { sourceSync?: { mode: string; status: string; finishedAt: string; failedRecords: number } | null; evidence: ReportEvidence; generatedAt: string; timeframe: string; periodName: string; layout: LayoutResponse; cockpit: Cockpit | null; team: Team | null; meetings: Meetings | null; analysis: Analysis | null; customers: Customers | null; goals: Goals; cleanup: Cleanup | null; service: Service; commercial: Commercial }
+type Dashboard = { canManageAnnualTargets?: boolean; sourceSync?: { mode: string; status: string; finishedAt: string; failedRecords: number } | null; evidence: ReportEvidence; generatedAt: string; timeframe: string; periodName: string; layout: LayoutResponse; cockpit: Cockpit | null; team: Team | null; meetings: Meetings | null; analysis: Analysis | null; customers: Customers | null; goals: Goals; cleanup: Cleanup | null; service: Service; commercial: Commercial }
 
 
 export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceEdit?: boolean; meetingOnly?: boolean }) {
@@ -33,6 +34,7 @@ export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceE
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState(forceEdit)
+  const [editingTargets, setEditingTargets] = useState(false)
   const [draftNodes, setDraftNodes] = useState<LayoutNode[]>([])
   const [savingLayout, setSavingLayout] = useState(false)
   const [layoutMessage, setLayoutMessage] = useState<string | null>(null)
@@ -120,6 +122,12 @@ export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceE
           <div className="report-toolbar-actions"><button className="secondary-button" type="button" onClick={() => void load()} disabled={loading || savingLayout}>{loading ? 'Wird geladen …' : 'Reports aktualisieren'}</button>{!meetingOnly && dashboard?.layout.canEdit && <button className={editing ? 'primary-button' : 'secondary-button'} type="button" onClick={() => { setEditing(current => !current); setLayoutMessage(null) }} disabled={savingLayout}>{editing ? 'Bearbeitung schließen' : 'Layout bearbeiten'}</button>}</div>
         </div>
       </section>
+      {!meetingOnly && dashboard?.canManageAnnualTargets && <p><button type="button" className="secondary-button" onClick={() => setEditingTargets(true)}>Jahresziel festlegen</button></p>}
+      {!meetingOnly && dashboard?.canManageAnnualTargets && editingTargets && <AnnualTargetsEditor key={`${activeTenantId}`} onClose={() => setEditingTargets(false)} onSaved={async () => {
+        setEditingTargets(false)
+        await load()
+        setLayoutMessage('Jahresziele wurden in der Salesplattform gespeichert.')
+      }} />}
       {(error || platformError) && <div className="message error-message">{error ?? platformError}</div>}
       {!dashboard && loading && <section className="sales-card report-loading">Reports werden aus der Tenant-Datenbank geladen …</section>}
       {dashboard && (

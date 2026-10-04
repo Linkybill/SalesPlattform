@@ -11,7 +11,6 @@ public sealed record ZohoWebhookConfiguration(Uri? BaseUri, string Source, strin
 public sealed class ZohoWebhookSettingsService(
     IApplicationSettingsStore settingsStore,
     IOptions<ApplicationSettingsOptions> applicationOptions,
-    IOptions<ZohoOptions> zohoOptions,
     IHttpContextAccessor httpContextAccessor)
 {
     public const string SettingKey = "zoho.webhookUrl";
@@ -30,10 +29,9 @@ public sealed class ZohoWebhookSettingsService(
         if (setting is not null && setting.Value.ValueKind is not (JsonValueKind.String or JsonValueKind.Null))
             return new(null, "tenantApp", "Die Mandanteneinstellung zoho.webhookUrl muss eine URL als Text enthalten.");
         var tenantValue = setting?.Value.ValueKind == JsonValueKind.String ? setting.Value.GetString() : null;
-        var useTenantValue = !string.IsNullOrWhiteSpace(tenantValue);
-        var value = useTenantValue ? tenantValue!.Trim() : zohoOptions.Value.WebhookUrl;
-        var source = useTenantValue ? "tenantApp" : string.IsNullOrWhiteSpace(value) ? "missing" : "deployment";
-        return ZohoCrmHookUpdateService.TryValidateWebhookUrl(value, out var uri, out var error)
-            ? new(uri, source, null) : new(null, source, error);
+        if (string.IsNullOrWhiteSpace(tenantValue))
+            return new(null, "missing", "In den Sales-AppSettings unter Zoho Webhook-URL (zoho.webhookUrl) die öffentliche HTTP(S)-URL dieses Mandanten zum /api/integrations/zoho/webhook eintragen.");
+        return ZohoCrmHookUpdateService.TryValidateWebhookUrl(tenantValue.Trim(), out var uri, out var error)
+            ? new(uri, "tenantApp", null) : new(null, "tenantApp", error);
     }
 }

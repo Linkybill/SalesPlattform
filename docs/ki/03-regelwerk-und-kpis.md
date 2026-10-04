@@ -43,7 +43,12 @@ erneut und fragt beim Öffnen eines Nachweises nicht erneut das CRM ab.
   beschriftet. Fehlende Ziele oder Nenner ergeben „Nicht berechenbar“.
 - Pipeline: aktueller offener Bestand außerhalb terminaler Stufen.
   Deckung = Pipeline / verbleibendes Jahresziel als Vielfaches.
-- Gemischte/fehlende Währungen oder Beträge erzeugen keine erfundene Summe.
+- Fehlende Währungen gelten gemäß Benutzerentscheidung vom 28.09.2026 als
+  EUR, auch bei bestehenden Importdaten und in den Nachweiszeilen. Die
+  Berechnungsbeschreibung nennt diese Annahme. Explizite Währungen bleiben
+  erhalten. Fehlende Beträge zählen gemäß Folgeentscheidung vom 28.09.2026
+  als 0; vorhandene Beträge gehen vollständig in die Summe ein. Gemischte
+  Währungen verhindern weiterhin die Summe.
   Diagramme vergleichen unterschiedliche Währungen nicht über Balkenlängen.
 - Wiederkehrende Vertragsbeträge werden nicht mehr fälschlich ARR genannt:
   eine verlässliche Monats-/Jahresbasis fehlt im Quellmodell.
@@ -62,6 +67,14 @@ Die erste produktive Projektion berechnet die Werte für die Arbeitsliste mit
 diesen Startwerten. Vertragsenden unter 30 Tagen werden als eigener kritischer
 Vorgang geführt; Cross-Selling verwendet 20 Basispunkte. Eine Änderung durch
 Praxiswerte muss später über das konfigurierbare Prioritätsprofil erfolgen.
+
+Euro-Standard (28.09.2026): lokal umgesetzt, 132 native Windows-Reportprüfungen
+bestanden, einschließlich leerer Währungen, Nachweiszeilen, Zielquoten und
+Schutz vor gemischten Währungen. Kein Deployment; kein Neuimport erforderlich.
+
+Fehlende Beträge als 0 (28.09.2026): lokal umgesetzt; 137 native
+Windows-Reportprüfungen bestanden, einschließlich gemischter vorhandener und
+fehlender Beträge, Pipeline-Stufensummen und Pipeline-Deckung. Kein Deployment.
 
 Zeit- und Versuchsschwellen werden als tenantbezogene App-Einstellungen
 (`sales.rules.*`) gepflegt und bei jeder Regelbewertung neu geladen. Die
@@ -162,6 +175,30 @@ Kontakt, Kunde oder Deal nur den betroffenen Regelzielen.
 - Cross-Selling: historischer Umsatz absteigend.
 
 ## Ziel, Pace und Aktivität
+
+### Jahresziele pflegen (28.09.2026)
+
+Unter Steuerung öffnet „Jahresziel festlegen“ für Vertriebsleitung und
+Geschäftsführung die Ziele des aktuellen Geschäftsjahres je CRM-Mitarbeiter.
+EUR-Beträge werden über GET/PUT `/api/reports/annual-targets` ausschließlich in
+`sales_targets` gespeichert; keine Zoho-Aufrufe oder Rücksynchronisierung.
+Die Summe der Mitarbeiterziele ist das Cockpit-Jahresziel. Leere Eingaben
+entfernen das jeweilige Jahresumsatzziel; 0 ist ein explizites Nullziel.
+Monats-/Quartalsziele werden nicht verändert. Ohne konfiguriertes offenes
+Geschäftsjahr wird beim Speichern das laufende Kalenderjahr angelegt, sofern
+es keine bestehenden Geschäftsjahre überschneidet.
+
+Serverseitige Rollenprüfung, mandantenisolierte Plattform-DB-Sessions,
+Dezimalvalidierung und ein Formular-Revisionsvergleich schützen die Eingaben.
+Serialisierbare Transaktionen verhindern doppelte Jahresziele bei parallelem
+Anlegen. Bestehende doppelte Ziele oder Fremdwährungen blockieren die Maske,
+statt still überschrieben zu werden. Nach dem Speichern lädt die UI die
+Reports neu. Kein Schemawechsel erforderlich.
+
+Lokal geprüft: 147 native .NET-Assertions für Reportprojektion, Rollen und
+Eingaben; TypeScript-Prüfung und Chrome-Smoke-Test inklusive Speichern,
+Wiederöffnen und Abbrechen der Zielmaske bestanden. Browser nutzt synthetische
+API-Antworten; produktive DB-Persistenz und Rollout sind nicht live abgenommen.
 
 ```text
 zeitanteil = vergangene_tage_im_gj / gesamttage_im_gj * 100

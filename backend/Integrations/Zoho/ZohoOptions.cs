@@ -12,13 +12,6 @@ public sealed class ZohoOptions
     public string FrontendCallbackUrl { get; set; } =
         "https://127.0.0.1:3003/import";
 
-    /// <summary>
-    /// Public HTTPS endpoint Zoho can call. It is intentionally empty for
-    /// local development; subscriptions are not registered until a reachable
-    /// URL is configured.
-    /// </summary>
-    public string WebhookUrl { get; set; } = string.Empty;
-
     public const string RequiredScopes =
         "ZohoCRM.modules.READ,ZohoCRM.modules.emails.READ,ZohoCRM.modules.tasks.CREATE,ZohoCRM.modules.tasks.UPDATE,ZohoCRM.notifications.CREATE,ZohoCRM.notifications.DELETE,ZohoCRM.notifications.READ,ZohoCRM.users.READ,ZohoCRM.org.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ,ZohoCRM.settings.layouts.READ,ZohoCRM.settings.pipeline.READ,ZohoCRM.settings.related_lists.READ";
 

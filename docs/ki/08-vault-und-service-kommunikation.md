@@ -47,7 +47,7 @@ Secretwerte aller Scopes werden ausschließlich im zentralen Vault gespeichert.
 | `crm.integration` | `tenantApp` | Normales Setting; Auswahl `none` oder `zoho` |
 | `zoho.datacenter` | `tenantApp` | Normales Setting; Standard `eu` |
 | `zoho.clientId` | `tenantApp` | Normales Setting; Client-ID der Zoho-Anwendung |
-| `zoho.webhookUrl` | `tenantApp` | Normales Setting; öffentliche Callback-Basis-URL des jeweiligen Mandanten; leer verwendet den Deployment-Standard |
+| `zoho.webhookUrl` | `tenantApp` | Normales Setting; öffentliche Callback-Basis-URL des jeweiligen Mandanten; erforderlich für Zoho-Hooks |
 | `zoho.clientSecret` | `tenantApp` | `secret: true`; Client-Secret in Vault |
 | `integration.zoho.default.refresh-token` | `tenantApp` | Internes Credential ohne Manifest-Editor; nach erfolgreichem OAuth vom Zoho-Adapter in Vault gespeichert |
 
@@ -57,7 +57,7 @@ Unter **Zoho Webhook-URL** wird der für diesen Kunden eingerichtete Sales-Einst
 mit `/api/integrations/zoho/webhook` eingetragen. Verschiedene Kunden dürfen
 unterschiedliche Frontend-Hosts verwenden. Übersicht und Hook-Job lesen bei jedem
 Aufruf denselben aktuellen Tenant-App-Wert, unabhängig von OAuth und ohne Neustart.
-Ein expliziter ungültiger Wert wird nicht durch die Deployment-URL ersetzt.
+Ein fehlender oder ungültiger Wert wird nicht durch eine Deployment-URL ersetzt.
 Die Tenant-ID wird bei Registrierung ergänzt. Nach Änderung den Job
 „CRM-Hooks erneuern“ starten; bereits gültige Subscriptions mit anderer URL
 werden dabei ersetzt. Das Setting richtet weder DNS noch Routing oder TLS ein.

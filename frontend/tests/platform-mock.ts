@@ -8,6 +8,7 @@ const metrics = Object.fromEntries(['won', 'won-count', 'annual-target', 'attain
 }]))
 const reportKeys = ['cockpit', 'team', 'meetings', 'analysis', 'customers', 'goals', 'cleanup', 'service', 'commercial']
 const dashboard = {
+  canManageAnnualTargets: true,
   generatedAt: '2026-09-19T12:00:00Z', timeframe: 'year', periodName: 'Geschäftsjahr', evidence: { metrics, records: rows },
   layout: { nodes: reportKeys.map(key => ({ id: key, type: 'report', title: key, reportKey: key, visible: true, allowed: true, columns: 12, children: [] })), availableReports: reportKeys.map(key => ({ key, title: key, allowed: true })), isDefault: true, canEdit: true },
   cockpit: { periodName: 'Testzeitraum' }, team: { periodName: 'Testzeitraum', members: [] }, meetings: { periodName: 'Testzeitraum' }, analysis: { periodName: 'Testzeitraum' }, customers: { customers: [], unmappedCount: 0 }, goals: { members: [] }, cleanup: { duplicates: [] }, service: { periodName: 'Testzeitraum' }, commercial: { periodName: 'Testzeitraum' },
@@ -15,11 +16,27 @@ const dashboard = {
 const items = Array.from({ length: 30 }, (_, i) => ({ id: String(i), title: `Vorgang ${i + 1}`, reason: 'Testfall', priorityBand: 'high', priorityScore: 88, sourceRuleCode: i === 29 ? 'R-06' : 'R-07', workItemTypeName: 'Reaktivierung', ownerName: 'Test Vertrieb', dueAt: null, crmTaskUrl: null, externalUrl: null }))
 const context = {
   activeTenantId: 'synthetic', user: { displayName: 'Synthetic', roles: ['sales-user'] }, error: null,
-  authorizedFetch: async (url: string) => new Response(JSON.stringify(url.startsWith('/api/worklist') ? {
+  authorizedFetch: async (url: string, init?: RequestInit) => {
+    if (url === '/api/reports/annual-targets') {
+      if (init?.method === 'PUT') {
+        const request = JSON.parse(String(init.body))
+        if (request.revision !== targetPlan.revision) return new Response(null, { status: 409 })
+        targetPlan.entries = targetPlan.entries.map(entry => ({ ...entry, amount: request.entries.find((e: { ownerId: string }) => e.ownerId === entry.ownerId).amount }))
+        targetPlan.revision += '1'
+        metrics['annual-target'].value = targetPlan.entries.reduce((sum, e) => sum + (e.amount ?? 0), 0)
+        return new Response(null, { status: 204 })
+      }
+      return new Response(JSON.stringify(targetPlan), { status: 200 })
+    }
+    return new Response(JSON.stringify(url.startsWith('/api/worklist') ? {
     generatedAt: '2026-09-19', teamView: true, ownerMatched: true, items,
     rules: Array.from({ length: 18 }, (_, i) => ({ code: `R-${String(i + 1).padStart(2, '0')}`, name: 'Testregel', itemCount: 0 })),
-  } : dashboard), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+  } : dashboard), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  },
 }
+const targetPlan = { startsAt: '2026-01-01', endsAt: '2026-12-31', revision: '1', entries: [
+  { ownerId: 'test-owner', name: 'Test Vertrieb', amount: null as number | null },
+] }
 const logger = { log() {} }
 export const useApplicationContext = () => context
 export const usePlatformLog = () => logger

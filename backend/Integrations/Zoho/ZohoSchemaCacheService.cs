@@ -19,6 +19,20 @@ public sealed record ZohoSchemaCacheSnapshot(
     public IReadOnlyCollection<CrmFieldMetadata> GetFields(string module)
         => FieldsByModule.TryGetValue(module, out var fields) ? fields : [];
 
+    public IReadOnlyCollection<string> GetGeneratedHookModules()
+    {
+        var available = AvailableModules.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return FieldsByModule.Values
+            .SelectMany(fields => fields)
+            .Where(field => IsGeneratedHookField(field.DataType))
+            .Select(field => field.ApiName)
+            .Where(apiName => !string.IsNullOrWhiteSpace(apiName)
+                && available.Contains(apiName))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(apiName => apiName, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
     public IReadOnlyCollection<JsonElement> GetLayouts(string module)
         => LayoutsByModule.TryGetValue(module, out var layouts) ? layouts : [];
 
@@ -53,6 +67,16 @@ public sealed record ZohoSchemaCacheSnapshot(
         }
 
         return null;
+    }
+
+    private static bool IsGeneratedHookField(string? dataType)
+    {
+        if (string.IsNullOrWhiteSpace(dataType))
+            return false;
+
+        return dataType.Contains("subform", StringComparison.OrdinalIgnoreCase)
+            || (dataType.Contains("multi", StringComparison.OrdinalIgnoreCase)
+                && dataType.Contains("lookup", StringComparison.OrdinalIgnoreCase));
     }
 }
 

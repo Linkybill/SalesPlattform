@@ -307,20 +307,20 @@ public sealed partial class ZohoCrmAdapter(
     }
 
     public async Task<ZohoNotificationRegistration> RegisterNotificationsAsync(
-        string notifyUrl,
+        Uri webhookBaseUrl,
+        Guid tenantId,
         string token,
         string channelId,
         string module,
+        bool allOperations,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(notifyUrl))
-            throw new ArgumentException("Für Zoho-Notifications ist eine erreichbare Notify-URL erforderlich.", nameof(notifyUrl));
         if (string.IsNullOrWhiteSpace(token) || token.Length > 50)
             throw new ArgumentException("Der Zoho-Verification-Token muss zwischen 1 und 50 Zeichen lang sein.", nameof(token));
         if (!long.TryParse(channelId, NumberStyles.None, CultureInfo.InvariantCulture, out _))
             throw new ArgumentException("Die Zoho-Channel-ID muss numerisch sein.", nameof(channelId));
 
-        var payload = BuildNotificationPayload(notifyUrl, token, channelId, module, DateTimeOffset.UtcNow);
+        var payload = BuildNotificationPayload(webhookBaseUrl, tenantId, token, channelId, module, allOperations, DateTimeOffset.UtcNow);
         using var content = new StringContent(
             payload.ToJsonString(),
             Encoding.UTF8,
@@ -336,8 +336,9 @@ public sealed partial class ZohoCrmAdapter(
     }
 
     private static JsonObject BuildNotificationPayload(
-        string notifyUrl, string token, string channelId, string module, DateTimeOffset now)
+        Uri webhookBaseUrl, Guid tenantId, string token, string channelId, string module, bool allOperations, DateTimeOffset now)
     {
+        var notifyUrl = ZohoCrmHookUpdateService.BuildTenantWebhookUrl(webhookBaseUrl, tenantId);
         var watch = new JsonObject
         {
             ["token"] = token,
@@ -351,7 +352,7 @@ public sealed partial class ZohoCrmAdapter(
             ["notify_on_related_action"] = false
         };
         var events = new JsonArray();
-        foreach (var operation in NotificationOperations(module))
+        foreach (var operation in NotificationOperations(module, allOperations))
             events.Add(operation);
         watch["events"] = events;
         return new JsonObject { ["watch"] = new JsonArray(watch) };
@@ -491,8 +492,8 @@ public sealed partial class ZohoCrmAdapter(
             recordsAffected: 1);
     }
 
-    private static IReadOnlyCollection<string> NotificationOperations(string module)
-        => module.Equals("Users", StringComparison.OrdinalIgnoreCase)
+    private static IReadOnlyCollection<string> NotificationOperations(string module, bool allOperations)
+        => allOperations || module.Equals("Users", StringComparison.OrdinalIgnoreCase)
             ? [$"{module}.all"]
             : [$"{module}.create", $"{module}.edit", $"{module}.delete"];
 

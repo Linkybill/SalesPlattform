@@ -1,4 +1,9 @@
 using System.Reflection;
+using System.Security.Claims;
+using IdentityPlatform.Shared.Authorization;
+using System.Text.Json;
+using SalesPlattform.Backend.Integrations.Abstractions;
+using SalesPlattform.Backend.Integrations.Zoho;
 using SalesPlattform.Backend.Data;
 using SalesPlattform.Backend.Services;
 
@@ -12,6 +17,35 @@ void Check(bool condition, string message)
 var now = new DateTimeOffset(2026, 9, 19, 12, 0, 0, TimeSpan.Zero);
 var owner = new SalesOwner { Id = Guid.NewGuid(), DisplayName = "Test Owner" };
 var fiscalId = Guid.NewGuid();
+var mapper = new ZohoCrmRecordMapper();
+CrmCanonicalDeal MapDeal(string json) => (CrmCanonicalDeal)mapper.Map(new("zoho", "Deals", "synthetic", JsonSerializer.Deserialize<JsonElement>(json), null));
+foreach (var json in new[] { "{\"Stage\":\"Angebot\"}", "{\"Stage\":\"Angebot\",\"Pipeline\":null}", "{\"Stage\":\"Angebot\",\"Pipeline\":\" \"}" })
+{
+    var mapped = MapDeal(json);
+    Check(mapped.PipelineExternalId == "default" && mapped.StageKey == "Angebot", "Stage-only deals must resolve against the schema's default pipeline.");
+}
+Check(MapDeal("{}").PipelineExternalId is null, "Do not invent a pipeline without a stage.");
+Check(MapDeal("{\"Stage\":\"Angebot\",\"Pipeline\":\"Vertrieb\"}").PipelineExternalId == "Vertrieb", "Keep explicit pipeline names.");
+Check(MapDeal("{\"Stage\":\"Angebot\",\"Pipeline\":{\"id\":\"pipeline-1\",\"name\":\"Vertrieb\"}}").PipelineExternalId == "pipeline-1", "Keep explicit pipeline IDs.");
+var tenantId = Guid.NewGuid();
+ClaimsPrincipal User(string role, Guid? roleTenant = null) => new(new ClaimsIdentity([
+    new Claim("tenant_id", tenantId.ToString()), new Claim(ClaimTypes.Role, TenantApplicationRole.For(roleTenant ?? tenantId, role))], "test"));
+Check(SalesReportService.CanManageAnnualTargets(User("sales-manager")), "Sales managers can manage annual targets.");
+Check(SalesReportService.CanManageAnnualTargets(User("sales-management")), "Management can manage annual targets.");
+Check(!SalesReportService.CanManageAnnualTargets(User("sales-user")), "Sales users cannot edit targets.");
+Check(!SalesReportService.CanManageAnnualTargets(User("sales-manager", Guid.NewGuid())), "Roles from another tenant do not permit editing.");
+void InvalidTarget(SaveAnnualTargetsRequest request)
+{
+    try { SalesReportService.ValidateAnnualTargets(request); throw new Exception("Invalid target accepted."); }
+    catch (ArgumentException) { assertions++; }
+}
+SalesReportService.ValidateAnnualTargets(new("revision", [new(owner.Id, 12500.50m), new(Guid.NewGuid(), null), new(Guid.NewGuid(), 0)]));
+InvalidTarget(new("revision", [new(owner.Id, -1)]));
+InvalidTarget(new("revision", [new(owner.Id, 1.001m)]));
+InvalidTarget(new("revision", [new(owner.Id, 10000000000000000m)]));
+InvalidTarget(new("revision", [new(owner.Id, 1), new(owner.Id, 2)]));
+InvalidTarget(new("", [new(owner.Id, 1)]));
+InvalidTarget(new("revision", [new(Guid.Empty, 1)]));
 var monthStart = new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero);
 var modelType = typeof(SalesReportService).GetNestedType("ReportModel", BindingFlags.NonPublic)!;
 var periodType = typeof(SalesReportService).GetNestedType("ReportPeriod", BindingFlags.NonPublic)!;
@@ -39,9 +73,18 @@ Check(builder.Result.Records.Count == 2, "Normalize repeated rows.");
 builder.Money("mixed", "Mixed", [Row("c", 10), Row("d", 10, "USD")], "month", "CRM", "sum");
 Check(builder.Result.Metrics["mixed"].Value is null, "No invented currency conversion.");
 builder.Money("missing", "Missing", [Row("e", null)], "month", "CRM", "sum");
-Check(builder.Result.Metrics["missing"].Value is null, "Unknown amount is not zero.");
+Check(builder.Result.Metrics["missing"].Value == 0 && builder.Result.Metrics["missing"].UnavailableReason is null, "Missing amounts count as zero.");
+builder.Money("partly-missing", "Partly missing", [Row("e", null), Row("a", 10), Row("b", 20)], "month", "CRM", "sum");
+Check(builder.Result.Metrics["partly-missing"].Value == 30, "A missing amount must not block the remaining sum.");
+Check(builder.Result.Metrics["partly-missing"].RecordKeys.Length == 3, "Evidence must retain rows with missing amounts.");
 builder.Money("currency", "Currency", [Row("f", 20, null)], "month", "CRM", "sum");
-Check(builder.Result.Metrics["currency"].Value is null, "Unknown currency is not EUR.");
+Check(builder.Result.Metrics["currency"].Value == 20 && builder.Result.Metrics["currency"].Currency == "EUR", "Missing currency defaults to EUR.");
+builder.Count("currency-count", "Count", [Row("blank", 30, " ")], "month", "CRM", "count");
+builder.Money("euro-defaults", "Euro", [Row("f", 20, null), Row("blank", 30, " "), Row("empty", 40, ""), Row("euro", 10, " eur ")], "month", "CRM", "sum");
+Check(builder.Result.Metrics["euro-defaults"].Value == 100, "Missing, empty and whitespace currencies combine with explicit EUR.");
+Check(builder.Result.Metrics["euro-defaults"].RecordKeys.All(key => builder.Result.Records[key].Currency == "EUR"), "Evidence uses the same currency even when a count registers the row first.");
+builder.Money("default-mixed", "Mixed", [Row("f", 20, null), Row("d", 10, "USD")], "month", "CRM", "sum");
+Check(builder.Result.Metrics["default-mixed"].Value is null, "Default EUR must not silently combine with USD.");
 
 var empty = Build();
 foreach (var key in new[] { "annual-target", "attainment", "coverage", "win-rate", $"owner:{owner.Id}:target", $"owner:{owner.Id}:pace" })
@@ -49,6 +92,7 @@ foreach (var key in new[] { "annual-target", "attainment", "coverage", "win-rate
 Check(empty.Metrics["won"].Value == 0, "No won deals legitimately means zero revenue.");
 
 var september = Deal(100);
+september.Currency = null;
 var january = Deal(200, closing: now.AddMonths(-8));
 var lost = Deal(50, "lost");
 var open = Deal(600, "open");
@@ -64,6 +108,12 @@ Check(data.Metrics["attainment"].Value == 30, "Do not compare September revenue 
 Check(data.Metrics["win-rate"].Value == 50 && data.Metrics["win-rate"].RecordKeys.Length == 2, "Win-rate details must include won and lost denominator.");
 Check(data.Metrics["stale"].RecordKeys.SequenceEqual(new[] { $"deal:{open.Id}" }), "Stale threshold must use supplied tenant configuration (10 days).");
 Check(data.Metrics["coverage"].Value == Math.Round(640m / 700m, 2), "Coverage uses remaining fiscal-year target, expressed as multiple.");
+var missingOpen = Deal(0, "open");
+missingOpen.Amount = null;
+var partialPipeline = Build(new() { ["Deals"] = new[] { september, january, open, recent, missingOpen }, ["Targets"] = new[] { goal } });
+Check(partialPipeline.Metrics["pipeline"].Value == 640, "Pipeline includes known amounts when another deal has no amount.");
+Check(partialPipeline.Metrics["coverage"].Value == Math.Round(640m / 700m, 2), "Missing pipeline amounts do not block coverage.");
+Check(partialPipeline.Metrics.Where(m => m.Key.StartsWith("funnel:")).Sum(m => m.Value.Value) == 640, "Pipeline stage sums use zero for missing amounts.");
 Check(!data.Records.ContainsKey($"deal:{deleted.Id}"), "Deleted deals must not leak into evidence.");
 Check(data.Metrics["cycle"].Value == 30, "Deal cycle requires actual creation and closing timestamps.");
 foreach (var metric in data.Metrics.Values)

@@ -7,9 +7,9 @@ const config = read('../appsettings.Deployment.json');
 const manifest = read('../backend/manifest.json');
 const path = '/api/integrations/zoho/webhook';
 
-for (const target of ['ax42-1', 'ax42-2']) test(`${target}: webhook uses the public Sales endpoint projection`, () => {
+for (const target of ['ax42-1', 'ax42-2']) test(`${target}: webhook URL is not injected by the deployment profile`, () => {
   const profile = config.Targets[target].Environments.dev;
-  assert.deepEqual(profile.BackendUrls.Zoho__WebhookUrl, { Endpoint: 'Frontend', Path: path });
+  assert.equal(profile.BackendUrls.Zoho__WebhookUrl, undefined);
   assert.equal(profile.Urls.Frontend.Port, 3003);
   assert.equal(profile.BackendUrls.Zoho__RedirectUri.Endpoint, 'Frontend');
 });
@@ -20,7 +20,7 @@ test('manifest opts in only the exact backend webhook path', () => {
 test('local development does not register a loopback URL with Zoho', () => {
   assert.equal(config.Targets.local.Environments.dev.BackendUrls.Zoho__WebhookUrl, undefined);
   const local = readFileSync(new URL('../deploy/local-environment.ps1', import.meta.url), 'utf8');
-  assert.match(local, /ZOHO_WEBHOOK_URL/);
+  assert.doesNotMatch(local, /ZOHO_WEBHOOK_URL|Zoho__WebhookUrl/);
 });
 test('hook URL is configurable per tenant, never per user or hardcoded to a customer', () => {
   const setting = manifest.settings.find(x => x.key === 'zoho.webhookUrl');
@@ -37,6 +37,8 @@ test('hook worker and overview use the same tenant settings resolver, not proces
     assert.match(source, /webhookSettings.ResolveCurrentAsync\(cancellationToken\)/);
     assert.doesNotMatch(source, /options(?:\.Value)?\.WebhookUrl/);
   }
+  const resolver = readFileSync(new URL('../backend/Integrations/Zoho/ZohoWebhookSettingsService.cs', import.meta.url), 'utf8');
+  assert.doesNotMatch(resolver, /ZohoOptions|options(?:\.Value)?\.WebhookUrl/);
 });
 test('live verification is authenticated, tenant-admin guarded and does not accept a channel or URL', () => {
   const source = readFileSync(new URL('../backend/Integrations/Zoho/ZohoEndpointExtensions.cs', import.meta.url), 'utf8');
