@@ -58,8 +58,9 @@ internes JSON über `PUT /api/reports/layout`; es gibt dafür keine rohe
 Webpart- oder Layout-Einstellung im Mandantenportal. Das Defaultmodell enthält
 alle Reports, einschließlich Servicefälle sowie Angebote/Aufträge/Rechnungen.
 
-Die normale Ansicht filtert den bestehenden Seitenbaum auf das links gewählte
-Thema. Container, Begleittexte, Sichtbarkeit und Rollenfreigabe bleiben erhalten;
+Die normale Ansicht filtert den bestehenden Seitenbaum auf das gewählte
+Thema (seit 07.10.2026 horizontale Reiter und „Weitere Auswertungen“).
+Container, Begleittexte, Sichtbarkeit und Rollenfreigabe bleiben erhalten;
 ausgeblendete Vorfahren können nicht über die Navigation umgangen werden.
 Gespeicherte Layouts werden nicht automatisch überschrieben. Der Editor zeigt
 weiterhin den gesamten Baum; ausgeblendete Reports werden als solche erklärt.

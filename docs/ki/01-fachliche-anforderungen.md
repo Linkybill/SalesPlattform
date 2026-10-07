@@ -1,5 +1,31 @@
 # Fachliche Anforderungen
 
+## Struktur nach Screenshot (07.10.2026)
+
+Das Vertriebsdashboard besitzt eine gemeinsame horizontale Reiterleiste:
+Auslaufende Produkte, Schlummernde Leads, Wiedervorlagen, Meeting Report,
+Monatsreport, Vertriebsteam, Jahresreport, Allgemein - Lifetime und Kundenstamm.
+Die ersten vier Bereiche gehören weiterhin zur Arbeit, die übrigen zur
+Steuerung. Auf kleinen Bildschirmen ist die Leiste horizontal scrollbar.
+Der aktive Reiter ist unterstrichen; eine dezente Trennung markiert den
+Übergang zur Steuerung.
+
+Cockpit, Analyse, Ziele/Pace, Aufräumen, Servicefälle und Angebote/Aufträge/
+Rechnungen bleiben unter „Weitere Auswertungen“ erreichbar. Wiedervorlagen
+gruppieren die bestehenden Regellisten aufklappbar unter Leads, Angebote, Kunden,
+Aufträge/Rechnungen und Service. Alle Vorgänge sowie unbekannte Regelarten
+bleiben erreichbar. Die Gesamtliste bleibt die Startansicht.
+
+Dies ist ausschließlich eine Änderung von Navigation und Darstellung. Die
+Routen `/worklist` und `/reports` bleiben erhalten; der gewählte Bereich steht
+als `section` im Querystring, einschließlich Tenantpfad, Zurück/Vorwärts und
+Neuladen. Die fachlichen Zuordnungen, Zeiträume, Berechnungen, Filter,
+Sortierung, CRM-Links, Zurückstellen, Nachweise und Layoutbearbeitung bleiben
+erhalten. Die Anruftranskripte liefern Kontext, keine Freigabe für zusätzliche
+Funktionen. Diese Entscheidung ersetzt die linke Hauptnavigation im folgenden
+älteren Gesprächsstand. Native Prüfungen und Browser-Abnahme werden im
+Projektkontext nachgewiesen.
+
 ## Aktuelle Gesprächsentscheidung (19.09.2026)
 
 Die Navigation trennt **Arbeit** (Startseite) und **Steuerung**. Unter Arbeit

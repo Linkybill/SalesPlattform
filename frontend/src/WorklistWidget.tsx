@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useApplicationContext, usePlatformLog, createPlatformLogOperation } from '@hammer2fall/identity-platform-react'
-import { workThemes, ruleTitles, themeForRule } from './salesNavigation'
+import { workThemes, workRuleGroups, ruleTitles, themeForRule } from './salesNavigation'
 import { ReportsPage } from './ReportsPage'
 import { safeCrmUrl } from './ReportEvidence'
 
@@ -39,16 +39,19 @@ type WorklistRule = {
   itemCount: number
 }
 
-export function WorklistWidget({ compact = false }: { compact?: boolean }) {
+export function WorklistWidget({ compact = false, selectedTheme, onSelectTheme }: { compact?: boolean; selectedTheme?: string; onSelectTheme?: (key: string) => void }) {
   const log = usePlatformLog()
   const { activeTenantId, authorizedFetch, user } = useApplicationContext()
   const [response, setResponse] = useState<WorklistResponse | null>(null)
   const [selectedRule, setSelectedRule] = useState<string | null>(null)
-  const [theme, setTheme] = useState('all')
+  const [localTheme, setLocalTheme] = useState('all')
+  const theme = selectedTheme ?? localTheme
   const [page, setPage] = useState(0)
   const versionRef = useRef(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => { setSelectedRule(null); setPage(0) }, [theme])
 
   const loadWorklist = useCallback(async (refresh = false) => {
     if (!user || !activeTenantId) return
@@ -109,7 +112,11 @@ export function WorklistWidget({ compact = false }: { compact?: boolean }) {
     : []
   const currentPage = Math.min(page, Math.max(0, Math.ceil(visibleItems.length / 25) - 1))
   const meetingView = theme === 'meetings' && !selectedRule
-  const select = (nextTheme: string, rule: string | null = null) => { setTheme(nextTheme); setSelectedRule(rule); setPage(0) }
+  const select = (nextTheme: string, rule: string | null = null) => { setLocalTheme(nextTheme); onSelectTheme?.(nextTheme); setSelectedRule(rule); setPage(0) }
+  const themeRules = response?.rules.filter(rule => themeForRule(rule.code) === theme) ?? []
+  const ruleGroups = theme === 'followups'
+    ? workRuleGroups.map(group => ({ title: group.title, rules: themeRules.filter(rule => group.rules.includes(rule.code)) }))
+    : [{ title: workThemes.find(group => group.key === theme)?.title ?? 'Aufgaben', rules: themeRules }]
 
   return (
     <section className="sales-card worklist-card webpart-card">
@@ -128,18 +135,23 @@ export function WorklistWidget({ compact = false }: { compact?: boolean }) {
       )}
       {!response && loading && <p className="worklist-empty">Arbeitsliste wird aus den CRM-Daten aufgebaut …</p>}
       {response && (
-        <div className="worklist-browser">
-          <nav className="worklist-rule-nav sales-section-nav" aria-label="Arbeit nach Themen">
-            <p className="worklist-rule-nav-title">Arbeit</p>
-            {workThemes.map(group => <div key={group.key}>
-              <button className={`worklist-rule-button${theme === group.key && !selectedRule ? ' is-active' : ''}`} aria-current={theme === group.key && !selectedRule ? 'page' : undefined} onClick={() => select(group.key)}><span>{group.title}</span>{group.key !== 'meetings' && <strong>{response.items.filter(item => themeForRule(item.sourceRuleCode) === group.key).length}</strong>}</button>
-              {theme === group.key && response.rules.filter(rule => themeForRule(rule.code) === group.key).map(rule => <button key={rule.code} className={`worklist-rule-button worklist-subtopic${selectedRule === rule.code ? ' is-active' : ''}`} aria-current={selectedRule === rule.code ? 'page' : undefined} onClick={() => select(group.key, rule.code)} title={`${rule.code}: ${rule.description ?? rule.name}`}><span>{ruleTitles[rule.code] ?? rule.name}</span><strong>{response.items.filter(item => item.sourceRuleCode === rule.code).length}</strong></button>)}
-            </div>)}
-            <button className={`worklist-rule-button${theme === 'all' ? ' is-active' : ''}`} type="button" onClick={() => select('all')}>
-              <span>Alle Vorgänge</span><strong>{response.items.length}</strong>
-            </button>
-            {response.items.some(item => themeForRule(item.sourceRuleCode) === 'other') && <button className={theme === 'other' ? 'is-active' : ''} onClick={() => select('other')}>Weitere Vorgänge</button>}
+        <>
+          <nav className="dashboard-secondary-nav worklist-overview-nav" aria-label="Arbeitslistenübersicht">
+            <button className={theme === 'all' ? 'is-active' : ''} aria-current={theme === 'all' ? 'page' : undefined} type="button" onClick={() => select('all')}>Alle Vorgänge <strong>{response.items.length}</strong></button>
+            {response.items.some(item => themeForRule(item.sourceRuleCode) === 'other') && <button className={theme === 'other' ? 'is-active' : ''} aria-current={theme === 'other' ? 'page' : undefined} type="button" onClick={() => select('other')}>Weitere Vorgänge</button>}
           </nav>
+        <div className={`worklist-browser${selectedTheme !== undefined && !themeRules.length ? ' worklist-browser-full' : ''}`}>
+          {(selectedTheme === undefined || themeRules.length > 0) && <nav className="worklist-rule-nav sales-section-nav" aria-label="Arbeit nach Themen">
+            <p className="worklist-rule-nav-title">Arbeit</p>
+            {selectedTheme === undefined && workThemes.map(group => <div key={group.key}>
+              <button className={`worklist-rule-button${theme === group.key && !selectedRule ? ' is-active' : ''}`} aria-current={theme === group.key && !selectedRule ? 'page' : undefined} onClick={() => select(group.key)}><span>{group.title}</span>{group.key !== 'meetings' && <strong>{response.items.filter(item => themeForRule(item.sourceRuleCode) === group.key).length}</strong>}</button>
+            </div>)}
+            {themeRules.length > 0 && <button type="button" className={`worklist-rule-button${!selectedRule ? ' is-active' : ''}`} aria-current={!selectedRule ? 'page' : undefined} onClick={() => select(theme)}><span>{meetingView || theme === 'meetings' ? 'Terminübersicht' : 'Alle in diesem Bereich'}</span></button>}
+            {ruleGroups.filter(group => group.rules.length).map(group => <details className="worklist-rule-group" key={group.title} open={theme === 'followups' ? undefined : true}>
+              <summary><span>{group.title}</span><strong>{response.items.filter(item => group.rules.some(rule => rule.code === item.sourceRuleCode)).length}</strong></summary>
+              {group.rules.map(rule => <button type="button" key={rule.code} className={`worklist-rule-button worklist-subtopic${selectedRule === rule.code ? ' is-active' : ''}`} aria-current={selectedRule === rule.code ? 'page' : undefined} onClick={() => select(theme, rule.code)} title={`${rule.code}: ${rule.description ?? rule.name}`}><span>{ruleTitles[rule.code] ?? rule.name}</span><strong>{response.items.filter(item => item.sourceRuleCode === rule.code).length}</strong></button>)}
+            </details>)}
+          </nav>}
           <div className="worklist-results">
             {meetingView ? <ReportsPage meetingOnly /> : <>
             <h3>{selectedRule ? ruleTitles[selectedRule] ?? response.rules.find(r => r.code === selectedRule)?.name : workThemes.find(g => g.key === theme)?.title ?? (theme === 'all' ? 'Alle Vorgänge' : 'Weitere Vorgänge')}</h3>
@@ -172,6 +184,7 @@ export function WorklistWidget({ compact = false }: { compact?: boolean }) {
             </>}
           </div>
         </div>
+        </>
       )}
     </section>
   )

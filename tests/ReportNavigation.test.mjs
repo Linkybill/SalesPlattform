@@ -36,6 +36,9 @@ test('four work themes cover all existing rules once; reports stay under Steueru
   assert.equal(navigation.reportSections.find(s => s.key === 'month').timeframe, 'month')
   assert.equal(navigation.reportSections.find(s => s.key === 'year').timeframe, 'year')
   assert.equal(navigation.reportSections.find(s => s.key === 'lifetime').timeframe, 'lifetime')
+  const grouped = navigation.workRuleGroups.flatMap(group => group.rules)
+  assert.deepEqual([...grouped].sort(), [...navigation.workThemes.find(theme => theme.key === 'followups').rules].sort())
+  assert.equal(new Set(grouped).size, grouped.length)
 })
 
 test('top-level routes default to Arbeit, then Steuerung; tenant root and old worklist links work', () => {
@@ -51,6 +54,13 @@ test('top-level routes default to Arbeit, then Steuerung; tenant root and old wo
     for (const [route, expected] of [['worklist', 'worklist'], ['reports', 'dashboard'], ['settings/dashboard', 'dashboard-layout'], ['import', 'import'], ['usage', 'usage']]) {
       assert.equal(routes.resolveSalesRoute(`${base}/${route}/`), expected)
     }
+    const tabs = load('DashboardNavigation.tsx', { './salesRoutes': routes, './salesNavigation': navigation })
+    assert.equal(tabs.dashboardSectionUrl('worklist', 'followups'), `${base}/worklist?section=followups`)
+    assert.equal(tabs.dashboardSectionUrl('reports', 'month'), `${base}/reports?section=month`)
+    const html = renderToStaticMarkup(React.createElement(tabs.DashboardNavigation, { area: 'worklist', activeKey: 'followups' }))
+    assert.equal((html.match(/aria-current="page"/g) ?? []).length, 1)
+    assert.match(html, /aria-current="page">Wiedervorlagen/)
+    assert.equal((html.match(/<a /g) ?? []).length, 9)
   }
 })
 

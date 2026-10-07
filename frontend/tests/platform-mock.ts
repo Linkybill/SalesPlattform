@@ -13,10 +13,17 @@ const dashboard = {
   layout: { nodes: reportKeys.map(key => ({ id: key, type: 'report', title: key, reportKey: key, visible: true, allowed: true, columns: 12, children: [] })), availableReports: reportKeys.map(key => ({ key, title: key, allowed: true })), isDefault: true, canEdit: true },
   cockpit: { periodName: 'Testzeitraum' }, team: { periodName: 'Testzeitraum', members: [] }, meetings: { periodName: 'Testzeitraum' }, analysis: { periodName: 'Testzeitraum' }, customers: { customers: [], unmappedCount: 0 }, goals: { members: [] }, cleanup: { duplicates: [] }, service: { periodName: 'Testzeitraum' }, commercial: { periodName: 'Testzeitraum' },
 }
-const items = Array.from({ length: 30 }, (_, i) => ({ id: String(i), title: `Vorgang ${i + 1}`, reason: 'Testfall', priorityBand: 'high', priorityScore: 88, sourceRuleCode: i === 29 ? 'R-06' : 'R-07', workItemTypeName: 'Reaktivierung', ownerName: 'Test Vertrieb', dueAt: null, crmTaskUrl: null, externalUrl: null }))
+let items = Array.from({ length: 30 }, (_, i) => ({ id: String(i), title: `Vorgang ${i + 1}`, reason: 'Testfall', priorityBand: 'high', priorityScore: 88, sourceRuleCode: ({ 26: 'R-01', 27: 'R-16', 28: 'R-10', 29: 'R-06' } as Record<number, string>)[i] ?? 'R-07', workItemTypeName: 'Nachfassen', ownerName: 'Test Vertrieb', dueAt: null, crmTaskUrl: 'https://crm.example/task', externalUrl: 'https://crm.example/record' }))
 const context = {
   activeTenantId: 'synthetic', user: { displayName: 'Synthetic', roles: ['sales-user'] }, error: null,
   authorizedFetch: async (url: string, init?: RequestInit) => {
+    const snooze = url.match(/^\/api\/worklist\/([^/]+)\/snooze$/)
+    if (snooze && init?.method === 'POST') {
+      const item = items.find(item => item.id === snooze[1])
+      if (!item || JSON.parse(String(init.body)).tomorrow !== true) return new Response(null, { status: 400 })
+      items = items.filter(candidate => candidate.id !== item.id)
+      return new Response(JSON.stringify(item), { status: 200 })
+    }
     if (url === '/api/reports/annual-targets') {
       if (init?.method === 'PUT') {
         const request = JSON.parse(String(init.body))

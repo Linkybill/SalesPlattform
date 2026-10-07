@@ -1,16 +1,12 @@
 import { WorklistWidget } from './WorklistWidget'
+import { DashboardNavigation, navigateDashboardSection, useDashboardSection } from './DashboardNavigation'
 
 export function DashboardPage() {
+  const theme = useDashboardSection('worklist')
   return (
-    <main className="sales-page reports-page">
-      <section className="sales-hero">
-        <div>
-          <p className="sales-eyebrow">SALESPLATTFORM · ARBEITSLISTE</p>
-          <h1>Arbeit</h1>
-          <p className="sales-lead">Was ist als Nächstes zu tun? Vorgänge links nach Thema auswählen, Termine prüfen und direkt im CRM weiterarbeiten. Kennzahlen und Reports findest du unter Steuerung.</p>
-        </div>
-      </section>
-      <WorklistWidget />
+    <main className="sales-page reports-page sales-dashboard">
+      <DashboardNavigation area="worklist" activeKey={theme} />
+      <WorklistWidget selectedTheme={theme} onSelectTheme={key => navigateDashboardSection('worklist', key)} />
     </main>
   )
 }

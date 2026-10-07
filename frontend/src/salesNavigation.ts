@@ -18,6 +18,24 @@ export function themeForRule(rule: string | null) {
   return workThemes.find(theme => (theme.rules as readonly string[]).includes(rule ?? ''))?.key ?? 'other'
 }
 
+// Presentation groups only; theme membership and rule evaluation stay unchanged.
+export const workRuleGroups = [
+  { title: 'Leads', rules: ['R-01', 'R-02', 'R-03', 'R-04', 'R-09'] },
+  { title: 'Angebote', rules: ['R-05', 'R-16'] },
+  { title: 'Kunden', rules: ['R-08', 'R-10', 'R-11'] },
+  { title: 'Aufträge & Rechnungen', rules: ['R-17', 'R-18'] },
+  { title: 'Service', rules: ['R-15'] },
+]
+
+export const dashboardTabs = [
+  ...workThemes.map(theme => ({ key: theme.key, title: theme.title, area: 'worklist' as const })),
+  { key: 'month', title: 'Monatsreport', area: 'reports' },
+  { key: 'team', title: 'Vertriebsteam', area: 'reports' },
+  { key: 'year', title: 'Jahresreport', area: 'reports' },
+  { key: 'lifetime', title: 'Allgemein - Lifetime', area: 'reports' },
+  { key: 'customers', title: 'Kundenstamm', area: 'reports' },
+] as const
+
 export const reportSections = [
   { key: 'cockpit', title: 'Cockpit', reports: ['cockpit'] },
   { key: 'month', title: 'Monatsreport', reports: ['cockpit', 'analysis'], timeframe: 'month' },

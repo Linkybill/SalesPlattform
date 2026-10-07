@@ -1,5 +1,24 @@
 # Offene Punkte, Entscheidungen und Status
 
+## Dashboard-Struktur nach Screenshot (07.10.2026)
+
+Benutzerauftrag: ausschließlich Struktur und Darstellung ändern, bestehende
+Funktionalität erhalten. Die beiden Anruftranskripte vom 19.09.2026 dienen als
+fachlicher Kontext; darin enthaltene weitergehende Funktionswünsche sind kein
+Implementierungsauftrag. Maßgeblich ist die horizontale Navigation des Screenshots:
+Auslaufende Produkte, Schlummernde Leads, Wiedervorlagen, Meeting Report,
+Monatsreport, Vertriebsteam, Jahresreport, Allgemein - Lifetime, Kundenstamm.
+Sie ersetzt die bisherige linke Hauptnavigation in Arbeit und Steuerung.
+
+Die bestehenden Routen und der Einstieg über alle Vorgänge bleiben erhalten.
+Zusätzliche Reports bleiben als weitere Auswertungen erreichbar; innerhalb der
+Wiedervorlagen werden die bestehenden Regel-Listen thematisch untergliedert.
+Regelzuordnung, Intervalle, Sortierung, Berechnungen, Aktionen, Rollenfreigaben,
+gespeicherte Mandantenlayouts und CRM-Anbindung bleiben unverändert. Insbesondere
+keine neue Benutzer-/Lizenzverwaltung und keine Änderung der Anrufstaffelung aus
+den Transkripten. Lokal umgesetzt; Struktur in den Fachanforderungen,
+erfolgreiche native Prüfungen und Browser-Abnahme im Projektkontext dokumentiert.
+
 ## Pipeline-Stufen bei impliziter Zoho-Standardpipeline (28.09.2026)
 
 Screenshot: offene Deals werden unter „Ohne Pipeline · Ohne Stufe“ gesammelt.

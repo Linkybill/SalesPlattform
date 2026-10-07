@@ -1,5 +1,25 @@
 # Projektkontext
 
+## Dashboard-Umstrukturierung (07.10.2026)
+
+Auf Benutzerauftrag ausschließlich Navigation und Darstellung an Screenshot
+und Anrufkontext angepasst. Gemeinsame horizontale Leiste mit neun Reitern,
+weitere Reports als kompakte zweite Navigation und thematische Untergliederung
+der Wiedervorlagen. Vorhandene Funktionen, Regelzuordnungen, Berechnungen,
+Berechtigungen, Mandantenlayouts und API-Verträge bleiben erhalten; kein
+Backend-/Paketumbau für diese Umstrukturierung. Bestehende Routen bleiben
+nutzbar, die Bereichsauswahl steht im Querystring. Details und Abgrenzung:
+[Fachanforderungen](01-fachliche-anforderungen.md) und
+[Entscheidung](05-offene-punkte-und-entscheidungen.md).
+
+Prüfstatus: native Windows-TypeScript-Prüfung und Vite-Produktionsbuild sowie
+zwölf Navigations-/URL-/Theme-Prüfungen bestanden. Chrome-Abnahme mit synthetischen
+Daten bestanden: neun Reiter, Tenantpfade, Zurück/Vorwärts, Neuladen, feste
+Reportzeiträume, weitere Auswertungen, aufklappbare Regellisten, CRM-Links,
+Zurückstellen, Pagination, Suche, Kennzahl-/Diagrammdetails, Escape/Fokus und
+390px-Ansicht. Desktop-Vorschau visuell geprüft. Die bekannte Vite-Warnung zum
+großen JavaScript-Chunk bleibt bestehen. Kein Deployment dieses Umbaus.
+
 ## Sicherungsstand 04.10.2026
 
 Auf Benutzerauftrag werden alle offenen Sales-Änderungen lokal committed.

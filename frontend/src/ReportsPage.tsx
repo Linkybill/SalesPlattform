@@ -5,7 +5,8 @@ import 'leaflet/dist/leaflet.css'
 import { useApplicationContext, usePlatformLog, createPlatformLogOperation } from '@hammer2fall/identity-platform-react'
 import { AnnualTargetsEditor } from './AnnualTargetsEditor'
 import { DashboardContentEditor, type LayoutNode, type ReportDefinition } from './DashboardContentEditor'
-import { reportSections, filterReportLayout } from './salesNavigation'
+import { dashboardTabs, reportSections, filterReportLayout } from './salesNavigation'
+import { DashboardNavigation, navigateDashboardSection, useDashboardSection } from './DashboardNavigation'
 import { ReportEvidenceProvider, MetricTile, MetricLink, EvidenceChart, EvidenceTable, safeCrmUrl, type ReportEvidence } from './ReportEvidence'
 
 type Breakdown = { label: string; count: number; amount: number | null }
@@ -27,9 +28,10 @@ type Dashboard = { canManageAnnualTargets?: boolean; sourceSync?: { mode: string
 export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceEdit?: boolean; meetingOnly?: boolean }) {
   const log = usePlatformLog()
   const { activeTenantId, authorizedFetch, error: platformError, user } = useApplicationContext()
+  const section = useDashboardSection('reports')
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
-  const [timeframe, setTimeframe] = useState(meetingOnly ? 'month' : 'year')
-  const [section, setSection] = useState('cockpit')
+  const [chosenTimeframe, setTimeframe] = useState(meetingOnly ? 'month' : reportSections.find(s => s.key === section)?.timeframe ?? 'year')
+  const timeframe = (!meetingOnly && reportSections.find(s => s.key === section)?.timeframe) || chosenTimeframe
   const requestVersion = useRef(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -38,6 +40,11 @@ export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceE
   const [draftNodes, setDraftNodes] = useState<LayoutNode[]>([])
   const [savingLayout, setSavingLayout] = useState(false)
   const [layoutMessage, setLayoutMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    const choice = reportSections.find(s => s.key === section)
+    if (!meetingOnly && choice?.timeframe) setTimeframe(choice.timeframe)
+  }, [meetingOnly, section])
 
   const load = useCallback(async () => {
     if (!user || !activeTenantId) return
@@ -66,7 +73,7 @@ export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceE
   const available = reportSections.filter(s => s.reports.some(key => dashboard?.layout.availableReports.some(r => r.key === key && r.allowed)))
   const selected = available.find(s => s.key === section) ?? available[0]
   const selectSection = (key: string) => {
-    setSection(key)
+    navigateDashboardSection('reports', key)
     const choice = reportSections.find(s => s.key === key)
     if (choice?.timeframe) setTimeframe(choice.timeframe)
   }
@@ -104,12 +111,14 @@ export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceE
   }
 
   return (
-    <Container className={meetingOnly ? 'meeting-report-embedded' : 'sales-page reports-page'}>
-      <section className="sales-hero">
+    <Container className={meetingOnly ? 'meeting-report-embedded' : 'sales-page reports-page sales-dashboard'}>
+      {!meetingOnly && <DashboardNavigation area="reports" activeKey={selected?.key ?? section} />}
+      {!meetingOnly && <nav className="dashboard-secondary-nav" aria-label="Weitere Auswertungen"><span>Weitere Auswertungen</span>{available.filter(s => !dashboardTabs.some(tab => tab.area === 'reports' && tab.key === s.key)).map(s => <button type="button" key={s.key} className={s.key === selected?.key ? 'is-active' : ''} aria-current={s.key === selected?.key ? 'page' : undefined} onClick={() => selectSection(s.key)}>{s.title}</button>)}</nav>}
+      <section className="dashboard-section-heading">
         <div>
           <p className="sales-eyebrow">SALESPLATTFORM · {meetingOnly ? 'ARBEIT' : 'STEUERUNG'}</p>
-          <h1>{meetingOnly ? 'Meeting Report' : 'Steuerung'}</h1>
-          <p className="sales-lead">{meetingOnly ? 'Welche Termine wurden vereinbart, stehen an oder haben nicht stattgefunden?' : 'Vertrieb verstehen: Reports links auswählen und Zahlen bis zum einzelnen Datensatz nachvollziehen.'} Klicke auf eine Kennzahl oder einen Diagrammbalken für die zugrunde liegenden Daten.</p>
+          <h2>{meetingOnly ? 'Meeting Report' : selected?.title ?? 'Steuerung'}</h2>
+          <p className="sales-lead">{meetingOnly ? 'Welche Termine wurden vereinbart, stehen an oder haben nicht stattgefunden?' : 'Klicke auf eine Kennzahl oder einen Diagrammbalken für die zugrunde liegenden Daten.'}</p>
         </div>
         <div className="report-toolbar">
           <label>Zeitraum
@@ -138,7 +147,7 @@ export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceE
           {editing && dashboard.layout.canEdit
             ? <><DashboardContentEditor nodes={draftNodes} reports={dashboard.layout.availableReports} onChange={setDraftNodes} /><div className="content-editor-footer"><button className="secondary-button" type="button" onClick={() => { setDraftNodes(dashboard.layout.nodes); setEditing(false) }} disabled={savingLayout}>Änderungen verwerfen</button><button className="primary-button" type="button" onClick={() => void saveLayout()} disabled={savingLayout}>{savingLayout ? 'Wird gespeichert …' : 'Reportseite speichern'}</button></div></>
             : meetingOnly ? <LayoutRenderer nodes={filterReportLayout(dashboard.layout.nodes, ['meetings'])} dashboard={dashboard} />
-            : <div className="sales-section-browser"><nav className="sales-section-nav" aria-label="Reports unter Steuerung">{available.map(s => <button key={s.key} className={s.key === selected?.key ? 'is-active' : ''} aria-current={s.key === selected?.key ? 'page' : undefined} onClick={() => selectSection(s.key)}>{s.title}</button>)}</nav><section className="sales-section-content"><h2>{selected?.title ?? 'Keine Reports freigegeben'}</h2><LayoutRenderer nodes={filterReportLayout(dashboard.layout.nodes, selected?.reports ?? [])} dashboard={dashboard} /><p className="webpart-footnote">Die sichtbaren Report-Komponenten folgen dem gespeicherten Mandantenlayout. Ausgeblendete Reports können unter „Layout bearbeiten“ wieder eingeblendet werden.</p></section></div>}
+            : <section className="sales-section-content"><LayoutRenderer nodes={filterReportLayout(dashboard.layout.nodes, selected?.reports ?? [])} dashboard={dashboard} /><p className="webpart-footnote">Die sichtbaren Report-Komponenten folgen dem gespeicherten Mandantenlayout. Ausgeblendete Reports können unter „Layout bearbeiten“ wieder eingeblendet werden.</p></section>}
         </ReportEvidenceProvider>
       )}
     </Container>
