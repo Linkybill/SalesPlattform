@@ -1,5 +1,34 @@
 # Sales: Deployment- und Betriebsstand
 
+## HTTP 503 nach erfolgreichem Sales-Rollout – 08.10.2026
+
+Release [37765883834](https://github.com/Linkybill/SalesPlattform/actions/runs/37765883834)
+und CI [37765868077](https://github.com/Linkybill/SalesPlattform/actions/runs/37765868077)
+für `1a332847e056affa85ca78da10e0b3dd3a3bc144` erfolgreich. Laufende Sales-Images
+entsprechen den Release-Digests; das Frontend liefert die neue Reiternavigation.
+Diese Nachweise allein bestätigen keine funktionsfähige Arbeitsliste.
+
+Benutzer meldete danach HTTP 503. Auch das öffentliche Backend-Manifest gab
+503 ohne Body zurück. Der RuntimeDrainReporter erhielt keine Bestätigung;
+die vorgesehene Identitätsprüfung sperrte deshalb Backend-Anfragen, obwohl
+die Container-Healthchecks erfolgreich waren. Live-Befund im Broker:
+`identity-runtime-activity-v1.in.telemetry` hatte keinen Consumer und wartende
+Nachrichten; die zugehörige Plattform-API-Verbindung hatte keinen Kanal mehr.
+Der ursprüngliche Auslöser des Kanalverlusts ist nicht nachgewiesen.
+
+Um 14:59 UTC ausschließlich die Plattform-API auf ax42-1 kontrolliert neu
+gestartet, mit unverändertem Image-Digest
+`89d97efac7d1459967f5f6c522c8bbafde0b0dd32e847d86ddf501e0d7600bac`.
+Danach wieder aktiver Telemetrie-Consumer, abgearbeitete Warteschlange und
+keine neuen Bestätigungsfehler im beobachteten Sales-Backend. Manifest über
+öffentlichen HTTPS-Einstieg mit Windows-Zertifikatsprüfung: HTTP 200.
+Arbeitsliste ohne Anmeldung: HTTP 401, wie vorgesehen. Bestehende angemeldete
+Browser-Anfragen an `/api/worklist` um 17:00:47 und 17:01:47 CEST lieferten
+HTTP 200. Dafür wurden nur technische Statuslogs geprüft; keine Tokens oder
+CRM-Antwortinhalte ausgelesen. Eine vollständige fachliche Abnahme aller
+Dashboard-Funktionen ist damit nicht verbunden.
+Keine Sales-Geschäftslogik, Images, Berechtigungen oder Daten geändert.
+
 ## Sales-CI-Zugang eingerichtet – 08.10.2026
 
 Der Release-Lauf `37618824152` vom 07.10. scheiterte vor dem Rollout an
