@@ -1,5 +1,23 @@
 # Sales: Deployment- und Betriebsstand
 
+## Sales-CI-Zugang eingerichtet – 08.10.2026
+
+Der Release-Lauf `37618824152` vom 07.10. scheiterte vor dem Rollout an
+fehlendem `APP_CI_KUBECONFIG`; der erfolgreiche Build war kein Deployment.
+Auf Benutzerauftrag wurde auf dem bestehenden ax42-1 ein eingeschränkter
+Sales-CI-Zugang eingerichtet und per Einzelassistent geprüft/veröffentlicht.
+Das Environment `sales-plattform-ax42-1-dev` enthält jetzt drei `APP_CI_*`-
+Secrets für SSH, Hostkey und Kubeconfig sowie sieben Zielvariablen. Dieser
+Zugang verwendet den unterstützten direkten SSH-Tunnel; kein VPN-Secret.
+
+SSH, TLS, eigene CI-Identität sowie Cluster-, Namespace- und Datenbank-UID
+lokal verifiziert. Der GitHub-Zugangstest
+[37765596356](https://github.com/Linkybill/SalesPlattform/actions/runs/37765596356)
+von `main` ist erfolgreich. Er prüft noch keinen Rollout oder Image-Pull.
+Clientzertifikat gültig bis 06.01.2027, 10:39:12 UTC; rechtzeitig erneuern.
+Keine Schlüssel oder Zertifikatinhalte in Git. Plattformzugänge unverändert.
+App-Rollout und tatsächlich laufende Image-Revision separat nachweisen.
+
 ## Lokale Sicherung 04.10.2026
 
 Alle offenen Code-, Test- und Kontextänderungen werden auf Benutzerauftrag
