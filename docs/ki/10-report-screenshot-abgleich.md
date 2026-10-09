@@ -11,7 +11,7 @@ Die Tabelle unten dokumentiert den Ausgangsbefund vor der Ergänzung. Der
 aktuelle lokale Stand einschließlich neuer Kontaktlisten, individueller
 Produktzählung, vollständiger Gruppen und Von/Bis-Spalte steht in
 [11-report-umsetzungsstand.md](11-report-umsetzungsstand.md).
-Kein Deployment dieser Erweiterung; produktive Zahlenparität bleibt offen.
+Erweiterung anschließend mit Release 37974521619 ausgerollt; produktive Zahlenparität bleibt offen.
 
 ## Referenzen und Implementierung beim ersten Abgleich
 

@@ -6,7 +6,7 @@ Die jüngste Benutzeranforderung ergänzt Kontaktreports, Prozess-/Teamberichte,
 echte Lifetime-Jahresverläufe, Kunden-/Gebietsauswertungen und Periodenziele.
 Übersicht, Formeln, Voraussetzungen und verbleibende Lücken:
 [Report-Umsetzungsstand](11-report-umsetzungsstand.md).
-Implementierung lokal geprüft. Nachfolgender Benutzerauftrag am 09.10.2026: push und deploy. Veröffentlichung erfolgt über den Sales-Release; Ergebnis im Betriebsstand.
+Implementierung geprüft und Code-Revision 6a798cc über Release 37974521619 erfolgreich ausgerollt. Öffentliche HTML-/JS-/CSS-Antworten mit neuen Report-Komponenten bestätigt; Nachweis im Betriebsstand.
 
 
 ## Kuchendiagramme und Report-Einstieg korrigiert (09.10.2026)

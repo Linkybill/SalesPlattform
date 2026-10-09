@@ -1,5 +1,30 @@
 # Sales: Deployment- und Betriebsstand
 
+## Spezifikationsreports erfolgreich ausgerollt – 09.10.2026
+
+Code-Revision 6a798ccf27502dd6e08370b6db2259ae2e1888be auf main gepusht.
+[Sales-Release 37974521619](https://github.com/Linkybill/SalesPlattform/actions/runs/37974521619)
+erfolgreich abgeschlossen am 09.10.2026 um 20:41:29 Uhr Europe/Berlin
+(18:41:29 UTC). Validierung, gesamte CI, beide Images und Deployment erfolgreich.
+Ziel ax42-1/dev; ausschließlich Sales, keine Plattform-/Datenbankaktualisierung.
+
+Öffentlicher HTTPS-Nachweis mit Windows-Zertifikatsprüfung:
+Einstieg https://176.9.57.203:3003 HTTP 200;
+JavaScript /assets/index-Cm24ePCn.js HTTP 200 mit specified-reports,
+lifetime und postalAreas; CSS /assets/index-C4odvy8e.css HTTP 200 mit
+.specified-report. Die Report-Erweiterung wird damit tatsächlich ausgeliefert.
+
+Nach Workflow-Abschluss antwortete der öffentliche Einstieg vorübergehend mit
+HTTP 503 und „No running frontend component container is available.“ Nach dem
+Runtime-Anlauf war die neue Version ohne weiteren Eingriff erreichbar.
+Kein zusätzlicher Infrastruktur-Neustart und kein erneuter Release notwendig.
+
+Kein CRM-Import oder produktiver Datenabgleich wurde ausgelöst. Datenparität zu
+den ursprünglichen Analytics-Screenshots bleibt von dieser erfolgreichen
+Veröffentlichung getrennt; die dokumentierten Datenvoraussetzungen gelten weiter.
+Dieser Nachtrag ändert ausschließlich Dokumentation und benötigt keinen Rollout.
+
+
 ## Veröffentlichung beauftragt – 09.10.2026
 
 Nach Abschluss der lokalen Implementierung lautet der neue Benutzerauftrag

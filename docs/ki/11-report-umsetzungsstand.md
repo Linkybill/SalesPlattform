@@ -1,6 +1,6 @@
 # Report-Umsetzung nach Spezifikation und Screenshots
 
-Stand: 09.10.2026. Lokal geprüft; anschließender Benutzerauftrag: push und deploy. Release-Nachweis im Betriebsstand.
+Stand: 09.10.2026. Code-Revision 6a798cc mit Release 37974521619 erfolgreich ausgerollt; öffentliche Report-Dateien bestätigt. Release-Nachweis im Betriebsstand.
 
 ## Einstieg in der bestehenden Oberfläche
 
