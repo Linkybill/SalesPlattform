@@ -2,7 +2,8 @@
 
 Abgleich: 19.09.2026. Diese Datei beschreibt die verbindlichen
 Anforderungen der SalesPlattform, keine Fehler- oder Datenhistorie.
-Aktuelle Paket-Pins: Shared 0.1.73 und React 0.1.59. Die folgende datierte
+Paket-Pins am 06.10.2026: Shared 0.1.77 und React 0.1.60 (Registry geprüft).
+Die folgende datierte
 Diagnoseintegration nennt ihre damaligen Prüf-/Veröffentlichungsstände;
 externe CI-Secrets wurden beim aktuellen Dokuabgleich nicht neu abgefragt.
 

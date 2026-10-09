@@ -165,3 +165,5 @@ var restricted = Build(new() { ["Deals"] = new[] { september }, ["Appointments"]
 Check(!restricted.Metrics.ContainsKey("won") && !restricted.Metrics.ContainsKey("meetings:week") && !restricted.Metrics.ContainsKey("quality-total"), "Evidence must honor the same report permissions.");
 Check(restricted.Metrics.Keys.All(k => !k.StartsWith("customer:") && !k.StartsWith("product:")), "Restricted report details cannot be exposed under alternate keys.");
 Console.WriteLine($"Report evidence: {assertions} assertions passed; no database or CRM writes.");
+
+await ContactRegressions.Run();

@@ -1,5 +1,25 @@
 # Offene Punkte, Entscheidungen und Status
 
+## Korrektur schlummernder Leads (09.10.2026)
+
+Benutzerabgleich: Die Team-Arbeitsliste ist aktiv, zeigt aber erheblich weniger
+Reaktivierungsvorgänge als die Zoho-Auswertung. Im Import zählt bisher jede
+Nicht-Anruf-Aktivität einschließlich offener/gespiegelter Tasks als Kontakt.
+Das kann R-07 nach einem Sync fälschlich auflösen. Tasks bleiben Aktivitäten,
+setzen aber keinen Kundenkontakt und keine erste Lead-Kontaktaktivität.
+Als Kontakt zählen vorhandene E-Mails und qualifizierte Gespräche bis jetzt.
+Zoho Last_Activity_Time ist kein belastbares Kontaktdatum; ein explizites
+Last_Contact bleibt erhalten. Ohne Kontaktdatum ist R-07 sofort fällig, ohne
+künstliche Wartefrist ab Erstellung. Die 90-Tage-Tenantkonfiguration bleibt.
+
+Bereits falsch fortgeschriebene Kontaktmarker werden erst nach einem fehlerfreien
+Vollimport von Accounts, Leads, Calls und Emails aus vollständigen Quellwerten
+und echten Kontaktaktivitäten rekonstruiert. Teilimporte/fehlerhafte Läufe dürfen
+keine Marker löschen. Tenant-, Verbindungs- und Besitzergrenzen bleiben bestehen.
+Keine Aktivierung des bewusst entfernten Contacts-Moduls, kein neuer Zoho-
+Schreibweg. Diese Korrektur belegt noch keine vollständige Übereinstimmung mit
+der separaten Zoho-Analytics-Formel (> fünf Monate).
+
 ## Dashboard-Struktur nach Screenshot (07.10.2026)
 
 Benutzerauftrag: ausschließlich Struktur und Darstellung ändern, bestehende

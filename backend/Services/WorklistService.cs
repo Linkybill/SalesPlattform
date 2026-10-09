@@ -967,8 +967,8 @@ public sealed class WorklistService(
         foreach (var customer in customers.Where(customer => customer.IsActive
             && (!customer.LastContactAt.HasValue || customer.LastContactAt <= now.AddDays(-ruleConfiguration.ContactInactiveDays))))
         {
-            var dueAt = customer.LastContactAt?.AddDays(ruleConfiguration.ContactInactiveDays)
-                ?? (customer.SourceCreatedAt ?? now).AddDays(ruleConfiguration.ContactInactiveDays);
+            var dueAt = ContactReactivationDueAt(customer.LastContactAt, customer.SourceCreatedAt,
+                ruleConfiguration.ContactInactiveDays, now);
             candidates.Add(new WorklistCandidate(
                 "customer-stale", "R-07", "customer", customer.Id, customer.OwnerId,
                 $"Kontakt aufnehmen · {customer.Name}",
@@ -984,14 +984,15 @@ public sealed class WorklistService(
             && (!lead.LastContactAt.HasValue
                 || lead.LastContactAt <= now.AddDays(-ruleConfiguration.ContactInactiveDays))))
         {
-            var lastContact = lead.LastContactAt ?? lead.SourceCreatedAt ?? now;
+            var dueAt = ContactReactivationDueAt(lead.LastContactAt, lead.SourceCreatedAt,
+                ruleConfiguration.ContactInactiveDays, now);
             candidates.Add(new WorklistCandidate(
                 "lead-reactivation", "R-07", "lead", lead.Id, lead.OwnerId,
                 $"Lead reaktivieren · {lead.Name}",
                 lead.LastContactAt.HasValue
                     ? $"Letzter Kontakt vor {FormatAge(lead.LastContactAt.Value, now)}; Reaktivierung erforderlich."
                     : "Für den Lead ist noch kein Kontakt dokumentiert; Reaktivierung erforderlich.",
-                lastContact.AddDays(ruleConfiguration.ContactInactiveDays), null));
+                dueAt, null));
         }
 
         if (scope is null || scope.AllowsRule("R-01") || scope.AllowsRule("R-02")
@@ -1954,6 +1955,10 @@ public sealed class WorklistService(
         => status is WorkItemStatuses.Open
             or WorkItemStatuses.Scheduled
             or WorkItemStatuses.Snoozed;
+
+    private static DateTimeOffset ContactReactivationDueAt(
+        DateTimeOffset? lastContact, DateTimeOffset? createdAt, int inactiveDays, DateTimeOffset now)
+        => lastContact?.AddDays(inactiveDays) ?? (createdAt < now ? createdAt.Value : now);
 
     private static bool IsOpenStatus(string? status)
         => !status.IsOneOf("won", "closed", "closed_won", "lost", "closed_lost", "converted", "cancelled", "canceled", "expired", "terminated", "rejected", "completed", "done", "archived");

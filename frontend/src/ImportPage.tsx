@@ -161,11 +161,14 @@ export function ImportPage() {
     setZohoMessage(null)
     try {
       const response = await authorizedFetch('/api/integrations/zoho/test-connection')
-      const payload = await readJson<{ availableModules?: string[] } & ApiErrorPayload>(response)
+      const payload = await readJson<{ availableModules?: string[]; organizationId?: string | null; apiDomain?: string; error?: string | null } & ApiErrorPayload>(response)
       if (!response.ok) {
         throw new Error(getApiErrorMessage(payload, `Zoho-Test antwortete mit HTTP ${response.status}.`))
       }
-      setZohoMessage(`Verbindung aktiv. ${payload?.availableModules?.length ?? 0} Zoho-Module gefunden.`)
+      if (payload?.error) setZohoError(payload.error)
+      setZohoMessage(payload?.organizationId
+        ? `Verbindung aktiv. Zoho-Organisations-ID: ${payload.organizationId}. API: ${payload.apiDomain ?? 'unbekannt'}.`
+        : 'Authentifizierung aktiv. Die verbundene Zoho-Organisation ist nicht bestätigt.')
       await loadZohoStatus()
       await loadUsage()
     } catch (reason) {

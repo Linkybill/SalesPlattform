@@ -1,5 +1,44 @@
 # Datenmodell, Zoho und Synchronisation
 
+## Kontaktmessung ohne Task-Rückkopplung (09.10.2026)
+
+Tasks werden weiterhin vollständig gespeichert und gespiegelt, verändern aber
+keinen LastContactAt-Marker. Bei Leads wird explizites Last_Contact statt des
+generischen Last_Activity_Time gelesen; vorhandene echte Kontaktaktivitäten
+werden beim Lead-Upsert berücksichtigt, auch wenn der Quellkontakt älter/null
+ist. Zukünftige und gelöschte Kontakte werden bei der Rekonstruktion ignoriert.
+Die Ableitung bleibt in der kanonischen Repository-Schicht anbieterneutral.
+
+Ein vollständiger fehlerfreier Zoho-Import von Accounts, Leads, Calls und Emails
+rekonstruiert LastContactAt vor der Regelbewertung, innerhalb derselben Tenant-
+und Provider-/Verbindungsgrenzen. Dadurch lassen sich zuvor durch Aufgaben
+verfälschte Werte auch nach hinten oder auf NULL korrigieren. Kein Schemawechsel,
+keine zusätzliche CRM-Abfrage und keine direkte produktive Datenbankreparatur.
+Teilimporte und fehlerhafte Läufe dürfen keine historische Rekonstruktion
+auslösen. Contacts bleiben gemäß bestehender Entscheidung ausgeschlossen.
+
+## Organisationsabgleich der Verbindung (06.10.2026)
+
+„Verbindung testen“ liest zusätzlich `GET /crm/v8/org` über dieselbe
+tenantbezogene Verbindung wie die Hook-Registrierung. Das Ergebnis zeigt die
+Organisations-ID (`zgid`) und API-Domain zum Vergleich mit der Zoho-Browseradresse.
+Fehlende/mehrdeutige Organisationsdaten oder ein fehlgeschlagener Abruf werden
+als nicht bestätigte Organisation angezeigt, auch bei gültiger Authentifizierung.
+Keine Tokens oder vollständigen Organisationsdaten im Browser/Diagnoselog;
+keine Neuverbindung, CRM-Schreiboperation oder Änderung von Subscriptions.
+Der explizite Test benötigt `ZohoCRM.org.READ`; Metadaten bleiben im Schema-Job.
+Die Diagnose belegt keine Callback-Zustellung. Sales-Backend und -Frontend
+müssen für diese Erweiterung bereitgestellt werden.
+
+## Vollständige Callback-Adresse in der Übersicht (06.10.2026)
+
+Die Hook-Übersicht zeigt als primäre Adresse die konfigurierte Callback-URL
+einschließlich `?tenant_id=<aktiver Mandant>`. Die vom Backend validierte
+Basisadresse bleibt unter „URL-Einstellung“ separat sichtbar. Die Anzeige
+beschreibt die Solladresse der Registrierung; die bereits bei Zoho gespeicherte
+Adresse wird weiterhin über „Registrierung bei Zoho prüfen“ gelesen.
+Keine Änderung der Ereignisverarbeitung oder der Registrierung durch die Anzeige.
+
 ## Systemgrenzen
 
 Die erste Zielintegration ist Zoho CRM als lesende Quelle. Zoho ist dabei nur

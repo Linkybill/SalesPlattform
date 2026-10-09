@@ -1,5 +1,51 @@
 # Sales: Deployment- und Betriebsstand
 
+## Veröffentlichung des offenen Sales-Stands beauftragt – 09.10.2026
+
+Benutzer beauftragt Commit/Push aller offenen Sales-Änderungen und den
+GitHub-Release auf ax42-1/dev. Der Stand umfasst Kontaktzählung/R-07-Reparatur,
+Shared 0.1.77, die bereits vorbereitete Organisationsdiagnose, vollständige
+Tenant-Callback-Anzeige sowie zugehörige Tests und Betriebsdokumentation.
+Zusätzlich zur Backend-Abnahme: native Windows-TypeScript-Prüfung,
+Vite-Produktionsbuild und Theme-/Hook-/Usage-Browsertest bestanden; bekannte
+Chunkgrößenwarnung bleibt. Der Release-Workflow prüft dieselbe Revision erneut
+vor dem Rollout. Deploymenterfolg und Live-Erreichbarkeit separat nachweisen.
+Nach erfolgreichem Backend-Rollout ist ein vollständiger fehlerfreier CRM-Import
+für die historische Kontaktmarkerbereinigung nötig.
+
+## Schlummernde Leads: Task-Kontaktfehler korrigiert – 09.10.2026
+
+Benutzerscreenshot bestätigt TEAM-ARBEITSLISTE mit nur einem R-07-Treffer und
+fälschlicher Fälligkeit im Januar 2027. Fehlende Sales-Manager-Rolle bzw.
+persönlicher Besitzerfilter sind damit für diese Ansicht ausgeschlossen.
+Codebefund: Nicht-Anruf-Aktivitäten, darunter eigene CRM-Tasks, schrieben
+LastContactAt fort. Aufgaben konnten dadurch Reaktivierungen unterdrücken.
+Zusätzlich wurde generisches Zoho Last_Activity_Time als Lead-Kontakt übernommen.
+
+Lokal korrigiert: Tasks zählen nicht als Kontakt, echte E-Mails/qualifizierte
+Gespräche bleiben maßgeblich; explizites Last_Contact bleibt erhalten. Ohne
+Kontakt ist R-07 sofort fällig. Ein vollständig erfolgreicher Full-Import mit
+Accounts, Leads, Calls und Emails rekonstruiert historische Kontaktmarker vor
+der bestehenden Vollbewertung. Teilimporte und Importfehler blockieren die
+Rekonstruktion. Kein Schemawechsel und kein neuer CRM-Schreibweg.
+
+Native Windows-Abnahme: Releasebuild mit Warnungen als Fehlern ohne Warnungen/
+Fehler, 153 bestehende Report-Assertions, 25 neue Kontakt-/Reaktivierungsprüfungen
+und 282 bestehende Webhook-Prüfungen bestanden. Neue Fälle nutzen synthetische
+EF-InMemory-Tenantdaten, die echte Repository-/R-07-Logik und PostgreSQL-
+SQL-Übersetzung. Sie prüfen Tasks, Zukunftsdaten, gelöschte E-Mails,
+Gesprächsqualifikation, historische Bereinigung, wiederkehrende Lead-Imports,
+Tenant-Isolation, Fälligkeit und Schutz vor unvollständigen Reparaturen.
+Die bestehende Report-CI führt diese neuen Prüfungen ebenfalls aus.
+
+Prüfstand vor Veröffentlichung: kein Commit/Push/Deployment dieser Korrektur und kein Zugriff auf
+produktive CRM-Antwortinhalte. Nach Backend-Rollout ist ein erfolgreicher
+vollständiger CRM-Import erforderlich, anschließend die Arbeitsliste neu
+bewerten. Tatsächliche Vollständigkeit gegenüber der Zoho-Analytics-Auswertung
+ist noch nicht live nachgewiesen; fehlende Branchen-Diagramme sind ein
+separater Implementierungsumfang. Bereits vorhandene lokale Änderungen aus
+anderen Arbeiten wurden erhalten.
+
 ## HTTP 503 nach erfolgreichem Sales-Rollout – 08.10.2026
 
 Release [37765883834](https://github.com/Linkybill/SalesPlattform/actions/runs/37765883834)
@@ -46,6 +92,187 @@ von `main` ist erfolgreich. Er prüft noch keinen Rollout oder Image-Pull.
 Clientzertifikat gültig bis 06.01.2027, 10:39:12 UTC; rechtzeitig erneuern.
 Keine Schlüssel oder Zertifikatinhalte in Git. Plattformzugänge unverändert.
 App-Rollout und tatsächlich laufende Image-Revision separat nachweisen.
+
+## Gleichzeitiger Netz-/Logmitschnitt – 07.10.2026
+
+Gemeinsame Aufnahme 01:48:12–01:51:13 CEST abgeschlossen; Benutzer meldete
+währenddessen eine gespeicherte Zoho-Änderung. Kontrollaufruf um 01:48:46
+mit leerem JSON erreicht Backend (HTTP 400, Trace
+`ef35345206ad8fea7cc62497e78f6abf`). Derselbe Aufruf ist auf der externen
+Schnittstelle enp5s0 und in Traefik-, Router- und Backend-Logs sichtbar.
+Pcap: 31 erfasste Pakete, 31 vom Filter empfangen, 0 Kernel-Drops; alle
+Pakete gehören einer Verbindung des Kontrollaufrufs an. Kein weiterer
+beobachteter TCP-Verkehr auf Port 3003 im Aufnahmefenster. Podstände und
+Restartzähler davor/danach unverändert. Logstreams enthalten Einträge bis
+01:51:10; Fehlerdateien leer. Beim gesteuerten Stop meldeten die Logsammler
+Exit 1; tcpdump endete mit dem geplanten Timeout (124).
+
+Der Testaufruf geht über den Internetanschluss des Benutzer-Arbeitsplatzes,
+nicht aus Zohos Netz. Die Beobachtung ist auf den aufgezeichneten Host-Port
+und Zeitraum begrenzt: kein Nachweis über tatsächlichen Zoho-Versand,
+Verzögerungen, Abweichungen beim Ziel oder Filter vor der Serverschnittstelle.
+Insbesondere erklärt sie nicht rückwirkend die Support-403 vom September.
+Originale liegen im Operator-Home in `zoho-capture.QKZl6Cyp`; keine Rohlogs
+oder Paketdaten in Git aufnehmen.
+
+## Beobachtungsgrenzen und gemeinsame Aufzeichnung – 07.10.2026
+
+Access-Logging inzwischen durch Operator aktiviert und im Live-Export bestätigt:
+308 Zeilen von 01:27:30 bis 01:35:30 CEST, darin nur der eigene leere
+Webhook-Test um 01:27:41 (2 Byte, OriginStatus/DownstreamStatus jeweils 400).
+Keine weitere protokollierte Callback-Anfrage; daraus folgt kein Nachweis,
+dass Zoho nichts gesendet hat. TLS 1.2 ohne SNI wurde mit erfolgreicher
+Zertifikatsprüfung getestet; das ist kein Test aus Zohos Netzwerk/Client.
+
+Lesendes, zeitbegrenztes Serverskript `zoho-capture-20261007.sh` im
+Operator-Home vorbereitet (lokale Kopie in `backend/obj/zoho-diagnostics`).
+Es erfasst 180 Sekunden TCP/3003 auf enp5s0 in beiden Richtungen, parallel
+Traefik-/Router-/Sales-Backend-Logs sowie Podstände davor/danach. Fehler und
+tcpdump-Verluststatistik bleiben in eigenen Dateien; vorzeitiger Abbruch wird
+vermerkt. Kein Neustart oder Firewall-Eingriff. Kontrollaufruf muss während
+derselben Aufnahme von außen erfolgen, bevor negative Beobachtungen bewertet
+werden. Pakete vor dem Server (etwa Provider-Firewall) und Zohos tatsächlicher
+Versand sind damit weiterhin nicht beobachtbar. ShellCheck und Bash-Syntax
+geprüft; die gemeinsame Aufnahme ist noch nicht gestartet.
+
+## Prüfung der vorgeschalteten Infrastruktur – 07.10.2026
+
+Export des laufenden `identity-platform-traefik` (Traefik 3.7.12), seiner
+Boundary-ConfigMap und der Ingress-Ressourcen geprüft: App-Einstieg `:8444`
+mit Prefix `/` zum Application-Router, Middleware `public-boundary,registered-app`,
+keine zusätzliche Auth-/IP-Sperre, TLS mindestens 1.2 und `sniStrict: false`.
+Zugriffslogging ist im Export nicht eingeschaltet. Die zuvor geprüften
+Hostregeln und der Hetzner-Firewall-Screenshot zeigen Freigaben für IPv4/3003;
+dies ist kein rückwirkender Nachweis für den Support-Aufruf vom September.
+
+Temporäre JSON-Patches für Access-Logging und dessen Rücknahme unter
+`backend/obj/zoho-diagnostics` vorbereitet und ins Operator-Home kopiert.
+Sie prüfen Containername, Image und vorhandene Argumentliste, bevor sie nur
+Logging-Argumente ersetzen. JSON-Logs erlauben ausgewählte Verbindungs-/Statusfelder;
+Header und Queryparameter werden verworfen, Bodys nicht protokolliert.
+Aktivierung benötigt interaktives sudo, ist noch nicht erfolgt und startet den
+gemeinsamen Proxy wegen Recreate kurz neu. Ein späterer Helm-Rollout überschreibt
+die temporäre Änderung. Kein behobener Zustellfehler oder echter Zoho-Eingang
+nachgewiesen; TLS-Abbrüche vor HTTP erzeugen auch mit Access-Logging keinen
+HTTP-Zugriffseintrag.
+
+## Organisationsdiagnose – 06.10.2026
+
+Der explizite Zoho-Verbindungstest liest jetzt die Organisations-ID über `/crm/v8/org`
+und zeigt sie zusammen mit der API-Domain. Abruffehler liefern einen sicheren
+Hinweis, keine bestätigte Organisation und keine Provider-Rohantwort.
+Native Windows-Abnahme: Backend-Releasebuild mit Warnungen als Fehlern und
+Frontend-TypeScript-/Vite-Build bestanden (bekannte Chunkgrößenwarnung).
+Lokal vorbereitet, noch nicht deployt; keine Live-Organisationsabfrage und kein
+Nachweis einer behobenen Callback-Zustellung. Beide Sales-Komponenten benötigen
+einen Rollout. Interaktives Remote-sudo bleibt beim Operator.
+
+## Vollständige Hook-URL sichtbar – 06.10.2026
+
+Frontend zeigt unter „Callback-URL für diesen Mandanten“ die vollständige
+Adresse aus validierter Basis-URL und aktiver Tenant-ID. Der Einstellungswert
+steht getrennt im aufklappbaren Bereich „URL-Einstellung“. Die tatsächliche
+Zoho-Registrierung bleibt separat prüfbar; Anzeige ändert keine Subscriptions.
+Native TypeScript-/Vite-Abnahme und Chrome-Test mit exakter Tenant-URL sowie
+390px-Layout bestanden. Bekannte Vite-Chunkgrößenwarnung. Für diese Änderung
+ist das Frontend neu bereitzustellen; in diesem Lauf kein Server-Rollout.
+
+## HTTP 503 nach gemeldetem Remote-Rollout – 06.10.2026
+
+ReplicaSet-Vergleich durch Benutzer bestätigt: Die Runtime-Podvorlagen vom
+28.09. verwendeten das Init-Image `runtime-agent@sha256:02161f6a78d6384cac7d8e314cd10f9c99b81b5bc52fd848f252df453c336cc2`.
+Die neuen Vorlagen vom 06.10. um 01:26:19 CEST verwenden
+`runtime-agent@sha256:a1db4fd9b788aae3023f4cfc749bec4873fa109589c218d7caaaab93d8db41b9`.
+Beide Stände haben `IfNotPresent` und keine imagePullSecrets. Eine Änderung
+der Pull-Policy ist damit ausgeschlossen. Der neue Digest und der zugehörige
+anonyme GHCR-Pull mit 401 sind belegt; warum der alte Digest zuvor nutzbar
+war (z.B. lokaler Imagebestand oder damaliger Registry-Zugriff), ergibt sich
+nicht aus ReplicaSets. Explizites IfNotPresent im lokalen Fix allein behebt
+diesen Vorfall nicht; maßgeblich ist die Weitergabe der Pull-Secret-Verweise.
+
+Historischer Vergleich: Die lokalen Sales-Releasewerte vom 20.09., 28.09.
+und 06.10. enthalten jeweils ein leeres `imagePullSecret`; dessen Fehlen ist
+also keine neue Änderung dieses Sales-Rollouts. Der Plattform-Executor behält
+laut bereits am 18.09. enthaltenem Code das bisherige Init-Image bei gleicher
+App-Imageversion. Bei geändertem App-Image übernimmt er das aktuell konfigurierte
+Helper-Image. Das ist ein belegter möglicher Auslöser beim nächsten App-Rollout,
+aber der tatsächliche alte Init-Digest ist ohne alte Live-ReplicaSets noch
+nicht bestätigt. Lesender ReplicaSet-Vergleich beim Benutzer angefragt, da
+der eigene SSH-Aufruf weiterhin am interaktiven sudo-Erfordernis scheitert.
+
+Nachfolgend durch Benutzer-Liveausgaben eingegrenzt: Bootstrap-Backend und
+-Frontend laufen 1/1 Ready mit dem richtigen neuen Release. Beide Runtime-
+Instanzpods hängen in `Init:ImagePullBackOff`; `identity-routing-address`
+versucht das private Plattform-Runtime-Agent-Image anonym von GHCR zu laden
+und erhält HTTP 401. Damit liegt der nachgewiesene Startfehler beim privaten
+Init-Image, nicht beim Sales-App-Image. Plattformkorrektur für die Weitergabe
+der Agent-Pull-Secret-Verweise an Runtime-Pods sowie explizites IfNotPresent
+lokal umgesetzt und mit 39 .NET- und fünf Helm-/Pipeline-Tests geprüft.
+Details im Plattform-KI-Kontext vom 06.10.2026. Agent-/Chart-Rollout und
+Live-Erfolg der beschriebenen Betriebsreparatur stehen noch aus.
+
+Benutzer meldet erfolgten Rollout, danach fehlendes Frontend. Öffentlich
+reproduziert: `/` liefert 503 „No running frontend component container is
+available.“, `/manifest.json` liefert 503 für das Backend. Router-Pod laut
+Antwortheader: `identity-platform-application-router-7d4b98749b-5lq4w`.
+Der lokale Releasebeleg
+`app-sales-plattform-4efc8f6da7334c44979a960cf4dd7cc7` enthält Shared 0.1.77,
+beide Komponenten mit Tag
+`sha-f21bab5f18feaca5c3c05717acbeef852e01f0e5-1791242414468-1`, Namespace
+`identity-platform` und die richtige öffentliche URL. Dies bestätigt die
+Build-/Releasekonfiguration, nicht die Runtime-Registrierung.
+
+Der zentrale Remote-App-Deploy wartet nur auf den Bootstrap-Rollout;
+Registrierung, Runtime-Instanzplanung und Router-Erreichbarkeit sind keine
+Erfolgskriterien dieses Skripts. Die 503-Antwort belegt fehlende nutzbare
+Routingziele für beide Komponenten, noch nicht deren genaue Ursache.
+Live-Pod-/Agent-/Registrierungsdiagnose benötigt Operatorzugriff: SSH funktioniert,
+`sudo -n` verlangt ein Passwort und unprivilegiertes kubectl darf die
+K3s-Konfiguration nicht lesen. Deploymentausgabe beim Benutzer angefragt;
+keine spekulative Änderung an Replikas, Routing oder Berechtigungen.
+
+## Bibliotheksupdate und Webhook-Abnahme 06.10.2026
+
+GitHub Packages direkt abgefragt: Shared **0.1.77** ist die neueste stabile
+NuGet-Version und ersetzt in Sales **0.1.74**. React **0.1.60** ist weiterhin
+der aktuelle veröffentlichte npm-Stand; mit `npm ci` frisch installiert,
+Manifest und Lockfile bleiben auf dieser exakten Version. Keine lokale
+Paketkopie und keine neue Veröffentlichung.
+
+Der bereits gesicherte Callback-Fix bleibt aktiv: Der Adapter erhält Basis-URI
+und Tenant-ID getrennt und bildet `notify_url` mit `?tenant_id=<Mandanten-ID>`
+direkt im ausgehenden Payload. Fehlender Tenant oder Query in der Basis-URI
+werden vor Versand abgewiesen. Der manuelle Hook-Job ersetzt die alten Channels.
+
+Nativ unter Windows bestanden: Releasebuild mit Warnungen als Fehlern,
+282 Webhook-Prüfungen, 153 Report-Prüfungen, 23 Verbrauchs-/SQL-Prüfungen,
+34 Zoho-Task-Payload-Fälle, 22 Webhook-/Routing-/Theme-/Navigationsverträge
+sowie TypeScript-/Vite-Produktionsbuild. Bekannte Vite-Chunkgrößenwarnung.
+
+Beide Linux/amd64-Releaseimages über die zentralen App-Buildfunktionen lokal
+erfolgreich gebaut (kein Upload): Backend-Manifestdigest
+`sha256:ac25e3229f4adab1841fff9c66972bd7f3ccb009cb36286e6ea23f9a213efcaa`,
+Frontend-Manifestdigest
+`sha256:59c688d203a85b67783e6781071f3d085cb51d2f80972dc36d58af2d159a76ea`.
+Temporäre Releasewerte und Image-Tags liegen unter
+`backend/obj/webhook-release-20261006/`. Der Build enthält die lokale
+Shared-Pin-Änderung zusätzlich zum bestehenden Commit; der SHA-Anteil des
+Release-Tags allein beschreibt diesen uncommittierten Unterschied nicht.
+
+Deploymentplan für `ax42-1`/`dev` gegen Plattform `ax42-1` als Vorschau
+aufgelöst; öffentlicher Sales-Einstieg weiterhin `https://176.9.57.203:3003`.
+SSH und Docker erreichbar. Der Server verweigert `sudo -n k3s kubectl ...`
+mit `sudo: a password is required`. Auch der vorgesehene Operator-Rollout
+verlangt interaktives sudo; ohne diese Eingabe kein Server-Rollout und keine
+Live-Neuregistrierung. In einer nativen PowerShell 7 im Sales-Appverzeichnis:
+
+```powershell
+./deploy-all.ps1 -Target ax42-1 -PlatformTarget ax42-1 -Environment dev
+```
+
+Danach im betroffenen Tenant „Hooks aktualisieren“ ausführen, die registrierte
+URL einschließlich Tenant-Query prüfen und eine echte Zoho-Zustellung abnehmen.
+Lokale Tests und gebaute Images sind kein Nachweis einer behobenen Live-Zustellung.
 
 ## Lokale Sicherung 04.10.2026
 

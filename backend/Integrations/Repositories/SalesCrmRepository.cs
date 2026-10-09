@@ -336,6 +336,62 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         return true;
     }
 
+    public async Task RebuildContactMarkersAsync(
+        string providerKey,
+        string connectionKey,
+        IReadOnlyCollection<CrmCanonicalLead> sourceLeads,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        // Only called after a complete, successful contact-source import.
+        // Existing task-derived values must be replaceable with older dates/null.
+        var targetLinks = await db.IntegrationEntityLinks.AsNoTracking()
+            .Where(link => link.ProviderKey == providerKey && link.ConnectionKey == connectionKey
+                && link.SourceDeletedAt == null
+                && (link.EntityType == CrmEntityTypes.Customer || link.EntityType == CrmEntityTypes.Lead))
+            .ToArrayAsync(cancellationToken);
+        var activityIds = db.IntegrationEntityLinks.AsNoTracking()
+            .Where(link => link.ProviderKey == providerKey && link.ConnectionKey == connectionKey
+                && link.EntityType == CrmEntityTypes.Activity && link.SourceDeletedAt == null)
+            .Select(link => link.InternalEntityId);
+        var markers = await db.SalesActivityRelations.AsNoTracking()
+            .Where(relation => relation.TargetType == CrmEntityTypes.Customer || relation.TargetType == CrmEntityTypes.Lead)
+            .Join(ContactActivities(now).Where(activity => activityIds.Contains(activity.Id)),
+                relation => relation.ActivityId, activity => activity.Id,
+                (relation, activity) => new { relation.TargetType, relation.TargetId, activity.OccurredAt })
+            .GroupBy(item => new { item.TargetType, item.TargetId })
+            .Select(group => new { group.Key.TargetType, group.Key.TargetId, LastContactAt = group.Max(item => item.OccurredAt) })
+            .ToArrayAsync(cancellationToken);
+        var contacts = markers.ToDictionary(marker => (marker.TargetType, marker.TargetId),
+            marker => (DateTimeOffset?)marker.LastContactAt);
+        var customerIds = targetLinks.Where(link => link.EntityType == CrmEntityTypes.Customer)
+            .Select(link => link.InternalEntityId).ToArray();
+        foreach (var customer in await db.SalesCustomers.Where(customer => customerIds.Contains(customer.Id)).ToArrayAsync(cancellationToken))
+            customer.LastContactAt = contacts.GetValueOrDefault((CrmEntityTypes.Customer, customer.Id));
+
+        var sourceContacts = sourceLeads
+            .Where(lead => lead.ProviderKey == providerKey && lead.ConnectionKey == connectionKey)
+            .ToDictionary(lead => lead.ExternalId, lead => lead.LastContactAt <= now ? lead.LastContactAt : null);
+        var leadLinks = targetLinks.Where(link => link.EntityType == CrmEntityTypes.Lead)
+            .ToDictionary(link => link.InternalEntityId, link => link.ExternalId);
+        var leadIds = leadLinks.Keys.ToArray();
+        foreach (var lead in await db.SalesLeads.Where(lead => leadIds.Contains(lead.Id)).ToArrayAsync(cancellationToken))
+        {
+            var sourceContact = sourceContacts.GetValueOrDefault(leadLinks[lead.Id]);
+            var activityContact = contacts.GetValueOrDefault((CrmEntityTypes.Lead, lead.Id));
+            lead.LastContactAt = LatestContact(sourceContact, activityContact);
+        }
+    }
+
+    private IQueryable<SalesActivity> ContactActivities(DateTimeOffset now)
+        => db.SalesActivities.AsNoTracking().Where(activity => activity.SourceDeletedAt == null
+            && activity.OccurredAt <= now
+            && (activity.ActivityType == "email"
+                || (activity.ActivityType == "call" && activity.CountsAsConversation == true)));
+
+    private static DateTimeOffset? LatestContact(DateTimeOffset? first, DateTimeOffset? second)
+        => !first.HasValue ? second : !second.HasValue || first >= second ? first : second;
+
     public async Task BackfillLeadActivityMarkersAsync(
         CancellationToken cancellationToken)
     {
@@ -343,7 +399,9 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
             .AsNoTracking()
             .Where(relation => relation.TargetType == CrmEntityTypes.Lead)
             .Join(
-                db.SalesActivities.AsNoTracking().Where(activity => activity.SourceDeletedAt == null),
+                db.SalesActivities.AsNoTracking().Where(activity => activity.SourceDeletedAt == null
+                    && activity.OccurredAt <= DateTimeOffset.UtcNow
+                    && (activity.ActivityType == "call" || activity.ActivityType == "email")),
                 relation => relation.ActivityId,
                 activity => activity.Id,
                 (relation, activity) => new
@@ -655,12 +713,16 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         lead.NormalizedPhone = NormalizePhone(record.Phone);
         lead.Status = record.Status ?? lead.Status;
         lead.Source = record.Source;
-        if (record.LastContactAt is { } lastContactAt)
-        {
-            if (lead.LastContactAt is null || lead.LastContactAt < lastContactAt)
-                lead.LastContactAt = lastContactAt;
+        var now = DateTimeOffset.UtcNow;
+        var activityContact = await db.SalesActivityRelations.AsNoTracking()
+            .Where(relation => relation.TargetType == CrmEntityTypes.Lead && relation.TargetId == lead.Id)
+            .Join(ContactActivities(now), relation => relation.ActivityId, activity => activity.Id,
+                (relation, activity) => (DateTimeOffset?)activity.OccurredAt)
+            .MaxAsync(cancellationToken);
+        var sourceContact = record.LastContactAt <= now ? record.LastContactAt : null;
+        lead.LastContactAt = LatestContact(sourceContact, activityContact);
+        if (sourceContact is { } lastContactAt)
             RegisterLeadActivity(lead, lastContactAt);
-        }
         if (record.LastPhoneCallAt is { } lastPhoneCallAt)
         {
             if (lead.LastPhoneCallAt is null || lead.LastPhoneCallAt < lastPhoneCallAt)
@@ -1001,7 +1063,9 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
                 target.Value.Id,
                 activity.OccurredAt,
                 record.ActivityType == "call",
-                record.ActivityType != "call" || activity.CountsAsConversation == true,
+                activity.OccurredAt <= DateTimeOffset.UtcNow
+                    && (record.ActivityType == "email"
+                        || (record.ActivityType == "call" && activity.CountsAsConversation == true)),
                 cancellationToken);
         }
     }
@@ -1278,7 +1342,8 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
                 var lead = await db.SalesLeads.SingleOrDefaultAsync(item => item.Id == targetId, cancellationToken);
                 if (lead is not null)
                 {
-                    RegisterLeadActivity(lead, occurredAt);
+                    if (isPhoneCall || countsAsContact)
+                        RegisterLeadActivity(lead, occurredAt);
                     if (countsAsContact && (lead.LastContactAt is null || lead.LastContactAt < occurredAt))
                         lead.LastContactAt = occurredAt;
                     if (isPhoneCall && (lead.LastPhoneCallAt is null || lead.LastPhoneCallAt < occurredAt)) lead.LastPhoneCallAt = occurredAt;

@@ -66,6 +66,9 @@ export function WebhookOverview({ authorizedFetch, platformAuthorizedFetch, appl
     return () => { disposed = true; controller.abort() }
   }, [authorizedFetch, filters, refresh, onError])
 
+  const callbackUrl = data?.callbackBaseUrl
+    ? `${data.callbackBaseUrl}?tenant_id=${encodeURIComponent(tenantId)}` : null
+
   return <section className="sales-card integration-card hook-overview" aria-labelledby="hook-title" aria-busy={loading}>
     <div className="card-heading">
       <div><p className="sales-eyebrow">ZOHO · EINGANG UND IMPORT</p><h2 id="hook-title">Hooks und Ereignisse</h2></div>
@@ -81,10 +84,16 @@ export function WebhookOverview({ authorizedFetch, platformAuthorizedFetch, appl
     {error && <div className="message error-message" role="alert">{error}</div>}
     {loading && <p role="status">Hook-Übersicht wird geladen …</p>}
     {data && <>
-      <p>Wirksame Basis-URL: <code className="hook-url">{data.callbackBaseUrl ?? 'Nicht konfiguriert / ungültig'}</code><br />
-        Quelle: {data.callbackUrlSource === 'tenantApp' ? 'Mandanten-AppSetting zoho.webhookUrl' : 'Nicht konfiguriert'}.<br />
-        Einrichten/ändern unter Tenant-Portal → SalesPlattform → AppSettings → Zoho Webhook-URL.<br />
-        <small>Die Registrierung ergänzt <code>?tenant_id=…</code> automatisch. Konfiguration ist kein Erreichbarkeitsnachweis.</small></p>
+      <p>Callback-URL für diesen Mandanten: <code className="hook-url">{callbackUrl ?? 'Nicht konfiguriert / ungültig'}</code><br />
+        <small>Diese vollständige Adresse wird bei der Registrierung an Zoho übergeben.
+          Die aktuell bei Zoho gespeicherte Adresse lässt sich unten prüfen.</small></p>
+      <details>
+        <summary>URL-Einstellung</summary>
+        <p>Gespeicherte Basisadresse: <code className="hook-url">{data.callbackBaseUrl ?? 'Nicht konfiguriert / ungültig'}</code><br />
+          Quelle: {data.callbackUrlSource === 'tenantApp' ? 'Mandanten-AppSetting zoho.webhookUrl' : 'Nicht konfiguriert'}.<br />
+          Ändern unter Tenant-Portal → SalesPlattform → AppSettings → Zoho Webhook-URL.
+          Dort die Basisadresse ohne Tenant-Parameter eintragen; die Registrierung ergänzt ihn automatisch.</p>
+      </details>
       {data.callbackUrlError && <div className="message error-message">{data.callbackUrlError}</div>}
       {!data.schemaCached && <div className="message">Zuerst den Job „Zoho-Schema cachen“ starten. Ohne Schema werden keine Hooks registriert.</div>}
       <ZohoHookCheck authorizedFetch={authorizedFetch} modules={data.subscriptions.map(x => x.module)} />

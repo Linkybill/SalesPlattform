@@ -477,6 +477,13 @@ public sealed class ZohoSyncService(
                 changes,
                 callConversationThresholdSeconds,
                 cancellationToken);
+            if (CanRebuildContactMarkers(run))
+            {
+                var sourceLeads = sourceRecords["Leads"].Select(recordMapper.Map).OfType<CrmCanonicalLead>().ToArray();
+                await repository.RebuildContactMarkersAsync(adapter.ProviderKey, "default", sourceLeads,
+                    DateTimeOffset.UtcNow, cancellationToken);
+                await repository.SaveChangesAsync(cancellationToken);
+            }
             run.Status = run.RecordsFailed == 0 ? "succeeded" : "completed_with_errors";
             run.CurrentModule = null;
             run.FinishedAt = DateTimeOffset.UtcNow;
@@ -509,6 +516,12 @@ public sealed class ZohoSyncService(
             throw;
         }
     }
+
+    public static bool CanRebuildContactMarkers(IntegrationSyncRun run)
+        => run.Mode == CrmSyncModes.Full && run.RecordsFailed == 0
+            && new[] { "Accounts", "Leads", "Calls", "Emails" }.All(module =>
+                run.Items.Any(item => item.Module.Equals(module, StringComparison.OrdinalIgnoreCase)
+                    && item.Status == "succeeded"));
 
     public static string[] NormalizeModules(IReadOnlyCollection<string>? requestedModules)
     {

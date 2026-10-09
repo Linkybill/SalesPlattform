@@ -90,6 +90,8 @@ try {
   assert.equal(await evaluate(`document.querySelectorAll('[aria-label="Hook-Ereignisse"] tbody tr').length`), 25);
   assert.ok(await evaluate(`document.querySelector('.hook-overview').textContent.includes('Mandanten-AppSetting zoho.webhookUrl')`));
   assert.ok(await evaluate(`document.querySelector('.hook-overview').textContent.includes('https://sales.example.test/api/integrations/zoho/webhook')`));
+  assert.equal(await evaluate(`document.querySelector('.hook-url').textContent`),
+    'https://sales.example.test/api/integrations/zoho/webhook?tenant_id=12345678-1234-4123-8123-123456789abc');
   assert.ok(await evaluate(`document.querySelector('.hook-overview').textContent.includes('Versuchslimit erreicht')`));
   assert.equal(await evaluate(`window.hookFixture.checkedModules.length`), 0, 'Overview must not trigger provider reads.');
   assert.equal(await evaluate(`window.hookFixture.jobRequests.length`), 0, 'Overview must never start a job automatically.');

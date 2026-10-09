@@ -45,7 +45,8 @@ public sealed record CrmConnectionTestResult(
     bool Connected,
     string? ApiDomain,
     IReadOnlyCollection<string> AvailableModules,
-    string? Error = null);
+    string? Error = null,
+    string? OrganizationId = null);
 
 public sealed record CrmFieldMetadata(
     string ApiName,

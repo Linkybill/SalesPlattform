@@ -1,5 +1,15 @@
 # Projektkontext
 
+## Schlummernde Leads: Kontaktzählung korrigiert (09.10.2026)
+
+Bei bestätigter Teamansicht konnten CRM-Tasks, einschließlich eigener
+Wiedervorlagen, bisher als Kundenkontakt gelten und R-07 fälschlich auflösen.
+Lokal korrigiert: Aufgaben zählen nicht als Kontakt; generische CRM-Aktivität
+ersetzt kein explizites Kontaktdatum. Fehlender Kontakt ist sofort fällig.
+Die historische Markerbereinigung erfolgt erst nach vollständigem fehlerfreiem
+Import der Kontaktquellen. Details in Regelwerk, Datenmodell und Betriebsstand.
+Keine bestätigte vollständige Übereinstimmung mit Zoho Analytics.
+
 ## Dashboard-Umstrukturierung (07.10.2026)
 
 Auf Benutzerauftrag ausschließlich Navigation und Darstellung an Screenshot
@@ -19,6 +29,16 @@ Reportzeiträume, weitere Auswertungen, aufklappbare Regellisten, CRM-Links,
 Zurückstellen, Pagination, Suche, Kennzahl-/Diagrammdetails, Escape/Fokus und
 390px-Ansicht. Desktop-Vorschau visuell geprüft. Die bekannte Vite-Warnung zum
 großen JavaScript-Chunk bleibt bestehen. Kein Deployment dieses Umbaus.
+
+## Bibliotheken und Webhook-Fix 06.10.2026
+
+Sales verwendet Shared **0.1.77** aus GitHub Packages. React **0.1.60** wurde
+frisch installiert und ist laut Registry weiterhin die neueste Veröffentlichung.
+Tenant-Callback-Fix mit den aktuellen Paketen nativ geprüft: Backend- und
+Frontendbuild sowie Webhook-, Report-, Usage- und Integrationsregressionen
+bestanden. Remote-Rollout benötigt die interaktive sudo-Eingabe des Operators;
+noch keine neue Live-Registrierung oder erfolgreiche Zustellung nachgewiesen.
+Details und Rolloutaufruf im [Betriebsstand](09-deployment-und-betriebsstand.md).
 
 ## Sicherungsstand 04.10.2026
 

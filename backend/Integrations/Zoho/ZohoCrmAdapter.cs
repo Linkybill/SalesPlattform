@@ -32,11 +32,28 @@ public sealed partial class ZohoCrmAdapter(
     public async Task<CrmConnectionTestResult> TestConnectionAsync(
         CancellationToken cancellationToken = default)
     {
-        // A connection test verifies authentication only. Module and field
-        // metadata belongs to the explicit schema-cache job and must not be
-        // fetched implicitly here.
+        // Read the organization through the same tenant connection used by
+        // notifications. Module/field metadata still belongs to the schema job.
         var token = await tokenService.GetAccessTokenAsync(cancellationToken);
-        return new CrmConnectionTestResult(ProviderKey, true, token.ApiDomain, []);
+        try
+        {
+            using var response = await SendAsync(HttpMethod.Get, "/crm/v8/org", cancellationToken);
+            using var document = await ParseDocumentAsync(response, cancellationToken);
+            var organizations = GetArray(document.RootElement, "org").ToArray();
+            var organizationId = organizations.Length == 1
+                ? GetString(organizations[0], "zgid") : null;
+            return new CrmConnectionTestResult(ProviderKey, true, token.ApiDomain, [],
+                string.IsNullOrWhiteSpace(organizationId)
+                    ? "Authentifizierung aktiv, aber Zoho liefert keine eindeutige Organisations-ID. Organisationsabgleich nicht möglich."
+                    : null, organizationId);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Never return or log provider bodies/credentials for this diagnosis.
+            logger.LogWarning("Zoho connection organization check failed ({ExceptionType}).", exception.GetType().Name);
+            return new CrmConnectionTestResult(ProviderKey, true, token.ApiDomain, [],
+                "Authentifizierung aktiv, aber die Organisation konnte nicht gelesen werden. ZohoCRM.org.READ und technische Logs prüfen; Organisation nicht bestätigt.");
+        }
     }
 
     public async Task<IReadOnlyCollection<string>> GetModulesAsync(

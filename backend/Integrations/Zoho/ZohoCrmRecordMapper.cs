@@ -25,7 +25,7 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             ["Leads"] =
             [
                 "id", "Full_Name", "First_Name", "Last_Name", "Company", "Email", "Phone",
-                "Lead_Status", "Lead_Source", "Last_Activity_Time", "Last_Call", "Call_Attempts",
+                "Lead_Status", "Lead_Source", "Last_Contact", "Last_Call", "Call_Attempts",
                 "Calls_Since_Conversation", "Owner", "Created_Time", "Modified_Time"
             ],
             ["Products"] =
@@ -238,7 +238,7 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             ZohoFieldReader.String(record.Payload, "Phone"),
             ZohoFieldReader.String(record.Payload, "Lead_Status", "Status"),
             ZohoFieldReader.String(record.Payload, "Lead_Source", "LeadSource"),
-            NormalizePlaceholderDate(ZohoFieldReader.DateTimeOffset(record.Payload, "Last_Activity_Time", "Last_Contact")),
+            NormalizePlaceholderDate(ZohoFieldReader.DateTimeOffset(record.Payload, "Last_Contact")),
             NormalizePlaceholderDate(ZohoFieldReader.DateTimeOffset(record.Payload, "Last_Call")),
             ZohoFieldReader.Int32(record.Payload, "Calls_Since_Conversation") ?? 0,
             ZohoFieldReader.Int32(record.Payload, "Call_Attempts", "anrufversuche") ?? 0,

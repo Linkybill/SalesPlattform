@@ -60,6 +60,13 @@ public interface ISalesCrmRepository
         Guid syncRunId,
         CancellationToken cancellationToken);
 
+    Task RebuildContactMarkersAsync(
+        string providerKey,
+        string connectionKey,
+        IReadOnlyCollection<CrmCanonicalLead> sourceLeads,
+        DateTimeOffset now,
+        CancellationToken cancellationToken);
+
     Task BackfillLeadActivityMarkersAsync(
         CancellationToken cancellationToken);
 

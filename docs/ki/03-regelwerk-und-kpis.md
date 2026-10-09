@@ -1,5 +1,27 @@
 # Regelwerk, Priorisierung und KPIs
 
+## Kontaktmarker und R-07-Fälligkeit (09.10.2026)
+
+Die gemeldete geringe Trefferzahl wurde bei aktiver Team-Arbeitsliste eingegrenzt.
+Importierte Tasks, einschließlich eigener CRM-Wiedervorlagen und zukünftiger
+Fälligkeiten, zählen nicht als Kundenkontakt. E-Mails und qualifizierte Anrufe
+bis zum Berechnungszeitpunkt zählen weiterhin. Die erste Lead-Aktivität wird
+nicht durch das bloße Anlegen einer Aufgabe erfüllt. Last_Activity_Time ist
+kein Ersatz für ein explizites CRM-Kontaktdatum.
+
+R-07 mit fehlendem Kontaktdatum ist sofort fällig. Als Sortierdatum dient ein
+vorhandenes vergangenes Erstellungsdatum, sonst jetzt; es werden keine 90 Tage
+auf das Erstellungsdatum addiert. Bei vorhandenem Kontakt gilt unverändert
+Kontaktzeitpunkt plus tenantbezogener Inaktivitätsschwelle.
+
+Alte Task-bedingte Kontaktmarker werden nach einem fehlerfreien Vollimport
+mit vollständig erfolgreichen Accounts-, Leads-, Calls- und Emails-Modulen
+aus echten Aktivitäten und expliziten Quell-Kontaktdaten rekonstruiert. Danach
+läuft die bestehende Vollbewertung aller Regeln. Teilimporte oder Fehler
+lösen diese Rekonstruktion nicht aus. Deploy und erfolgreicher Vollimport
+sind für die Bereinigung bereits betroffener Kunden erforderlich.
+Dies ist keine vollständige Nachbildung der Zoho-Analytics-Auswahl (>5 Monate).
+
 ## Prioritätsscore
 
 Die einheitliche Arbeitsliste wird absteigend nach folgendem Score sortiert;
