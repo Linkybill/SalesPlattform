@@ -190,6 +190,56 @@
       }
     },
     {
+      "key": "sales.reports.firstMeetingTypes",
+      "name": "Terminarten für Erstgespräche",
+      "description": "Exakte CRM-Terminarten, durch Semikolon getrennt. Leerer Wert deaktiviert die Gruppe.",
+      "category": "Reports · Zuordnung",
+      "type": "string",
+      "defaultValue": "Erstgespräch; Ersttermin; Erstkontakt; Kennenlernen; First meeting; Initial meeting",
+      "scopes": [
+        "tenantApp"
+      ]
+    },
+    {
+      "key": "sales.reports.followUpMeetingTypes",
+      "name": "Terminarten für Folgetermine",
+      "description": "Exakte CRM-Terminarten, durch Semikolon getrennt. Überschneidungen mit Erstgesprächen bleiben unzugeordnet.",
+      "category": "Reports · Zuordnung",
+      "type": "string",
+      "defaultValue": "Folgetermin; Folgegespräch; Follow-up; Follow-up-Termin; Follow-up meeting; Follow up",
+      "scopes": [
+        "tenantApp"
+      ]
+    },
+    {
+      "key": "sales.reports.offerStageNames",
+      "name": "Pipeline-Stufen für offene Angebots-Deals",
+      "description": "Exakte Stufennamen, durch Semikolon getrennt. Separate Angebotsbelege werden unabhängig ausgewertet.",
+      "category": "Reports · Zuordnung",
+      "type": "string",
+      "defaultValue": "Angebot; Angebot versendet; Proposal; Proposal/Price Quote; Offer",
+      "scopes": [
+        "tenantApp"
+      ]
+    },
+    {
+      "key": "sales.reports.preparationDays",
+      "name": "Terminvorbereitung (Kalendertage)",
+      "description": "Vorschau einschließlich heute, unabhängig vom Reportzeitraum. UTC-Tagesgrenzen.",
+      "category": "Reports · Zuordnung",
+      "type": "integer",
+      "defaultValue": 5,
+      "scopes": [
+        "tenantApp"
+      ],
+      "validation": {
+        "minimum": 1,
+        "maximum": 90,
+        "step": 1,
+        "unit": "Tage"
+      }
+    },
+    {
       "key": "sales.callConversationThresholdSeconds",
       "name": "Mindestdauer für ein Gespräch (Sekunden)",
       "description": "Wert in Sekunden eintragen. Ein CRM-Anruf zählt ab dieser Dauer als qualifiziertes Gespräch. Mailbox, Nichterreichen und falscher Ansprechpartner bleiben unabhängig von der Dauer ein Versuch.",

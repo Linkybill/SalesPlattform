@@ -39,6 +39,9 @@ public sealed partial class SalesReportService(
         var rules = await applicationSettings.GetRuleConfigurationAsync(
             Guid.Parse(user.FindFirstValue("tenant_id")!), user.FindFirstValue("sub"), cancellationToken);
 
+        var reportConfiguration = await applicationSettings.GetReportConfigurationAsync(
+            Guid.Parse(user.FindFirstValue("tenant_id")!), user.FindFirstValue("sub"), cancellationToken);
+
         var canSeeManagement = SalesDashboardLayoutService.HasAnyRole(user, "sales-user", "sales-manager", "sales-management");
         var canSeeCleanup = SalesDashboardLayoutService.HasAnyRole(user, "sales-manager", "sales-management", "sales-backoffice");
         return new(
@@ -59,7 +62,7 @@ public sealed partial class SalesReportService(
             CanManageAnnualTargets = CanManageAnnualTargets(user),
             SourceSync = sourceSync,
             Evidence = BuildEvidence(model, period, now, rules.DealInactiveDays, rules.ContractRenewalHorizonDays,
-                canSeeManagement, canSeeCleanup)
+                canSeeManagement, canSeeCleanup, reportConfiguration)
         };
     }
 
@@ -97,8 +100,11 @@ public sealed partial class SalesReportService(
         var contracts = await db.SalesContracts.AsNoTracking().ToArrayAsync(cancellationToken);
         var activities = await db.SalesActivities.AsNoTracking().ToArrayAsync(cancellationToken);
         var appointments = await db.SalesAppointments.AsNoTracking()
+            .Include(appointment => appointment.Relations)
             .Include(appointment => appointment.StatusHistory)
+            .AsSplitQuery()
             .ToArrayAsync(cancellationToken);
+        var leads = await db.SalesLeads.AsNoTracking().ToArrayAsync(cancellationToken);
         var serviceCases = await db.SalesServiceCases.AsNoTracking().ToArrayAsync(cancellationToken);
         var offers = await db.SalesOffers.AsNoTracking().ToArrayAsync(cancellationToken);
         var orders = await db.SalesOrders.AsNoTracking().ToArrayAsync(cancellationToken);
@@ -141,7 +147,8 @@ public sealed partial class SalesReportService(
             links,
             categories,
             pipelines,
-            pipelineStages);
+            pipelineStages,
+            leads);
     }
 
     private static async Task<ReportPeriod> LoadPeriodAsync(
@@ -574,7 +581,8 @@ public sealed partial class SalesReportService(
         IReadOnlyCollection<IntegrationEntityLink> Links,
         IReadOnlyCollection<SalesProductCategory> Categories,
         IReadOnlyCollection<SalesPipeline> Pipelines,
-        IReadOnlyCollection<SalesPipelineStage> PipelineStages);
+        IReadOnlyCollection<SalesPipelineStage> PipelineStages,
+        IReadOnlyCollection<SalesLead> Leads);
 }
 
 public sealed record SalesDashboardResponse(

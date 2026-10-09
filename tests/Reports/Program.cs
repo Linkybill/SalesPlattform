@@ -57,7 +57,7 @@ SalesReportEvidence Build(Dictionary<string, object>? values = null, bool sales 
     values.TryAdd("Owners", new[] { owner });
     var ctor = modelType.GetConstructors().Single(c => c.GetParameters().Length > 1);
     var args = ctor.GetParameters().Select(p => values.GetValueOrDefault(p.Name!) ?? Array.CreateInstance(p.ParameterType.GetGenericArguments()[0], 0)).ToArray();
-    return (SalesReportEvidence)projection.Invoke(null, [ctor.Invoke(args), period, now, 10, 14, sales, cleanup])!;
+    return (SalesReportEvidence)projection.Invoke(null, [ctor.Invoke(args), period, now, 10, 14, sales, cleanup, SalesReportConfiguration.Default])!;
 }
 SalesDeal Deal(decimal amount, string status = "won", DateTimeOffset? closing = null) => new()
 {
@@ -167,3 +167,4 @@ Check(restricted.Metrics.Keys.All(k => !k.StartsWith("customer:") && !k.StartsWi
 Console.WriteLine($"Report evidence: {assertions} assertions passed; no database or CRM writes.");
 
 await ContactRegressions.Run();
+await AdditionalReportRegressions.Run();

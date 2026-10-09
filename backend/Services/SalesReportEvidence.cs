@@ -46,11 +46,12 @@ public sealed class SalesEvidenceBuilder
 public sealed partial class SalesReportService
 {
     private static SalesReportEvidence BuildEvidence(ReportModel model, ReportPeriod period, DateTimeOffset now,
-        int inactiveDays, int renewalDays, bool salesAccess, bool cleanupAccess)
+        int inactiveDays, int renewalDays, bool salesAccess, bool cleanupAccess, SalesReportConfiguration? reportConfiguration = null)
     {
         var b = new SalesEvidenceBuilder();
         var periodText = PeriodText(period);
         var current = $"Bestand am {now:dd.MM.yyyy} (UTC), unabhängig vom gewählten Zeitraum";
+        var relationships = new ReportRelationships(model);
         var owners = model.Owners.ToDictionary(o => o.Id, o => o.DisplayName);
         var customers = model.Customers.ToDictionary(c => c.Id, c => c.Name);
         var links = model.Links.Where(l => !string.IsNullOrWhiteSpace(l.ExternalUrl))
@@ -68,7 +69,8 @@ public sealed partial class SalesReportService
             $"angelegt: {d.SourceCreatedAt:dd.MM.yyyy}; Abschluss: {d.ClosingAt:dd.MM.yyyy}; " +
             $"letzte Aktivität: {d.LastActivityAt:dd.MM.yyyy}" + (d.ClosingAt is null ? "; Abschlussdatum fehlt: Änderungsdatum als Ersatz" : ""));
         SalesReportRow Appointment(SalesAppointment a) => Row("appointment", a.Id, a.Subject ?? "Termin", null, a.OwnerId,
-            AppointmentLabel(AppointmentState(a.Status)), a.StartsAt, detail: $"Angelegt: {a.SourceCreatedAt:dd.MM.yyyy HH:mm} UTC; Typ: {a.AppointmentType ?? "Ohne Typ"}; Verschiebungen: {a.RescheduleCount}");
+            AppointmentLabel(AppointmentState(a.Status)), a.StartsAt, detail: $"Angelegt: {a.SourceCreatedAt:dd.MM.yyyy HH:mm} UTC; Typ: {a.AppointmentType ?? "Ohne Typ"}; Verschiebungen: {a.RescheduleCount}; Branche: {relationships.AppointmentIndustry(a)}")
+            with { Customer = relationships.AppointmentNames(a) };
         SalesReportRow Call(SalesActivity a) => Row("activity", a.Id, a.Subject ?? "Telefonat", null, a.OwnerId,
             a.Result, a.OccurredAt, detail: $"Dauer: {a.DurationSeconds?.ToString() ?? "unbekannt"} s; qualifiziertes Gespräch: {(a.CountsAsConversation == true ? "ja" : "nein")}");
         SalesReportRow Target(SalesTarget t) => Row("target", t.Id, "Umsatzziel · " + (Owner(t.OwnerId) ?? "ohne Besitzer"), null,
@@ -213,6 +215,10 @@ public sealed partial class SalesReportService
             foreach (var group in selectedAppointments.GroupBy(a => a.AppointmentType ?? "Ohne Typ"))
                 b.Count("meeting-type:" + group.Key, group.Key, group.Select(Appointment), periodText, appointmentSource, "Anzahl Termine dieser Art mit Beginn im Zeitraum.");
         }
+
+        if (salesAccess)
+            BuildAdditionalEvidence(b, model, period, now, reportConfiguration ?? SalesReportConfiguration.Default,
+                relationships, Appointment, Deal);
 
         var cases = model.ServiceCases.Where(c => c.IsActive && c.SourceDeletedAt is null && InPeriod(c.OpenedAt ?? c.SourceCreatedAt, period)).ToArray();
         SalesReportRow Case(SalesServiceCase c) => Row("service-case", c.Id, c.Subject, c.CustomerId, c.OwnerId, c.Status, c.OpenedAt ?? c.SourceCreatedAt,

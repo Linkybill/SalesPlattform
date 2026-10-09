@@ -81,6 +81,14 @@ try {
   assert.equal(await evaluate(`document.querySelectorAll('.worklist-subtopic').length`), 13)
   await click('Meeting Report')
   await eventually(() => evaluate(`!!document.querySelector('.meeting-report-embedded .evidence-table')`), 'Meeting Report missing under Arbeit.')
+  assert.equal(await evaluate(`[...document.querySelectorAll('.meeting-report-embedded select')].find(s => s.value.startsWith('meetings:'))?.value`), 'meetings:preparation')
+  assert.equal(await evaluate(`document.querySelectorAll('.meeting-report-embedded .evidence-table tbody tr').length`), 3)
+  assert.ok(await evaluate(`document.querySelector('.meeting-report-embedded').textContent.includes('nächste 5 Tage')`))
+  await evaluate(`(() => { const select = [...document.querySelectorAll('select')].find(s => s.value === 'meetings:preparation'); select.value = 'meetings:week-cancelled'; select.dispatchEvent(new Event('change', { bubbles: true })) })()`)
+  await eventually(() => evaluate(`document.querySelectorAll('.meeting-report-embedded .evidence-table tbody tr').length === 1`), 'Separate weekly cancellations must be selectable.')
+  assert.ok(await evaluate(`document.querySelector('.meeting-report-embedded .evidence-table').textContent.includes('Abgesagt')`))
+  await evaluate(`(() => { const select = [...document.querySelectorAll('select')].find(s => s.value === 'meetings:week-cancelled'); select.value = 'meetings:week-rescheduled'; select.dispatchEvent(new Event('change', { bubbles: true })) })()`)
+  await eventually(() => evaluate(`document.querySelector('.meeting-report-embedded .evidence-table').textContent.includes('Keine passenden Datensätze.')`), 'Empty lists must remain explicit.')
   await click('Monatsreport')
   await eventually(() => evaluate(`!!document.querySelector('.metric-open')`), 'Steuerung did not render.')
   assert.equal(await evaluate(`document.querySelector('.report-toolbar select').value`), 'month')
@@ -108,7 +116,24 @@ try {
   await click('Monatsreport')
   await eventually(() => evaluate(`document.querySelector('.report-toolbar select').value === 'month'`), 'Month report did not select month.')
   await click('Jahresreport')
+  for (const [title, count] of [
+    ['Top-Produkte nach Anzahl', 2], ['Erstgespräche nach Branche', 2], ['Folgetermine nach Branche', 1],
+    ['Offene Angebots-Deals nach Branche · aktueller Bestand', 1],
+    ['Offene Angebotsbelege nach Branche · im Zeitraum', 3],
+  ]) {
+    await eventually(() => evaluate(`(() => { const heading = [...document.querySelectorAll('h3')].find(h => h.textContent === ${JSON.stringify(title)}); const button = heading?.parentElement.querySelector('.chart-detail-button'); if (!button) return false; button.click(); return true })()`), 'New report did not render: ' + title)
+    await eventually(() => evaluate(`document.querySelector('dialog').open`), 'New chart must open detail records: ' + title)
+    assert.equal(await evaluate(`document.querySelectorAll('dialog tbody tr').length`), count, 'Chart must open its own record set: ' + title)
+    await evaluate(`window.additionalReportDialogClosed = new Promise(resolve => document.querySelector('dialog').addEventListener('close', () => resolve(true), { once: true })); true`)
+    await click('Schließen ×')
+    await evaluate(`window.additionalReportDialogClosed`)
+  }
   await eventually(() => evaluate(`document.querySelector('.report-toolbar select').value === 'year'`), 'Year report did not select year.')
+  if (process.env.REPORT_TEST_REPORT_SCREENSHOT) {
+    await evaluate(`[...document.querySelectorAll('h2')].find(h => h.textContent.startsWith('Umsatz, Prozess und Chancen')).scrollIntoView()`)
+    const shot = await send('Page.captureScreenshot', { format: 'png' })
+    await writeFile(process.env.REPORT_TEST_REPORT_SCREENSHOT, Buffer.from(shot.data, 'base64'))
+  }
   await click('Allgemein - Lifetime')
   await eventually(() => evaluate(`document.querySelector('.report-toolbar select').value === 'lifetime'`), 'Lifetime report did not select lifetime.')
   const previousDocument = await evaluate('performance.timeOrigin')
@@ -162,7 +187,7 @@ try {
   await click('Alle in diesem Bereich')
   await eventually(() => evaluate(`document.querySelectorAll('.worklist-item').length === 2`), 'Theme overview must retain the other tasks.')
   assert.deepEqual(errors, [])
-  console.log('Browser smoke passed: work themes, report navigation, list/modal pagination, search, KPI/chart drilldown, Escape/focus, month/year and mobile layouts.')
+  console.log('Browser smoke passed: new report charts/drilldowns, preparation and separate status lists, work themes, report navigation, pagination/search, Escape/focus, month/year and mobile layouts.')
 } finally {
   socket?.close()
   for (const request of pending.values()) clearTimeout(request.timer)

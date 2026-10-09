@@ -1,5 +1,43 @@
 # Regelwerk, Priorisierung und KPIs
 
+## Ergänzte Reports aus Screenshot-Abgleich (09.10.2026)
+
+- Erstgespräche/Folgetermine nach Branche: aktive, nicht gelöschte Termine
+  nach Beginn im Reportzeitraum, alle Status. Exakte Terminarten aus
+  sales.reports.firstMeetingTypes und sales.reports.followUpMeetingTypes
+  (Semikolonlisten, Großschreibung/äußerer Leerraum ignoriert). Überlappende,
+  fehlende oder andere Arten werden in „Terminarten prüfen“ separat gezeigt.
+- Branche: Kundenverknüpfung direkt, über Deal oder über Lead mit Kundenbezug.
+  Derselbe Termin zählt trotz mehrerer Beziehungen nur einmal. Unterschiedliche
+  Branchen ergeben „Mehrere Branchen“, keine Zuordnung „Ohne Branche“.
+  Unaufgelöste Kontakte werden nicht zu erfundenen Kunden/Branchen.
+- Top-Produkte nach Anzahl: aktive gewonnene Deals mit Abschlussdatum im
+  Zeitraum; ersatzweise Änderungsdatum. Ein Deal = ein Produkt. Ranking nach
+  Anzahl, nicht Umsatz; fehlende Produkte bleiben enthalten. Top 8 plus
+  Sonstige, vollständige Nachweise und Gesamtzahl.
+- Offene Angebots-Deals nach Branche: aktueller offener nichtterminaler
+  Dealbestand in den konfigurierten sales.reports.offerStageNames, unabhängig
+  vom gewählten Abschlusszeitraum.
+- Offene Angebotsbelege nach Branche: aktive nicht abgeschlossene CRM-Belege
+  nach Ausstellungsdatum, ersatzweise Erstellungsdatum, im gewählten Zeitraum.
+  Kundenbezug ersatzweise über verknüpften Deal. Belege und Angebots-Deals
+  sind bewusst getrennt; keine Addition oder behauptete Gleichheit.
+- Terminvorbereitung: sales.reports.preparationDays (Standard 5, 1–90),
+  Kalendertage einschließlich heute mit UTC-Tagesgrenzen. Chronologisch,
+  vom Reportzeitraum unabhängig, einschließlich abgesagter/verschobener
+  Termine mit Status. Meeting Report zeigt sie standardmäßig.
+- Abgesagt, verschoben, durchgeführt und nicht stattgefunden stehen zusätzlich
+  als getrennte Zeitraum-/Wochenlisten bereit. Verschoben berücksichtigt
+  auch eine protokollierte Verschiebung bei inzwischen anderem Status.
+
+Alle Werte und Nachweiszeilen stammen aus derselben Dashboard-Antwort. Keine
+neue CRM-Abfrage beim Öffnen. Native Abnahme: 185 Report-Assertions, 25
+Kontaktregressionen und 113 zusätzliche Reportprüfungen bestanden, darunter
+echte tenantisolierte EF-Datenladung mit Terminbeziehungen. TypeScript, Vite,
+sechs Navigationsprüfungen und Chrome mit neuen Diagrammen/Detaildaten,
+Terminvorschau, getrennten Statuslisten, Suche/Pagination, Escape/Fokus sowie
+390px-Darstellung bestanden. Kein Live-Abgleich der Zoho-Analytics-Zahlen.
+
 ## Kontaktmarker und R-07-Fälligkeit (09.10.2026)
 
 Die gemeldete geringe Trefferzahl wurde bei aktiver Team-Arbeitsliste eingegrenzt.

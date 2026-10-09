@@ -53,17 +53,17 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             ["Events"] =
             [
                 "id", "Event_Title", "Subject", "What_Id", "Who_Id", "Owner", "Start_DateTime",
-                "End_DateTime", "Event_Status", "Type", "$event_cancelled", "Created_Time", "Modified_Time"
+                "End_DateTime", "Event_Status", "Type", "Appointment_Type", "$event_cancelled", "Created_Time", "Modified_Time"
             ],
             ["Meetings"] =
             [
                 "id", "Event_Title", "Subject", "What_Id", "Who_Id", "Owner", "Start_DateTime",
-                "End_DateTime", "Event_Status", "Type", "$event_cancelled", "Created_Time", "Modified_Time"
+                "End_DateTime", "Event_Status", "Type", "Appointment_Type", "$event_cancelled", "Created_Time", "Modified_Time"
             ],
             ["Appointments"] =
             [
                 "id", "Event_Title", "Subject", "What_Id", "Who_Id", "Owner", "Start_DateTime",
-                "End_DateTime", "Event_Status", "Type", "$event_cancelled", "Created_Time", "Modified_Time"
+                "End_DateTime", "Event_Status", "Type", "Appointment_Type", "$event_cancelled", "Created_Time", "Modified_Time"
             ],
             ["Cases"] =
             [

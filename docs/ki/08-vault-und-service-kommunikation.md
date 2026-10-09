@@ -78,6 +78,17 @@ Client-Secret und Refresh-Token werden nicht in der Sales-Datenbank abgelegt.
 Es gibt keinen app-eigenen `TokenProtectionKey`, keine Secret-DB-Verschlüsselung
 und keinen daraus abgeleiteten Schlüssel aus `RegistrationSecret`.
 
+## Report-Zuordnung (09.10.2026)
+
+Vier normale tenantApp-Settings in backend/manifest.json:
+sales.reports.firstMeetingTypes, sales.reports.followUpMeetingTypes und
+sales.reports.offerStageNames als Semikolonlisten exakter Anzeigenamen sowie
+sales.reports.preparationDays (Standard 5). Pflege im Tenant Portal unter
+SalesPlattform → AppSettings → Reports · Zuordnung. Keine Secrets, keine
+AppUser-Overrides, keine CRM-Schreibvorgänge. Ein leerer Listenwert deaktiviert
+die betreffende Gruppe. Änderungen werden mit der nächsten Reportabfrage
+verwendet. Neue Manifest-Einträge werden beim Backend-Rollout registriert.
+
 ## Kommunikationsweg
 
 ```text

@@ -1,5 +1,33 @@
 # Sales: Deployment- und Betriebsstand
 
+## Zusätzliche Reports implementiert und geprüft – 09.10.2026
+
+Benutzerauftrag: alle im Screenshot-Abgleich fehlenden Reports ergänzen.
+Umfang/Definitionen stehen in Projektkontext, Regelwerk und Entscheidungen.
+Native Windows-Releasebuilds ohne Warnungen/Fehler; 185 Report-Assertions,
+25 Kontaktregressionen und 113 neue Reportprüfungen bestanden. TypeScript,
+Vite-Produktionsbuild, sechs Navigationsprüfungen und vollständiger Chrome-Test
+einschließlich neuer Diagramme/Detaildaten, Terminvorbereitung, getrennter
+Statuslisten und 390px-Ansicht bestanden. Desktop-Vorschau visuell geprüft.
+Die bestehende Vite-Chunkgrößenwarnung bleibt. Bestehende Report-CI führt die
+neuen Backendprüfungen automatisch aus.
+
+Keine Migration, keine Paketaktualisierung, keine CRM-Schreibvorgänge.
+Reports verwenden bereits synchronisierte Daten; fehlende individuelle
+Terminarten können in den Tenant-AppSettings zugeordnet werden. Der
+Zoho-Mapper fordert zusätzlich Appointment_Type an, sofern das Feld im
+Schema existiert; bisher nicht geladene Feldwerte benötigen einen Import.
+Produktive Übereinstimmung mit separaten Zoho-Analytics-Formeln ist nicht
+nachgewiesen. Commit/Push und Release dieses Folgestands werden separat
+über die genaue Quellrevision dokumentiert.
+
+Vorheriger Rollout: b3415765003ba50336ae1f3473ae052bbb4744d8 über
+[37920346947](https://github.com/Linkybill/SalesPlattform/actions/runs/37920346947)
+erfolgreich abgeschlossen am 09.10.2026, 10:58:59 UTC. Enthält die
+Kontakt-/R-07-Korrektur und die zuvor offenen Diagnosen, noch nicht diese
+zusätzlichen Reports. Historische Kontaktmarker benötigen weiterhin einen
+vollständig erfolgreichen Full-Import.
+
 ## Veröffentlichung des offenen Sales-Stands beauftragt – 09.10.2026
 
 Benutzer beauftragt Commit/Push aller offenen Sales-Änderungen und den

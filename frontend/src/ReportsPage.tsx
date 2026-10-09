@@ -242,12 +242,51 @@ function TeamWebpart({ report }: { report: Team }) {
 }
 
 function MeetingsWebpart({ report }: { report: Meetings }) {
-  const [list, setList] = useState('meetings:week')
-  return <WebpartCard><h2>Termine · {report.periodName}</h2><div className="report-kpi-grid">{['new', 'week', 'planned', 'completion', 'no-show', 'reschedule'].map(key => <MetricTile key={key} metricKey={`meetings:${key}`} />)}</div><div className="report-columns"><div><h3>Nach Status</h3><EvidenceChart prefix="meeting-status:" /></div><div><h3>Nach Terminart</h3><EvidenceChart prefix="meeting-type:" /></div></div><h3>Terminlisten</h3><label>Liste auswählen<select value={list} onChange={e => setList(e.target.value)}><option value="meetings:week">Termine dieser Woche</option><option value="meetings:new">Neu angelegt im Zeitraum</option><option value="meetings:planned">Alle Termine im Zeitraum</option><option value="meetings:missed">Nicht stattgefunden / verschoben im Zeitraum</option></select></label><EvidenceTable key={list} metricKey={list} /></WebpartCard>
+  const [list, setList] = useState('meetings:preparation')
+  return <WebpartCard>
+    <h2>Termine · {report.periodName}</h2>
+    <div className="report-kpi-grid">{['new', 'week', 'planned', 'status-completed', 'status-cancelled', 'status-rescheduled', 'completion', 'no-show', 'reschedule'].map(key => <MetricTile key={key} metricKey={`meetings:${key}`} />)}</div>
+    <div className="report-columns"><div><h3>Nach Status</h3><EvidenceChart prefix="meeting-status:" /></div><div><h3>Nach Terminart</h3><EvidenceChart prefix="meeting-type:" /></div></div>
+    <h3>Terminlisten und Vorbereitung</h3>
+    <label>Liste auswählen<select value={list} onChange={e => setList(e.target.value)}>
+      <option value="meetings:preparation">Terminvorbereitung · nächste Tage</option>
+      <option value="meetings:week">Termine dieser Woche</option>
+      <option value="meetings:week-cancelled">Abgesagt · diese Woche</option>
+      <option value="meetings:week-rescheduled">Verschoben · diese Woche</option>
+      <option value="meetings:week-no-show">Nicht stattgefunden · diese Woche</option>
+      <option value="meetings:new">Neu angelegt im Zeitraum</option>
+      <option value="meetings:planned">Alle Termine im Zeitraum</option>
+      <option value="meetings:status-completed">Durchgeführt im Zeitraum</option>
+      <option value="meetings:status-cancelled">Abgesagt im Zeitraum</option>
+      <option value="meetings:status-rescheduled">Verschoben im Zeitraum</option>
+      <option value="meetings:missed">Nicht stattgefunden / verschoben im Zeitraum</option>
+      <option value="meetings:unclassified">Ohne eindeutige Erst-/Folgetermin-Zuordnung</option>
+    </select></label>
+    <MetricTile metricKey={list} />
+    <EvidenceTable key={list} metricKey={list} />
+  </WebpartCard>
 }
 
 function AnalysisWebpart({ report }: { report: Analysis }) {
-  return <WebpartCard><h2>Umsatz, Prozess und Chancen · {report.periodName}</h2><div className="report-columns report-columns-three">{[['Produkte', 'product:'], ['Branchen', 'industry:'], ['Regionen', 'region:'], ['Verlustgründe', 'loss:'], ['Verweildauer je Stufe', 'dwell:'], ['Produktkategorien pro Kunde', 'cross:']].map(([title, prefix]) => <div key={prefix}><h3>{title}</h3><EvidenceChart prefix={prefix} /></div>)}</div></WebpartCard>
+  return <WebpartCard>
+    <h2>Umsatz, Prozess und Chancen · {report.periodName}</h2>
+    <div className="report-columns report-columns-three">
+      {[
+        ['Umsatz nach Produkt', 'product:', null],
+        ['Umsatz nach Branche', 'industry:', null],
+        ['Top-Produkte nach Anzahl', 'product-count:', 'analysis:products-count'],
+        ['Erstgespräche nach Branche', 'meeting-first-industry:', 'analysis:first-meetings'],
+        ['Folgetermine nach Branche', 'meeting-follow-up-industry:', 'analysis:follow-up-meetings'],
+        ['Offene Angebots-Deals nach Branche · aktueller Bestand', 'offer-deal-industry:', 'analysis:offer-deals'],
+        ['Offene Angebotsbelege nach Branche · im Zeitraum', 'offer-document-industry:', 'analysis:offer-documents'],
+        ['Regionen', 'region:', null],
+        ['Verlustgründe', 'loss:', null],
+        ['Verweildauer je Stufe', 'dwell:', null],
+        ['Produktkategorien pro Kunde', 'cross:', null],
+      ].map(([title, prefix, total]) => <div key={prefix!}><h3>{title}</h3>{total && <MetricTile metricKey={total} />}<EvidenceChart prefix={prefix!} /></div>)}
+    </div>
+    <details><summary>Terminarten prüfen</summary><p>Erstgespräche und Folgetermine verwenden die Zuordnung in den Tenant-AppSettings. Andere oder mehrdeutig zugeordnete Terminarten stehen hier zur Prüfung.</p><MetricTile metricKey="meetings:unclassified" /><EvidenceTable metricKey="meetings:unclassified" /></details>
+  </WebpartCard>
 }
 
 function CustomersWebpart({ report }: { report: Customers }) {

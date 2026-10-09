@@ -1,5 +1,20 @@
 # Projektkontext
 
+## Fehlende Screenshot-Reports ergänzt (09.10.2026)
+
+Erstgespräche/Folgetermine nach Branche, Top-Produkte nach Anzahl, offene
+Angebots-Deals und separate Angebotsbelege nach Branche sind in Analyse und
+damit Monats-/Jahres-/Lifetime-Reports integriert. Meeting Report startet mit
+der konfigurierbaren Fünf-Tage-Terminvorbereitung und bietet getrennte
+Status-/Wochenlisten. Alle Diagramme öffnen die jeweiligen Detaildaten.
+Terminbeziehungen zu Kunden/Deals/Leads werden tenantisoliert mitgeladen.
+
+Zuordnung der Terminarten/Angebotsstufen über vier neue Tenant-AppSettings;
+fehlende oder mehrdeutige Terminarten bleiben prüfbar. Kein Schemawechsel
+oder CRM-Schreibweg. Definitionen/Prüfstand im Regelwerk und Betriebsstand.
+Die zuvor beauftragte Kontaktkorrektur b341576 wurde über Release
+37920346947 erfolgreich ausgerollt; die neuen Reports gehören zum Folgestand.
+
 ## Schlummernde Leads: Kontaktzählung korrigiert (09.10.2026)
 
 Bei bestätigter Teamansicht konnten CRM-Tasks, einschließlich eigener

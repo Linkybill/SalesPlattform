@@ -6,6 +6,42 @@ const keys = Object.keys(rows)
 const metrics = Object.fromEntries(['won', 'won-count', 'annual-target', 'attainment', 'win-rate', 'pipeline', 'coverage', 'cycle', 'recurring', 'stale', 'expiring', 'funnel:Teststufe', 'meetings:new', 'meetings:week', 'meetings:planned', 'meetings:missed', 'meetings:completion', 'meetings:no-show', 'meetings:reschedule', 'meeting-status:planned', 'meeting-type:Erstkontakt'].map(key => [key, {
   key, label: key === 'won' ? 'Gewonnener Umsatz' : key, value: key === 'won' ? 2700 : 27, unit: key === 'won' ? 'money' : 'count', currency: 'EUR', period: 'September 2026', source: 'Synthetische CRM-Daten', calculation: 'Summe aus 27 Testdatensätzen', unavailableReason: null, recordKeys: keys,
 }]))
+
+// Additional report fixtures deliberately use different record sets so a
+// miswired chart/list cannot pass by displaying the same 27 deals everywhere.
+for (let i = 0; i < 3; i++) {
+  const key = `appointment:extra-${i}`
+  rows[key] = { key, kind: 'appointment', name: `Vorbereitung ${i + 1}`, customer: 'Synthetischer Terminkunde',
+    owner: 'Test Vertrieb', status: i === 2 ? 'Abgesagt' : 'Geplant', date: `2026-09-${20 + i}T09:00:00Z`,
+    amount: 0, currency: 'EUR', detail: 'Typ: Erstgespräch; Branche: Testbranche', externalUrl: 'https://crm.example/meeting' }
+}
+const appointmentKeys = [0, 1, 2].map(i => `appointment:extra-${i}`)
+function additionalMetric(key: string, label: string, recordKeys: string[], period = 'September 2026') {
+  metrics[key] = { key, label, value: recordKeys.length, unit: 'count', currency: 'EUR', period,
+    source: 'Synthetische CRM-Daten', calculation: 'Anzahl eindeutig zugeordneter synthetischer Datensätze',
+    unavailableReason: null, recordKeys }
+}
+for (const [key, label, rowKeys] of [
+  ['product-count:group:Testprodukt', 'Testprodukt', keys.slice(0, 2)],
+  ['analysis:products-count', 'Verkaufte Produkte', keys.slice(0, 2)],
+  ['meeting-first-industry:group:Testbranche', 'Testbranche', appointmentKeys.slice(0, 2)],
+  ['analysis:first-meetings', 'Erstgespräche nach Branche', appointmentKeys.slice(0, 2)],
+  ['meeting-follow-up-industry:group:Testbranche', 'Testbranche', appointmentKeys.slice(2)],
+  ['analysis:follow-up-meetings', 'Folgetermine nach Branche', appointmentKeys.slice(2)],
+  ['offer-deal-industry:group:Testbranche', 'Testbranche', keys.slice(0, 1)],
+  ['analysis:offer-deals', 'Offene Angebots-Deals', keys.slice(0, 1)],
+  ['offer-document-industry:group:Testbranche', 'Testbranche', keys.slice(2, 5)],
+  ['analysis:offer-documents', 'Offene Angebotsbelege', keys.slice(2, 5)],
+  ['meetings:unclassified', 'Termine ohne eindeutige Typzuordnung', appointmentKeys.slice(1, 2)],
+  ['meetings:week-cancelled', 'Abgesagte Termine dieser Woche', appointmentKeys.slice(2)],
+  ['meetings:week-rescheduled', 'Verschobene Termine dieser Woche', []],
+  ['meetings:week-no-show', 'Nicht stattgefundene Termine dieser Woche', []],
+  ['meetings:status-completed', 'Durchgeführte Termine', []],
+  ['meetings:status-cancelled', 'Abgesagte Termine', appointmentKeys.slice(2)],
+  ['meetings:status-rescheduled', 'Verschobene Termine', []],
+] as [string, string, string[]][]) additionalMetric(key, label, rowKeys)
+additionalMetric('meetings:preparation', 'Terminvorbereitung · nächste 5 Tage', appointmentKeys, '19.09.2026–23.09.2026 (UTC), unabhängig vom Reportzeitraum')
+
 const reportKeys = ['cockpit', 'team', 'meetings', 'analysis', 'customers', 'goals', 'cleanup', 'service', 'commercial']
 const dashboard = {
   canManageAnnualTargets: true,

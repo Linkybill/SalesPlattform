@@ -1,5 +1,30 @@
 # Offene Punkte, Entscheidungen und Status
 
+## Fehlende Auswertungen aus Screenshot-Abgleich (09.10.2026)
+
+Benutzerauftrag: alle im Abgleich fehlenden Reports implementieren. Ergänzt werden
+Erstgespräche und Folgetermine nach Branche, Top-Produkte nach Anzahl gewonnener
+Deals sowie Terminvorbereitung für die nächsten fünf Kalendertage einschließlich
+heute. Offene Deals in Angebotsstufen und separate CRM-Angebotsbelege werden als
+getrennte Branchenauswertungen gezeigt; sie dürfen nicht addiert werden.
+
+Terminarten und Angebotsstufen sind über Tenant-AppSettings zuordenbar. Die
+Zuordnung erfolgt exakt (äußerer Leerraum/Großschreibung ignoriert), nicht aus Betreff
+oder Terminanzahl geraten. Nicht zugeordnete Terminarten bleiben als eigene
+Liste sichtbar. Produktanzahl zählt gewonnene Deals (ein Deal = ein Produkt),
+keine unterschiedlichen Produktnamen und keine Bestellpositionsmengen.
+
+Branche kommt aus verknüpften Kunden, auch über Deal bzw. Lead mit Kundenbezug.
+Ein Termin zählt genau einmal; mehrere unterschiedliche Branchen werden als
+„Mehrere Branchen“ ausgewiesen, fehlende Beziehungen als „Ohne Branche“.
+Termine verwenden ihren Beginn im Reportzeitraum, Produkte das Abschlussdatum
+(ersatzweise Änderungsdatum). Offene Angebots-Deals zeigen den aktuellen Bestand;
+Angebotsbelege verwenden wie die bestehende Belegauswertung das Ausstellungsdatum.
+Terminvorschau ist vom gewählten Reportzeitraum unabhängig, UTC-kalendertäglich,
+chronologisch und einschließlich abgesagter/verschobener Termine mit Status.
+Alle Werte und Detailzeilen stammen aus demselben tenantisolierten Snapshot.
+Keine CRM-Schreibvorgänge, keine Migration, keine neue Berechtigungsfreigabe.
+
 ## Korrektur schlummernder Leads (09.10.2026)
 
 Benutzerabgleich: Die Team-Arbeitsliste ist aktiv, zeigt aber erheblich weniger

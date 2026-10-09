@@ -40,6 +40,30 @@ public sealed class SalesApplicationSettingsService(
     public const string OrderDeliveryEscalationDaysKey = "sales.rules.orderDeliveryEscalationDays";
     public const string InvoiceOverdueGraceDaysKey = "sales.rules.invoiceOverdueGraceDays";
 
+    public const string FirstMeetingTypesKey = "sales.reports.firstMeetingTypes";
+    public const string FollowUpMeetingTypesKey = "sales.reports.followUpMeetingTypes";
+    public const string OfferStageNamesKey = "sales.reports.offerStageNames";
+    public const string PreparationDaysKey = "sales.reports.preparationDays";
+
+    public async Task<SalesReportConfiguration> GetReportConfigurationAsync(
+        Guid tenantId, string? userId, CancellationToken cancellationToken = default)
+    {
+        var settings = await LoadSettingsAsync(tenantId, userId, cancellationToken);
+        return new(
+            ReadNames(settings, FirstMeetingTypesKey, SalesReportConfiguration.Default.FirstMeetingTypes),
+            ReadNames(settings, FollowUpMeetingTypesKey, SalesReportConfiguration.Default.FollowUpMeetingTypes),
+            ReadNames(settings, OfferStageNamesKey, SalesReportConfiguration.Default.OfferStageNames),
+            ReadInteger(settings, PreparationDaysKey, 5, 1, 90));
+    }
+
+    private static string[] ReadNames(IReadOnlyDictionary<string, JsonElement> settings, string key, string[] fallback)
+    {
+        var value = FindValue(settings, key);
+        if (value is not { ValueKind: JsonValueKind.String }) return fallback;
+        return value.Value.GetString()!.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
     private const string LegacyContactInactiveMonthsKey = "sales.rules.contactInactiveMonths";
     private const string LegacyOwnerChangeAfterMonthsKey = "sales.rules.ownerChangeAfterMonths";
     private const string LegacyOwnerChangeNoContactMonthsKey = "sales.rules.ownerChangeNoContactMonths";
@@ -191,6 +215,15 @@ public sealed class SalesApplicationSettingsService(
             return number;
         return null;
     }
+}
+
+public sealed record SalesReportConfiguration(
+    string[] FirstMeetingTypes, string[] FollowUpMeetingTypes, string[] OfferStageNames, int PreparationDays)
+{
+    public static SalesReportConfiguration Default => new(
+        ["Erstgespräch", "Ersttermin", "Erstkontakt", "Kennenlernen", "First meeting", "Initial meeting"],
+        ["Folgetermin", "Folgegespräch", "Follow-up", "Follow-up-Termin", "Follow-up meeting", "Follow up"],
+        ["Angebot", "Angebot versendet", "Proposal", "Proposal/Price Quote", "Offer"], 5);
 }
 
 public sealed record SalesRuleConfiguration(
