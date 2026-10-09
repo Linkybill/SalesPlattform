@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 
 export type ReportRow = { key: string; kind: string; name: string; customer: string | null; owner: string | null;
   status: string | null; date: string | null; amount: number | null; currency: string | null; detail: string; externalUrl: string | null }
@@ -68,16 +68,70 @@ export function MetricLink({ metricKey }: { metricKey: string }) {
   const metric = evidence.metrics[metricKey]
   return metric ? <button className="metric-link" type="button" title={`${metric.label}: ${metric.unavailableReason ?? metric.calculation}`} onClick={() => open(metricKey)}>{metricValue(metric)}</button> : <span>–</span>
 }
-export function EvidenceChart({ prefix, suffix = '', labels = {} }: { prefix: string; suffix?: string; labels?: Record<string, string> }) {
+export function EvidenceChart({ prefix, suffix = '', labels = {}, variant = 'bar', title = 'Verteilung' }: {
+  prefix: string; suffix?: string; labels?: Record<string, string>; variant?: 'bar' | 'pie'; title?: string
+}) {
   const { evidence, open } = useEvidence()
   const metrics = Object.values(evidence.metrics).filter(m => m.key.startsWith(prefix) && m.key.endsWith(suffix))
+  if (!metrics.length) return <p className="muted">Keine Daten im ausgewählten Zeitraum.</p>
+  if (variant === 'pie') return <EvidencePie metrics={metrics} labels={labels} title={title} open={open} />
   const mixedCurrencies = new Set(metrics.filter(m => m.unit === 'money' && m.value !== null).map(m => m.currency)).size > 1
   const max = Math.max(1, ...metrics.map(m => m.value ?? 0))
-  return metrics.length ? <>{mixedCurrencies && <p className="muted">Unterschiedliche Währungen – Beträge ohne Umrechnung nicht als Balken vergleichbar.</p>}<ul className="breakdown-list">{metrics.map(metric => <li key={metric.key}>
+  return <>{mixedCurrencies && <p className="muted">Unterschiedliche Währungen – Beträge ohne Umrechnung nicht als Balken vergleichbar.</p>}<ul className="breakdown-list">{metrics.map(metric => <li key={metric.key}>
     <button type="button" className="chart-detail-button" onClick={() => open(metric.key)} aria-label={`${labels[metric.key] ?? metric.label}: ${metricValue(metric)}. Datensätze anzeigen`}>
       <span><strong>{labels[metric.key] ?? metric.label}</strong><span>{metricValue(metric)}</span></span>
       {!mixedCurrencies && <i aria-hidden="true"><b style={{ width: `${Math.max(0, (metric.value ?? 0) / max * 100)}%` }} /></i>}
-    </button></li>)}</ul></> : <p className="muted">Keine Daten im ausgewählten Zeitraum.</p>
+    </button></li>)}</ul></>
+}
+
+const pieColors = ['#2563eb', '#e11d48', '#0d9488', '#d97706', '#7c3aed', '#0284c7', '#c026d3', '#65a30d', '#475569']
+function EvidencePie({ metrics, labels, title, open }: {
+  metrics: ReportMetric[]; labels: Record<string, string>; title: string; open: (key: string) => void
+}) {
+  const currencies = new Set(metrics.filter(m => m.unit === 'money').map(m => m.currency))
+  const unavailable = currencies.size > 1 ? 'Unterschiedliche Währungen: Ohne Umrechnung sind keine gemeinsamen Anteile berechenbar.'
+    : metrics.some(m => m.value === null || !Number.isFinite(m.value)) ? 'Nicht alle Werte sind berechenbar. Die vorhandenen Datensätze bleiben über die Legende erreichbar.'
+    : metrics.some(m => m.value! < 0) ? 'Negative Werte lassen sich nicht als Kuchenanteile darstellen. Die Werte stehen in der Legende.'
+    : null
+  const total = unavailable ? 0 : metrics.reduce((sum, m) => sum + m.value!, 0)
+  const comparable = !unavailable && Number.isFinite(total) && total > 0
+  let position = 0
+  const segments = metrics.map((metric, index) => {
+    const share = comparable ? metric.value! / total : 0
+    const start = position * 2 * Math.PI - Math.PI / 2
+    position += share
+    const end = position * 2 * Math.PI - Math.PI / 2
+    const middle = (start + end) / 2
+    const percentage = number(share * 100) + ' %'
+    const label = `${labels[metric.key] ?? metric.label}: ${metricValue(metric)}${comparable ? `, ${percentage}` : ''}. Datensätze anzeigen`
+    return { metric, share, percentage, label, color: pieColors[index % pieColors.length],
+      path: `M 120 120 L ${120 + 100 * Math.cos(start)} ${120 + 100 * Math.sin(start)} A 100 100 0 ${share > .5 ? 1 : 0} 1 ${120 + 100 * Math.cos(end)} ${120 + 100 * Math.sin(end)} Z`,
+      labelX: 120 + 66 * Math.cos(middle), labelY: 120 + 66 * Math.sin(middle) }
+  })
+  return <div className="evidence-pie-chart">
+    {comparable ? <svg className="evidence-pie" viewBox="0 0 240 240" role="group" aria-label={`Kuchendiagramm: ${title}`}>
+      {segments.filter(s => s.share > 0).map(segment => {
+        const properties = { className: 'pie-segment', fill: segment.color, role: 'button', tabIndex: 0,
+          'aria-label': segment.label, onClick: () => open(segment.metric.key),
+          onKeyDown: (event: KeyboardEvent<SVGElement>) => {
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(segment.metric.key) }
+          } }
+        return <g key={segment.metric.key}>
+          {segment.share === 1
+            ? <circle {...properties} cx="120" cy="120" r="100"><title>{segment.label}</title></circle>
+            : <path {...properties} d={segment.path}><title>{segment.label}</title></path>}
+          {segment.share >= .06 && <text className="pie-percentage" x={segment.labelX} y={segment.labelY} dominantBaseline="middle" textAnchor="middle" aria-hidden="true">{segment.percentage}</text>}
+        </g>
+      })}
+    </svg> : <div className="pie-placeholder"><p className="muted">{unavailable ?? (Number.isFinite(total) ? 'Alle Werte sind 0 – keine Kuchenanteile vorhanden.' : 'Die Gesamtsumme ist nicht darstellbar.')}</p></div>}
+    <ul className="pie-legend" aria-label={`Legende: ${title}`}>{segments.map(segment => <li key={segment.metric.key}>
+      <button type="button" className="chart-detail-button pie-legend-button" onClick={() => open(segment.metric.key)} aria-label={segment.label}>
+        <i className="pie-color" style={{ backgroundColor: segment.color }} aria-hidden="true" />
+        <strong>{labels[segment.metric.key] ?? segment.metric.label}</strong>
+        <span className="pie-legend-value">{metricValue(segment.metric)}{comparable && <small>{segment.percentage}</small>}</span>
+      </button>
+    </li>)}</ul>
+  </div>
 }
 
 export function EvidenceTable({ metricKey }: { metricKey: string }) {

@@ -1,5 +1,23 @@
 # Regelwerk, Priorisierung und KPIs
 
+## Kuchendarstellung der Verteilungen (09.10.2026)
+
+Benutzerentscheidung: Umsatz nach Branche/Produkt, Erstgespräche/Folgetermine
+und beide offenen Angebotsauswertungen erhalten Kuchendiagramme. Ein Anteil
+entspricht dem vorhandenen Kennzahlwert geteilt durch die Summe aller
+Diagrammgruppen. Diese Division dient ausschließlich der Darstellung; Werte,
+Gruppierung, Zeiträume und Nachweise bleiben serverseitig unverändert.
+Sonstige bleibt eine vollständige, aufrufbare Gruppe; Nullwerte bleiben in der
+Legende ohne Segment. Keine gemeinsame Anteilssumme bei negativen Werten,
+nicht berechenbaren Gruppen oder unterschiedlichen Währungen. Bei Nullsumme
+steht eine Erklärung anstelle erfundener Anteile. Keine Migration/Neuimporte
+für diese reine Darstellungsänderung erforderlich.
+
+Native Abnahme: TypeScript und neun UI-/Navigationsprüfungen inklusive Anteilen,
+Vollkreis, Nullsumme, fehlenden/negativen Werten und Währungen bestanden.
+Chrome prüft sechs Kuchen, Segment- und Legendenklicks, Tastatur, Rückkehr des
+Fokus, Standard-Report-Einstieg und 390px-Ansicht. Desktop visuell geprüft.
+
 ## Ergänzte Reports aus Screenshot-Abgleich (09.10.2026)
 
 - Erstgespräche/Folgetermine nach Branche: aktive, nicht gelöschte Termine

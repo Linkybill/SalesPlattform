@@ -77,6 +77,7 @@ export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceE
     const choice = reportSections.find(s => s.key === key)
     if (choice?.timeframe) setTimeframe(choice.timeframe)
   }
+  const canShowAnalysis = !meetingOnly && dashboard?.analysis && filterReportLayout(dashboard.layout.nodes, ['analysis']).length > 0
   const Container = meetingOnly ? 'div' : 'main'
 
   const saveLayout = async () => {
@@ -118,7 +119,7 @@ export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceE
         <div>
           <p className="sales-eyebrow">SALESPLATTFORM · {meetingOnly ? 'ARBEIT' : 'STEUERUNG'}</p>
           <h2>{meetingOnly ? 'Meeting Report' : selected?.title ?? 'Steuerung'}</h2>
-          <p className="sales-lead">{meetingOnly ? 'Welche Termine wurden vereinbart, stehen an oder haben nicht stattgefunden?' : 'Klicke auf eine Kennzahl oder einen Diagrammbalken für die zugrunde liegenden Daten.'}</p>
+          <p className="sales-lead">{meetingOnly ? 'Welche Termine wurden vereinbart, stehen an oder haben nicht stattgefunden?' : 'Klicke auf eine Kennzahl, ein Kuchenstück oder einen Diagrammbalken für die zugrunde liegenden Daten.'}</p>
         </div>
         <div className="report-toolbar">
           <label>Zeitraum
@@ -131,6 +132,7 @@ export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceE
           <div className="report-toolbar-actions"><button className="secondary-button" type="button" onClick={() => void load()} disabled={loading || savingLayout}>{loading ? 'Wird geladen …' : 'Reports aktualisieren'}</button>{!meetingOnly && dashboard?.layout.canEdit && <button className={editing ? 'primary-button' : 'secondary-button'} type="button" onClick={() => { setEditing(current => !current); setLayoutMessage(null) }} disabled={savingLayout}>{editing ? 'Bearbeitung schließen' : 'Layout bearbeiten'}</button>}</div>
         </div>
       </section>
+      {canShowAnalysis && !selected?.reports.includes('analysis') && <p><button className="secondary-button" type="button" onClick={() => selectSection('analysis')}>Diagramme anzeigen</button></p>}
       {!meetingOnly && dashboard?.canManageAnnualTargets && <p><button type="button" className="secondary-button" onClick={() => setEditingTargets(true)}>Jahresziel festlegen</button></p>}
       {!meetingOnly && dashboard?.canManageAnnualTargets && editingTargets && <AnnualTargetsEditor key={`${activeTenantId}`} onClose={() => setEditingTargets(false)} onSaved={async () => {
         setEditingTargets(false)
@@ -272,8 +274,8 @@ function AnalysisWebpart({ report }: { report: Analysis }) {
     <h2>Umsatz, Prozess und Chancen · {report.periodName}</h2>
     <div className="report-columns report-columns-three">
       {[
-        ['Umsatz nach Produkt', 'product:', null],
         ['Umsatz nach Branche', 'industry:', null],
+        ['Umsatz nach Produkt', 'product:', null],
         ['Top-Produkte nach Anzahl', 'product-count:', 'analysis:products-count'],
         ['Erstgespräche nach Branche', 'meeting-first-industry:', 'analysis:first-meetings'],
         ['Folgetermine nach Branche', 'meeting-follow-up-industry:', 'analysis:follow-up-meetings'],
@@ -283,7 +285,7 @@ function AnalysisWebpart({ report }: { report: Analysis }) {
         ['Verlustgründe', 'loss:', null],
         ['Verweildauer je Stufe', 'dwell:', null],
         ['Produktkategorien pro Kunde', 'cross:', null],
-      ].map(([title, prefix, total]) => <div key={prefix!}><h3>{title}</h3>{total && <MetricTile metricKey={total} />}<EvidenceChart prefix={prefix!} /></div>)}
+      ].map(([title, prefix, total]) => <div key={prefix!}><h3>{title}</h3>{total && <MetricTile metricKey={total} />}<EvidenceChart prefix={prefix!} title={title!} variant={['product:', 'industry:', 'meeting-first-industry:', 'meeting-follow-up-industry:', 'offer-deal-industry:', 'offer-document-industry:'].includes(prefix!) ? 'pie' : 'bar'} /></div>)}
     </div>
     <details><summary>Terminarten prüfen</summary><p>Erstgespräche und Folgetermine verwenden die Zuordnung in den Tenant-AppSettings. Andere oder mehrdeutig zugeordnete Terminarten stehen hier zur Prüfung.</p><MetricTile metricKey="meetings:unclassified" /><EvidenceTable metricKey="meetings:unclassified" /></details>
   </WebpartCard>

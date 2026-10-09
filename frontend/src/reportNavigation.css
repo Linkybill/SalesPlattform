@@ -78,3 +78,18 @@
   .chart-detail-button > span { flex-wrap: wrap; }
   .report-kpi-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Each slice and its legend button share the same server-provided evidence. */
+.evidence-pie-chart { min-width: 0; }
+.evidence-pie { display: block; width: min(100%, 300px); height: auto; margin: 6px auto 14px; overflow: visible; }
+.pie-segment { stroke: var(--ip-surface, #101d30); stroke-width: 1.5; cursor: pointer; transition: filter .15s; }
+.pie-segment:hover { filter: brightness(1.15); stroke-width: 3; }
+.pie-segment:focus-visible { outline: none; stroke: var(--ip-text, #edf5ff); stroke-width: 4; }
+.pie-percentage { fill: #fff; stroke: rgb(0 0 0 / 65%); stroke-width: 2px; paint-order: stroke; font: 600 12px system-ui, sans-serif; pointer-events: none; }
+.pie-legend { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.pie-legend-button { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; gap: 9px; font-size: 12px; }
+.pie-legend-button > .pie-color { width: 12px; height: 12px; border-radius: 3px; }
+.pie-legend-button > strong { overflow-wrap: anywhere; }
+.pie-legend-button > .pie-legend-value { display: grid; justify-items: end; gap: 3px; margin: 0; }
+.pie-legend-value small { color: var(--ip-muted, #9aaac0); }
+.pie-placeholder { padding: 14px; border: 1px dashed var(--ip-border, #263d5c); border-radius: 8px; margin-bottom: 12px; }

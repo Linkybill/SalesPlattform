@@ -1,5 +1,24 @@
 # Sales: Deployment- und Betriebsstand
 
+## Kuchendiagramme und sichtbarer Report-Einstieg – 09.10.2026
+
+Benutzerkorrektur: Reports waren ergänzt, gewünschte Kuchendiagramme fehlten;
+der Report-Einstieg zeigte außerdem nur das Cockpit. Sechs Verteilungen sind
+jetzt interaktive SVG-Kuchen mit Werten/Prozenten und denselben Nachweisen.
+Steuerung startet im Jahresreport, Cockpit enthält „Diagramme anzeigen“.
+Keine Backend-/Import-/Paket-/Schemaänderung; kein erneuter Import für Kuchen.
+
+TypeScript, neun UI-/Navigationsprüfungen und vollständige native Chrome-Abnahme
+bestanden: sechs Kuchen, passende Detailzeilen bei Segment-/Legendenklicks,
+Tastatur/Fokus, Standard-Einstieg und 390px-Ansicht. Desktop-Vorschau visuell
+geprüft. Vite-Produktionsbuild bestanden; bekannte Chunkgrößenwarnung bleibt.
+Commit/Push und Veröffentlichung folgen über den Sales-Release.
+
+Vorheriger Report-Release
+[37925361464](https://github.com/Linkybill/SalesPlattform/actions/runs/37925361464)
+für 42bcd1ac8f43bf0582188e04b437dbe955112db4 erfolgreich abgeschlossen.
+Dieser veröffentlichte Stand enthält die Reportdaten, noch keine Kuchendarstellung.
+
 ## Zusätzliche Reports implementiert und geprüft – 09.10.2026
 
 Benutzerauftrag: alle im Screenshot-Abgleich fehlenden Reports ergänzen.

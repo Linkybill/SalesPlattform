@@ -1,5 +1,26 @@
 # Offene Punkte, Entscheidungen und Status
 
+## Kuchendiagramme und Einstieg in die Reports (09.10.2026)
+
+Benutzerkorrektur: Die gewünschten Kuchendiagramme fehlen trotz ergänzter
+Reportdaten. Die Screenshot-Verteilungen für Umsatz nach Branche/Produkt,
+Erstgespräche, Folgetermine und offene Angebote werden als echte, interaktive
+Kuchendiagramme mit Legende, Werten und Prozentanteilen dargestellt. Diese
+explizite Benutzerentscheidung ersetzt die Balkenvorgabe für Branche/Produkt
+in Abschnitt 13 des ursprünglichen Pflichtenhefts. Top-Produkte nach Anzahl,
+Verweildauer und sonstige Ranglisten behalten ihre sinnvolle Balkendarstellung.
+
+Segmente und Legende öffnen dieselben vorhandenen Nachweise, auch per Tastatur.
+Nullsummen, negative/nicht berechenbare Werte und verschiedene Währungen dürfen
+keine erfundenen Anteile ergeben. Alle Gruppen einschließlich Sonstige bleiben
+in der Legende und in den Detaildaten erreichbar.
+
+Der Einstieg /reports zeigt künftig den Jahresreport mit Kennzahlen und
+Diagrammen. Der ausdrücklich gewählte Cockpitbereich bleibt erreichbar und
+erhält einen direkten Verweis zu den Diagrammen. Sichtbarkeit und Rollen des
+gespeicherten Mandantenlayouts bleiben wirksam; keine stillschweigende
+Freischaltung ausgeblendeter Reports, kein Reset des Layouts oder der Daten.
+
 ## Fehlende Auswertungen aus Screenshot-Abgleich (09.10.2026)
 
 Benutzerauftrag: alle im Abgleich fehlenden Reports implementieren. Ergänzt werden

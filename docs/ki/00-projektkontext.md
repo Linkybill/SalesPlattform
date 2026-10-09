@@ -1,5 +1,20 @@
 # Projektkontext
 
+## Kuchendiagramme und Report-Einstieg korrigiert (09.10.2026)
+
+Nach Benutzerkorrektur zeigen Umsatz nach Branche/Produkt, Erstgespräche,
+Folgetermine und beide offenen Angebotsauswertungen echte SVG-Kuchendiagramme
+mit Legende, Werten und Prozenten. Segmente und Legende öffnen die vorhandenen
+Nachweise per Maus/Tastatur. Top-Produkte nach Anzahl bleiben als Rangliste.
+Der Einstieg /reports öffnet den Jahresreport mit Diagrammen; ein ausdrücklich
+gewähltes Cockpit bietet „Diagramme anzeigen“. Gespeicherte Sichtbarkeit und
+Berechtigungen bleiben wirksam. Keine Änderung von Berechnungen/Importdaten.
+
+TypeScript, neun Darstellungs-/Navigationsprüfungen und native Chrome-Abnahme
+mit sechs Kuchen, Segmentklicks, Tastatur/Fokus, richtigem Einstieg und Mobilansicht
+bestanden. Vorheriger Report-Release 37925361464 für 42bcd1a erfolgreich;
+diese Darstellung gehört zum Folgestand. Details im Betriebsstand.
+
 ## Fehlende Screenshot-Reports ergänzt (09.10.2026)
 
 Erstgespräche/Folgetermine nach Branche, Top-Produkte nach Anzahl, offene

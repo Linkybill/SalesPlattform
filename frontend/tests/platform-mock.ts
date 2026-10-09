@@ -42,6 +42,20 @@ for (const [key, label, rowKeys] of [
 ] as [string, string, string[]][]) additionalMetric(key, label, rowKeys)
 additionalMetric('meetings:preparation', 'Terminvorbereitung · nächste 5 Tage', appointmentKeys, '19.09.2026–23.09.2026 (UTC), unabhängig vom Reportzeitraum')
 
+
+for (const [key, label, recordKeys] of [
+  ['industry:group:Branche A', 'Branche A', keys.slice(0, 12)],
+  ['industry:group:Branche B', 'Branche B', keys.slice(12)],
+  ['product:group:Produkt A', 'Produkt A', keys.slice(0, 20)],
+  ['product:group:Produkt B', 'Produkt B', keys.slice(20)],
+] as [string, string, string[]][]) {
+  additionalMetric(key, label, recordKeys)
+  metrics[key].unit = 'money'
+  metrics[key].value = recordKeys.length * 100
+}
+additionalMetric('meeting-first-industry:group:Weitere Branche', 'Weitere Branche', appointmentKeys.slice(2))
+additionalMetric('analysis:first-meetings', 'Erstgespräche nach Branche', appointmentKeys)
+
 const reportKeys = ['cockpit', 'team', 'meetings', 'analysis', 'customers', 'goals', 'cleanup', 'service', 'commercial']
 const dashboard = {
   canManageAnnualTargets: true,

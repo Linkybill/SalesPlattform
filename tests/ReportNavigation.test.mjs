@@ -109,3 +109,47 @@ test('chart bars are keyboard-activatable drilldown buttons and support owner la
   assert.match(html, /aria-label="Vertrieb: 27 EUR. Datensätze anzeigen"/)
   assert.match(html, /width:100%/)
 })
+
+test('pie shares, legend and accessible segments use the same metric values', () => {
+  const shareSnapshot = { metrics: {
+    'share:a': { ...metric, key: 'share:a', label: 'Branche A', value: 40 },
+    'share:b': { ...metric, key: 'share:b', label: 'Branche B', value: 60 },
+    'share:zero': { ...metric, key: 'share:zero', label: 'Ohne Umsatz', value: 0 },
+  }, records: snapshot.records }
+  const html = renderToStaticMarkup(React.createElement(evidence.ReportEvidenceProvider, { evidence: shareSnapshot, generatedAt: '2026-10-09' },
+    React.createElement(evidence.EvidenceChart, { prefix: 'share:', variant: 'pie', title: 'Umsatz nach Branche' })))
+  assert.match(html, /Kuchendiagramm: Umsatz nach Branche/)
+  assert.equal((html.match(/class="pie-segment"/g) ?? []).length, 2)
+  assert.equal((html.match(/class="chart-detail-button pie-legend-button"/g) ?? []).length, 3)
+  assert.match(html, /Branche A: 40 EUR, 40 %. Datensätze anzeigen/)
+  assert.match(html, /Branche B: 60 EUR, 60 %. Datensätze anzeigen/)
+  assert.match(html, /role="button" tabindex="0"/)
+  assert.doesNotMatch(html, /NaN|Infinity/)
+})
+
+test('a single positive slice renders a full circle and other groups stay in the legend', () => {
+  const data = { metrics: { 'share:only': { ...metric, key: 'share:only', value: 10 }, 'share:other': { ...metric, key: 'share:other', label: 'Sonstige', value: 0 } }, records: snapshot.records }
+  const html = renderToStaticMarkup(React.createElement(evidence.ReportEvidenceProvider, { evidence: data, generatedAt: '2026-10-09' },
+    React.createElement(evidence.EvidenceChart, { prefix: 'share:', variant: 'pie' })))
+  assert.match(html, /<circle/)
+  assert.doesNotMatch(html, /<path/)
+  assert.match(html, /100 %/)
+  assert.match(html, /Sonstige: 0 EUR/)
+})
+
+test('pie charts never invent shares for zero, missing, negative or mixed-currency values', () => {
+  for (const [values, currencies, message] of [
+    [[0, 0], ['EUR', 'EUR'], 'Alle Werte sind 0'],
+    [[null, 40], ['EUR', 'EUR'], 'Nicht alle Werte sind berechenbar'],
+    [[-10, 40], ['EUR', 'EUR'], 'Negative Werte'],
+    [[10, 40], ['EUR', 'USD'], 'Unterschiedliche Währungen'],
+  ]) {
+    const data = { metrics: Object.fromEntries(values.map((value, i) => ['share:' + i,
+      { ...metric, key: 'share:' + i, value, currency: currencies[i] }])), records: snapshot.records }
+    const html = renderToStaticMarkup(React.createElement(evidence.ReportEvidenceProvider, { evidence: data, generatedAt: '2026-10-09' },
+      React.createElement(evidence.EvidenceChart, { prefix: 'share:', variant: 'pie' })))
+    assert.ok(html.includes(message))
+    assert.doesNotMatch(html, /<svg|pie-percentage|NaN|Infinity/)
+    assert.equal((html.match(/class="chart-detail-button pie-legend-button"/g) ?? []).length, 2)
+  }
+})

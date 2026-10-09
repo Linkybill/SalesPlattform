@@ -1,5 +1,20 @@
 # Fachliche Anforderungen
 
+## Kuchendiagramme nach Benutzerkorrektur (09.10.2026)
+
+Die Verteilungen für Umsatz nach Branche/Produkt, Erstgespräche, Folgetermine
+und offene Angebote werden als Kuchendiagramme mit Prozentangaben und Legende
+angezeigt. Klick auf ein Segment oder einen Legendeneintrag öffnet den gleichen
+Datennachweis. Diese explizite Entscheidung ersetzt die ursprüngliche Vorgabe
+„kein Kreisdiagramm“ für Umsatz nach Branche. Top-Produkte nach Anzahl und
+Prozessranglisten behalten Balken. Daten ohne gültige gemeinsame Anteilssumme
+zeigen eine Erklärung und ihre Einträge, keine erfundenen Kuchenstücke.
+
+Der Einstieg in Steuerung (/reports ohne Bereich) zeigt den Jahresreport mit
+Kennzahlen und Diagrammen. Arbeit bleibt der allgemeine App-Einstieg. Explizite
+Bereichslinks einschließlich Cockpit bleiben erhalten; Cockpit verweist direkt
+auf die Diagramme. Sichtbarkeit und Rollen des Mandantenlayouts bleiben gültig.
+
 ## Struktur nach Screenshot (07.10.2026)
 
 Das Vertriebsdashboard besitzt eine gemeinsame horizontale Reiterleiste:

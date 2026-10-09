@@ -14,7 +14,7 @@ export function useDashboardSection(area: DashboardArea) {
   const search = useSyncExternalStore(subscribe, () => window.location.search)
   const key = new URLSearchParams(search).get('section')
   const choices = area === 'worklist' ? [...workThemes, { key: 'all' }, { key: 'other' }] : reportSections
-  return choices.some(choice => choice.key === key) ? key! : area === 'worklist' ? 'all' : 'cockpit'
+  return choices.some(choice => choice.key === key) ? key! : area === 'worklist' ? 'all' : 'year'
 }
 
 export function dashboardSectionUrl(area: DashboardArea, key: string) {
