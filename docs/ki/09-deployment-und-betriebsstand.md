@@ -1,5 +1,27 @@
 # Sales: Deployment- und Betriebsstand
 
+## Kuchendiagramme ausgerollt und öffentliche Dateien bestätigt – 09.10.2026
+
+Code-Revision 0bc837364b8603b323394e2865aa643f47378e4f auf main gepusht.
+[Release 37930929711](https://github.com/Linkybill/SalesPlattform/actions/runs/37930929711)
+erfolgreich abgeschlossen um 12:39:00 UTC; einschließlich CI mit den neun
+UI-/Navigationsprüfungen und App-Deployment. Arbeitsstand vor dieser reinen
+Nachweisdokumentation sauber.
+
+Direkt nach dem Bootstrap-Rollout lieferte der öffentliche Einstieg zunächst
+HTTP 503 mit „No running frontend component container is available.“
+Die zentrale Runtime läuft unabhängig vom Bootstrap; ohne Infrastrukturänderung
+wurde das Frontend in der Folgeprüfung erreichbar. Der genaue technische
+Auslöser der vorübergehend fehlenden Route wurde nicht separat nachgewiesen.
+
+Öffentliche HTTPS-Prüfung mit Windows-Zertifikatsprüfung: Einstieg HTTP 200,
+JavaScript /assets/index-SVG7Ynsu.js HTTP 200 mit Kuchendiagramm-Code sowie
+CSS /assets/index-DQezKPwX.css HTTP 200 mit .evidence-pie-chart. Damit ist die
+neue Darstellung tatsächlich ausgeliefert. Keine produktiven CRM-Daten,
+Tokens oder angemeldeten Reportantworten für diese Prüfung ausgelesen.
+Die fachliche Abnahme mit synthetischen Daten steht im folgenden Prüfstand.
+Keine zusätzlichen Runtime-/Plattform-Neustarts oder CRM-Änderungen.
+
 ## Kuchendiagramme und sichtbarer Report-Einstieg – 09.10.2026
 
 Benutzerkorrektur: Reports waren ergänzt, gewünschte Kuchendiagramme fehlten;

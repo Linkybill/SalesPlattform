@@ -12,8 +12,10 @@ Berechtigungen bleiben wirksam. Keine Änderung von Berechnungen/Importdaten.
 
 TypeScript, neun Darstellungs-/Navigationsprüfungen und native Chrome-Abnahme
 mit sechs Kuchen, Segmentklicks, Tastatur/Fokus, richtigem Einstieg und Mobilansicht
-bestanden. Vorheriger Report-Release 37925361464 für 42bcd1a erfolgreich;
-diese Darstellung gehört zum Folgestand. Details im Betriebsstand.
+bestanden. Kuchendarstellung 0bc8373 über Release 37930929711 erfolgreich
+ausgerollt; öffentliche HTML-/JS-/CSS-Antworten und Kuchendiagramm-Marker
+bestätigt. Kurzzeitig fehlte nach dem Rollout die Frontend-Route; Folgeprüfung
+HTTP 200 ohne zusätzlichen Infrastruktur-Eingriff. Details im Betriebsstand.
 
 ## Fehlende Screenshot-Reports ergänzt (09.10.2026)
 
