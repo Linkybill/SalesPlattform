@@ -5,16 +5,22 @@ namespace SalesPlattform.Backend.Services;
 // A normalized, public-data-only snapshot. A row is transmitted once even if
 // several metrics refer to it. Opening details cannot race a subsequent CRM sync.
 public sealed record SalesReportEvidence(Dictionary<string, SalesReportMetric> Metrics,
-    Dictionary<string, SalesReportRow> Records);
+    Dictionary<string, SalesReportRow> Records)
+{
+    public List<SalesReportPanel> Panels { get; init; } = [];
+}
 public sealed record SalesReportMetric(string Key, string Label, decimal? Value, string Unit,
     string? Currency, string Period, string Source, string Calculation, string? UnavailableReason,
     string[] RecordKeys);
 public sealed record SalesReportRow(string Key, string Kind, string Name, string? Customer, string? Owner,
-    string? Status, DateTimeOffset? Date, decimal? Amount, string? Currency, string Detail, string? ExternalUrl);
+    string? Status, DateTimeOffset? Date, decimal? Amount, string? Currency, string Detail, string? ExternalUrl)
+{
+    public DateTimeOffset? EndDate { get; init; }
+}
 
 public sealed class SalesEvidenceBuilder
 {
-    private static string CurrencyOrEuro(string? currency)
+    internal static string CurrencyOrEuro(string? currency)
         => string.IsNullOrWhiteSpace(currency) ? "EUR" : currency.Trim().ToUpperInvariant();
 
     public SalesReportEvidence Result { get; } = new([], []);
@@ -70,7 +76,7 @@ public sealed partial class SalesReportService
             $"letzte Aktivität: {d.LastActivityAt:dd.MM.yyyy}" + (d.ClosingAt is null ? "; Abschlussdatum fehlt: Änderungsdatum als Ersatz" : ""));
         SalesReportRow Appointment(SalesAppointment a) => Row("appointment", a.Id, a.Subject ?? "Termin", null, a.OwnerId,
             AppointmentLabel(AppointmentState(a.Status)), a.StartsAt, detail: $"Angelegt: {a.SourceCreatedAt:dd.MM.yyyy HH:mm} UTC; Typ: {a.AppointmentType ?? "Ohne Typ"}; Verschiebungen: {a.RescheduleCount}; Branche: {relationships.AppointmentIndustry(a)}")
-            with { Customer = relationships.AppointmentNames(a) };
+            with { Customer = relationships.AppointmentNames(a), EndDate = a.EndsAt };
         SalesReportRow Call(SalesActivity a) => Row("activity", a.Id, a.Subject ?? "Telefonat", null, a.OwnerId,
             a.Result, a.OccurredAt, detail: $"Dauer: {a.DurationSeconds?.ToString() ?? "unbekannt"} s; qualifiziertes Gespräch: {(a.CountsAsConversation == true ? "ja" : "nein")}");
         SalesReportRow Target(SalesTarget t) => Row("target", t.Id, "Umsatzziel · " + (Owner(t.OwnerId) ?? "ohne Besitzer"), null,
@@ -219,6 +225,9 @@ public sealed partial class SalesReportService
         if (salesAccess)
             BuildAdditionalEvidence(b, model, period, now, reportConfiguration ?? SalesReportConfiguration.Default,
                 relationships, Appointment, Deal);
+
+        if (salesAccess)
+            BuildSpecifiedReports(b, model, period, now, (reportConfiguration ?? SalesReportConfiguration.Default) with { RenewalDays = renewalDays });
 
         var cases = model.ServiceCases.Where(c => c.IsActive && c.SourceDeletedAt is null && InPeriod(c.OpenedAt ?? c.SourceCreatedAt, period)).ToArray();
         SalesReportRow Case(SalesServiceCase c) => Row("service-case", c.Id, c.Subject, c.CustomerId, c.OwnerId, c.Status, c.OpenedAt ?? c.SourceCreatedAt,

@@ -36,7 +36,7 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             ["Deals"] =
             [
                 "id", "Deal_Name", "Account_Name", "Amount", "Currency", "Stage", "Pipeline",
-                "Product_Name", "Product", "Contract_Term", "Duration_Months", "Contract_Start_Date",
+                "Product_Name", "Product", "Produkt", "Contract_Term", "Duration_Months", "Contract_Start_Date",
                 "Contract_End_Date", "Closing_Date", "Owner", "Reason_for_Loss__s", "Last_Activity_Time",
                 "Created_Time", "Modified_Time"
             ],
@@ -334,7 +334,7 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             ZohoFieldReader.LookupId(record.Payload, "Owner", "owner"),
             pipelineExternalId ?? pipeline,
             ZohoFieldReader.LookupId(record.Payload, "Stage") ?? stage,
-            ZohoFieldReader.LookupId(record.Payload, "Product", "Product_Name"));
+            ZohoFieldReader.LookupId(record.Payload, "Product", "Product_Name", "Produkt"));
     }
 
     private static CrmCanonicalDealStageHistory MapDealStageHistory(CrmExternalRecord record)

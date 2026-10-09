@@ -1,22 +1,24 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
+import type { ReportPanel } from './SpecifiedReports'
 
 export type ReportRow = { key: string; kind: string; name: string; customer: string | null; owner: string | null;
-  status: string | null; date: string | null; amount: number | null; currency: string | null; detail: string; externalUrl: string | null }
+  status: string | null; date: string | null; endDate?: string | null; amount: number | null; currency: string | null; detail: string; externalUrl: string | null }
 export type ReportMetric = { key: string; label: string; value: number | null; unit: string; currency: string | null;
   period: string; source: string; calculation: string; unavailableReason: string | null; recordKeys: string[] }
-export type ReportEvidence = { metrics: Record<string, ReportMetric>; records: Record<string, ReportRow> }
-const EvidenceContext = createContext<{ evidence: ReportEvidence; open: (key: string) => void } | null>(null)
+export type ReportEvidence = { metrics: Record<string, ReportMetric>; records: Record<string, ReportRow>; panels?: ReportPanel[] }
+const EvidenceContext = createContext<{ evidence: ReportEvidence; generatedAt: string; open: (key: string) => void } | null>(null)
 const number = (value: number, digits = 1) => value.toLocaleString('de-DE', { maximumFractionDigits: digits })
 export function metricValue(metric: ReportMetric) {
   if (metric.value === null) return 'Nicht berechenbar'
-  if (metric.unit === 'money') return metric.currency ? `${number(metric.value, 2)} ${metric.currency}` : number(metric.value, 2)
-  return number(metric.value, metric.unit === 'count' ? 0 : 1) + ({ percent: ' %', days: ' Tage', factor: ' ×', points: ' Pkt.' }[metric.unit] ?? '')
+  if (metric.unit === 'status') return ({ 0: 'Grün · auf Kurs', 1: 'Gelb · beobachten', 2: 'Rot · Handlungsbedarf' }[metric.value] ?? 'Nicht berechenbar')
+  if (metric.unit.includes('money')) return metric.currency ? `${number(metric.value, 2)} ${metric.currency}` : number(metric.value, 2)
+  return number(metric.value, metric.unit.includes('count') ? 0 : 1) + ({ percent: ' %', days: ' Tage', hours: ' Std.', km: ' km', factor: ' ×', points: ' Pkt.' }[metric.unit] ?? '')
 }
 export const safeCrmUrl = (url: string | null) => {
   try { const parsed = new URL(url ?? ''); return ['https:', 'http:'].includes(parsed.protocol) ? parsed.href : null } catch { return null }
 }
-function useEvidence() {
+export function useEvidence() {
   const value = useContext(EvidenceContext)
   if (!value) throw new Error('Report-Nachweis fehlt.')
   return value
@@ -33,7 +35,7 @@ export function ReportEvidenceProvider({ evidence, generatedAt, children }: { ev
     else { dialog.current?.close(); opener.current?.focus() }
   }, [metric])
   const open = (key: string) => { opener.current = document.activeElement as HTMLElement; setSelected(key) }
-  return <EvidenceContext.Provider value={{ evidence, open }}>
+  return <EvidenceContext.Provider value={{ evidence, generatedAt, open }}>
     {children}
     <dialog className="report-detail-dialog" ref={dialog} aria-labelledby="report-detail-title" onCancel={() => setSelected(null)} onClose={() => setSelected(null)} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); setSelected(null) } }}>
       {metric && <>
@@ -55,7 +57,7 @@ export function MetricTile({ metricKey }: { metricKey: string }) {
   const { evidence, open } = useEvidence()
   const metric = evidence.metrics[metricKey]
   if (!metric) return null
-  return <article className="report-kpi explained-kpi">
+  return <article className="report-kpi explained-kpi" data-status={metric.unit === 'status' ? metric.value ?? 'unknown' : undefined}>
     <button className="metric-open" type="button" onClick={() => open(metricKey)} aria-label={`${metric.label}: ${metricValue(metric)}. Datensätze anzeigen`}>
       <span>{metric.label}</span><strong>{metricValue(metric)}</strong><small>{metric.period}</small>
       <small>{metric.unavailableReason ?? 'Datensätze anzeigen ↗'}</small>
@@ -145,10 +147,10 @@ export function EvidenceTable({ metricKey }: { metricKey: string }) {
   return <div className="evidence-table">
     <label>Datensätze durchsuchen<input value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} type="search" placeholder="Name, Kunde, Mitarbeiter oder Status" /></label>
     <p className="muted">{filtered.length} von {rows.length} Datensätzen · Seite {current + 1} von {pageCount}</p>
-    <div className="table-wrap"><table><thead><tr><th>Datensatz / Kunde</th><th>Zuständig</th><th>Status</th><th>Datum</th><th>Betrag</th><th>Details</th><th>CRM</th></tr></thead>
+    <div className="table-wrap"><table><thead><tr><th>Datensatz / Kunde</th><th>Zuständig</th><th>Status</th><th>Datum / Von</th>{rows.some(row => row.endDate) && <th>Bis</th>}<th>Betrag</th><th>Details</th><th>CRM</th></tr></thead>
       <tbody>{filtered.slice(current * 25, (current + 1) * 25).map(row => <tr key={row.key}>
         <td><strong>{row.name}</strong><small className="table-note">{row.customer}</small></td><td>{row.owner ?? '–'}</td><td>{row.status ?? '–'}</td>
-        <td>{row.date ? new Date(row.date).toLocaleString('de-DE') : '–'}</td><td>{row.amount === null ? '–' : `${number(row.amount, 2)} ${row.currency ?? '(Währung fehlt)'}`}</td>
+        <td>{row.date ? new Date(row.date).toLocaleString('de-DE') : '–'}</td>{rows.some(r => r.endDate) && <td>{row.endDate ? new Date(row.endDate).toLocaleString('de-DE') : '–'}</td>}<td>{row.amount === null ? '–' : `${number(row.amount, 2)} ${row.currency ?? '(Währung fehlt)'}`}</td>
         <td>{row.detail || '–'}</td><td>{safeCrmUrl(row.externalUrl) && <a href={safeCrmUrl(row.externalUrl)!} target="_blank" rel="noopener noreferrer">Öffnen ↗</a>}</td>
       </tr>)}</tbody></table></div>
     {filtered.length === 0 && <p>Keine passenden Datensätze.</p>}

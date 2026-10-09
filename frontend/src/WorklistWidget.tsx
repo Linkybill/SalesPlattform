@@ -154,6 +154,7 @@ export function WorklistWidget({ compact = false, selectedTheme, onSelectTheme }
           </nav>}
           <div className="worklist-results">
             {meetingView ? <ReportsPage meetingOnly /> : <>
+            {!compact && !selectedRule && ['dormant', 'followups', 'renewals'].includes(theme) && <ReportsPage workReport={theme as 'dormant' | 'followups' | 'renewals'} />}
             <h3>{selectedRule ? ruleTitles[selectedRule] ?? response.rules.find(r => r.code === selectedRule)?.name : workThemes.find(g => g.key === theme)?.title ?? (theme === 'all' ? 'Alle Vorgänge' : 'Weitere Vorgänge')}</h3>
             {visibleItems.length === 0 && <div className="worklist-empty"><strong>Keine offenen Vorgänge in dieser Auswahl</strong><span>Nach der nächsten CRM-Synchronisation wird die Liste erneut bewertet.</span></div>}
             {visibleItems.length > 0 && <div className={`worklist-list ${compact ? 'worklist-list-compact' : ''}`}>

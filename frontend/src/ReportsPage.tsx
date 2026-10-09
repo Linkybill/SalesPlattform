@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import * as L from 'leaflet'
+import type { FeatureCollection } from 'geojson'
 import 'leaflet/dist/leaflet.css'
 import { useApplicationContext, usePlatformLog, createPlatformLogOperation } from '@hammer2fall/identity-platform-react'
+import { SupplementaryReports } from './SpecifiedReports'
+import { useEvidence } from './ReportEvidence'
 import { AnnualTargetsEditor } from './AnnualTargetsEditor'
 import { DashboardContentEditor, type LayoutNode, type ReportDefinition } from './DashboardContentEditor'
 import { dashboardTabs, reportSections, filterReportLayout } from './salesNavigation'
@@ -16,7 +19,7 @@ type Cockpit = {
 type Team = { periodName: string; timeSharePercent: number; members: { ownerId: string; name: string; wonRevenue: number; target: number; attainmentPercent: number; pace: number; openDealCount: number; pipelineAmount: number; appointmentCount: number; callCount: number; conversationCount: number; appointmentTypes: Breakdown[] }[]; appointmentTypes: Breakdown[] }
 type Meetings = { periodName: string; newAppointments: number; currentWeekAppointments: number; plannedAppointments: number; completedAppointments: number; cancelledAppointments: number; rescheduledAppointments: number; noShowAppointments: number; completionRatePercent: number; noShowRatePercent: number; rescheduleRatePercent: number; byType: Breakdown[]; byStatus: Breakdown[] }
 type Analysis = { periodName: string; byProduct: Breakdown[]; byIndustry: Breakdown[]; byRegion: Breakdown[]; lossReasons: Breakdown[]; stageDwell: { stage: string; dealCount: number; averageDays: number }[]; crossSelling: { customerId: string; customerName: string; categories: string[]; categoryCount: number }[] }
-type Customers = { periodName: string; customers: { id: string; name: string; ownerName: string | null; countryCode: string | null; postalCode: string | null; city: string | null; regionCode: string | null; addressLine1: string | null; houseNumber: string | null; latitude: number | null; longitude: number | null; lifetimeRevenue: number; lastContactAt: string | null; openDealCount: number; needsReview: boolean; externalUrl: string | null }[]; unmappedCount: number; regions: Breakdown[] }
+type Customers = { postalAreas?: FeatureCollection | null; periodName: string; customers: { currency?: string | null; industry?: string | null; status?: string | null; products?: string[]; id: string; name: string; ownerName: string | null; countryCode: string | null; postalCode: string | null; city: string | null; regionCode: string | null; addressLine1: string | null; houseNumber: string | null; latitude: number | null; longitude: number | null; lifetimeRevenue: number | null; lastContactAt: string | null; openDealCount: number; needsReview: boolean; externalUrl: string | null }[]; unmappedCount: number; regions: Breakdown[] }
 type Goals = { periodName: string; timeSharePercent: number; members: { ownerId: string; name: string; target: number; achieved: number; attainmentPercent: number; timeSharePercent: number; pace: number; status: string }[] }
 type Cleanup = { duplicates: { id: string; customerA: string; customerB: string; score: number; confidence: string; status: string; matchDetailsJson: string | null }[]; qualityFindings: Breakdown[]; openFindingCount: number }
 type Service = { periodName: string; totalCases: number; openCases: number; overdueCases: number; urgentCases: number; byStatus: Breakdown[]; byPriority: Breakdown[]; urgentItems: { id: string; subject: string; status: string; priority: string; openedAt: string | null; dueAt: string | null; customerName: string | null; externalUrl: string | null }[] }
@@ -25,13 +28,14 @@ type LayoutResponse = { nodes: LayoutNode[]; availableReports: ReportDefinition[
 type Dashboard = { canManageAnnualTargets?: boolean; sourceSync?: { mode: string; status: string; finishedAt: string; failedRecords: number } | null; evidence: ReportEvidence; generatedAt: string; timeframe: string; periodName: string; layout: LayoutResponse; cockpit: Cockpit | null; team: Team | null; meetings: Meetings | null; analysis: Analysis | null; customers: Customers | null; goals: Goals; cleanup: Cleanup | null; service: Service; commercial: Commercial }
 
 
-export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceEdit?: boolean; meetingOnly?: boolean }) {
+export function ReportsPage({ forceEdit = false, meetingOnly = false, workReport }: { forceEdit?: boolean; meetingOnly?: boolean; workReport?: 'dormant' | 'followups' | 'renewals' }) {
+  const embedded = meetingOnly || !!workReport
   const log = usePlatformLog()
   const { activeTenantId, authorizedFetch, error: platformError, user } = useApplicationContext()
   const section = useDashboardSection('reports')
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
-  const [chosenTimeframe, setTimeframe] = useState(meetingOnly ? 'month' : reportSections.find(s => s.key === section)?.timeframe ?? 'year')
-  const timeframe = (!meetingOnly && reportSections.find(s => s.key === section)?.timeframe) || chosenTimeframe
+  const [chosenTimeframe, setTimeframe] = useState(embedded ? 'month' : reportSections.find(s => s.key === section)?.timeframe ?? 'year')
+  const timeframe = (!embedded && reportSections.find(s => s.key === section)?.timeframe) || chosenTimeframe
   const requestVersion = useRef(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -43,8 +47,8 @@ export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceE
 
   useEffect(() => {
     const choice = reportSections.find(s => s.key === section)
-    if (!meetingOnly && choice?.timeframe) setTimeframe(choice.timeframe)
-  }, [meetingOnly, section])
+    if (!embedded && choice?.timeframe) setTimeframe(choice.timeframe)
+  }, [embedded, section])
 
   const load = useCallback(async () => {
     if (!user || !activeTenantId) return
@@ -77,8 +81,8 @@ export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceE
     const choice = reportSections.find(s => s.key === key)
     if (choice?.timeframe) setTimeframe(choice.timeframe)
   }
-  const canShowAnalysis = !meetingOnly && dashboard?.analysis && filterReportLayout(dashboard.layout.nodes, ['analysis']).length > 0
-  const Container = meetingOnly ? 'div' : 'main'
+  const canShowAnalysis = !embedded && dashboard?.analysis && filterReportLayout(dashboard.layout.nodes, ['analysis']).length > 0
+  const Container = embedded ? 'div' : 'main'
 
   const saveLayout = async () => {
     if (!dashboard) return
@@ -112,9 +116,9 @@ export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceE
   }
 
   return (
-    <Container className={meetingOnly ? 'meeting-report-embedded' : 'sales-page reports-page sales-dashboard'}>
-      {!meetingOnly && <DashboardNavigation area="reports" activeKey={selected?.key ?? section} />}
-      {!meetingOnly && <nav className="dashboard-secondary-nav" aria-label="Weitere Auswertungen"><span>Weitere Auswertungen</span>{available.filter(s => !dashboardTabs.some(tab => tab.area === 'reports' && tab.key === s.key)).map(s => <button type="button" key={s.key} className={s.key === selected?.key ? 'is-active' : ''} aria-current={s.key === selected?.key ? 'page' : undefined} onClick={() => selectSection(s.key)}>{s.title}</button>)}</nav>}
+    <Container className={embedded ? 'meeting-report-embedded' : 'sales-page reports-page sales-dashboard'}>
+      {!embedded && <DashboardNavigation area="reports" activeKey={selected?.key ?? section} />}
+      {!embedded && <nav className="dashboard-secondary-nav" aria-label="Weitere Auswertungen"><span>Weitere Auswertungen</span>{available.filter(s => !dashboardTabs.some(tab => tab.area === 'reports' && tab.key === s.key)).map(s => <button type="button" key={s.key} className={s.key === selected?.key ? 'is-active' : ''} aria-current={s.key === selected?.key ? 'page' : undefined} onClick={() => selectSection(s.key)}>{s.title}</button>)}</nav>}
       <section className="dashboard-section-heading">
         <div>
           <p className="sales-eyebrow">SALESPLATTFORM · {meetingOnly ? 'ARBEIT' : 'STEUERUNG'}</p>
@@ -123,18 +127,18 @@ export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceE
         </div>
         <div className="report-toolbar">
           <label>Zeitraum
-            <select value={timeframe} disabled={!meetingOnly && !!selected?.timeframe} onChange={event => setTimeframe(event.target.value)}>
+            <select value={timeframe} disabled={!embedded && !!selected?.timeframe} onChange={event => setTimeframe(event.target.value)}>
               <option value="month">Monat</option>
               <option value="year">Geschäftsjahr</option>
               <option value="lifetime">Lifetime</option>
             </select>
           </label>
-          <div className="report-toolbar-actions"><button className="secondary-button" type="button" onClick={() => void load()} disabled={loading || savingLayout}>{loading ? 'Wird geladen …' : 'Reports aktualisieren'}</button>{!meetingOnly && dashboard?.layout.canEdit && <button className={editing ? 'primary-button' : 'secondary-button'} type="button" onClick={() => { setEditing(current => !current); setLayoutMessage(null) }} disabled={savingLayout}>{editing ? 'Bearbeitung schließen' : 'Layout bearbeiten'}</button>}</div>
+          <div className="report-toolbar-actions"><button className="secondary-button" type="button" onClick={() => void load()} disabled={loading || savingLayout}>{loading ? 'Wird geladen …' : 'Reports aktualisieren'}</button>{!embedded && dashboard?.layout.canEdit && <button className={editing ? 'primary-button' : 'secondary-button'} type="button" onClick={() => { setEditing(current => !current); setLayoutMessage(null) }} disabled={savingLayout}>{editing ? 'Bearbeitung schließen' : 'Layout bearbeiten'}</button>}</div>
         </div>
       </section>
       {canShowAnalysis && !selected?.reports.includes('analysis') && <p><button className="secondary-button" type="button" onClick={() => selectSection('analysis')}>Diagramme anzeigen</button></p>}
-      {!meetingOnly && dashboard?.canManageAnnualTargets && <p><button type="button" className="secondary-button" onClick={() => setEditingTargets(true)}>Jahresziel festlegen</button></p>}
-      {!meetingOnly && dashboard?.canManageAnnualTargets && editingTargets && <AnnualTargetsEditor key={`${activeTenantId}`} onClose={() => setEditingTargets(false)} onSaved={async () => {
+      {!embedded && dashboard?.canManageAnnualTargets && <p><button type="button" className="secondary-button" onClick={() => setEditingTargets(true)}>Jahresziel festlegen</button></p>}
+      {!embedded && dashboard?.canManageAnnualTargets && editingTargets && <AnnualTargetsEditor key={`${activeTenantId}`} onClose={() => setEditingTargets(false)} onSaved={async () => {
         setEditingTargets(false)
         await load()
         setLayoutMessage('Jahresziele wurden in der Salesplattform gespeichert.')
@@ -148,6 +152,7 @@ export function ReportsPage({ forceEdit = false, meetingOnly = false }: { forceE
           {layoutMessage && <div className="message success-message">{layoutMessage}</div>}
           {editing && dashboard.layout.canEdit
             ? <><DashboardContentEditor nodes={draftNodes} reports={dashboard.layout.availableReports} onChange={setDraftNodes} /><div className="content-editor-footer"><button className="secondary-button" type="button" onClick={() => { setDraftNodes(dashboard.layout.nodes); setEditing(false) }} disabled={savingLayout}>Änderungen verwerfen</button><button className="primary-button" type="button" onClick={() => void saveLayout()} disabled={savingLayout}>{savingLayout ? 'Wird gespeichert …' : 'Reportseite speichern'}</button></div></>
+            : workReport ? (dashboard.analysis && filterReportLayout(dashboard.layout.nodes, ['contact-reports']).length > 0 ? <SupplementaryReports area={workReport} /> : <p>Kontaktreports sind im Layout ausgeblendet oder nicht freigegeben.</p>)
             : meetingOnly ? <LayoutRenderer nodes={filterReportLayout(dashboard.layout.nodes, ['meetings'])} dashboard={dashboard} />
             : <section className="sales-section-content"><LayoutRenderer nodes={filterReportLayout(dashboard.layout.nodes, selected?.reports ?? [])} dashboard={dashboard} /><p className="webpart-footnote">Die sichtbaren Report-Komponenten folgen dem gespeicherten Mandantenlayout. Ausgeblendete Reports können unter „Layout bearbeiten“ wieder eingeblendet werden.</p></section>}
         </ReportEvidenceProvider>
@@ -196,6 +201,7 @@ function renderWebpart(key: string, dashboard: Dashboard) {
     case 'goals': return <GoalsWebpart report={dashboard.goals} />
     case 'cleanup': return dashboard.cleanup ? <CleanupWebpart report={dashboard.cleanup} /> : null
     case 'service': return <ServiceWebpart report={dashboard.service} />
+    case 'contact-reports': return dashboard.analysis ? <WebpartCard><h2>Kontakt- und Wiedervorlagereports</h2><SupplementaryReports area="dormant" /><SupplementaryReports area="followups" /><SupplementaryReports area="renewals" /></WebpartCard> : null
     case 'commercial': return <CommercialWebpart report={dashboard.commercial} />
     default: return null
   }
@@ -220,7 +226,7 @@ function CockpitWebpart({ report }: { report: Cockpit }) {
       {['won', 'won-count', 'annual-target', 'attainment', 'win-rate', 'pipeline', 'coverage', 'cycle', 'recurring', 'stale', 'expiring'].map(key => <MetricTile key={key} metricKey={key} />)}
     </div>
     <h3>Offene Pipeline nach Stufe</h3><EvidenceChart prefix="funnel:" />
-  </WebpartCard>
+  <SupplementaryReports area="cockpit" /></WebpartCard>
 }
 
 function TeamWebpart({ report }: { report: Team }) {
@@ -240,7 +246,7 @@ function TeamWebpart({ report }: { report: Team }) {
         <td><MetricLink metricKey={`owner:${member.ownerId}:calls`} /> / <MetricLink metricKey={`owner:${member.ownerId}:conversations`} /></td>
       </tr>)}</tbody>
     </table></div>
-  </WebpartCard>
+  <SupplementaryReports area="team" /></WebpartCard>
 }
 
 function MeetingsWebpart({ report }: { report: Meetings }) {
@@ -266,12 +272,16 @@ function MeetingsWebpart({ report }: { report: Meetings }) {
     </select></label>
     <MetricTile metricKey={list} />
     <EvidenceTable key={list} metricKey={list} />
-  </WebpartCard>
+  <SupplementaryReports area="meetings" /></WebpartCard>
 }
 
 function AnalysisWebpart({ report }: { report: Analysis }) {
+  const { evidence } = useEvidence()
+  const [allGroups, setAllGroups] = useState(true)
+  const chartPrefix = (prefix: string) => allGroups && ['product:', 'industry:'].includes(prefix) && Object.keys(evidence.metrics).some(k => k.startsWith('full-' + prefix)) ? 'full-' + prefix : prefix
   return <WebpartCard>
     <h2>Umsatz, Prozess und Chancen · {report.periodName}</h2>
+    <label className="report-percent-toggle"><input type="checkbox" checked={allGroups} onChange={e => setAllGroups(e.target.checked)} />Alle Produkt- und Branchengruppen anzeigen</label>
     <div className="report-columns report-columns-three">
       {[
         ['Umsatz nach Branche', 'industry:', null],
@@ -285,31 +295,54 @@ function AnalysisWebpart({ report }: { report: Analysis }) {
         ['Verlustgründe', 'loss:', null],
         ['Verweildauer je Stufe', 'dwell:', null],
         ['Produktkategorien pro Kunde', 'cross:', null],
-      ].map(([title, prefix, total]) => <div key={prefix!}><h3>{title}</h3>{total && <MetricTile metricKey={total} />}<EvidenceChart prefix={prefix!} title={title!} variant={['product:', 'industry:', 'meeting-first-industry:', 'meeting-follow-up-industry:', 'offer-deal-industry:', 'offer-document-industry:'].includes(prefix!) ? 'pie' : 'bar'} /></div>)}
+      ].map(([title, prefix, total]) => <div key={prefix!}><h3>{title}</h3>{total && <MetricTile metricKey={total} />}<EvidenceChart prefix={chartPrefix(prefix!)} title={title!} variant={['product:', 'industry:', 'meeting-first-industry:', 'meeting-follow-up-industry:', 'offer-deal-industry:', 'offer-document-industry:'].includes(prefix!) ? 'pie' : 'bar'} /></div>)}
     </div>
     <details><summary>Terminarten prüfen</summary><p>Erstgespräche und Folgetermine verwenden die Zuordnung in den Tenant-AppSettings. Andere oder mehrdeutig zugeordnete Terminarten stehen hier zur Prüfung.</p><MetricTile metricKey="meetings:unclassified" /><EvidenceTable metricKey="meetings:unclassified" /></details>
-  </WebpartCard>
+  <SupplementaryReports area="analysis" />{report.periodName === "Lifetime" && <SupplementaryReports area="lifetime" />}</WebpartCard>
 }
 
 function CustomersWebpart({ report }: { report: Customers }) {
+  const [mapMode, setMapMode] = useState<'points' | 'revenue' | 'count'>('points')
   const [page, setPage] = useState(0)
-  const currentPage = Math.min(page, Math.max(0, Math.ceil(report.customers.length / 25) - 1))
-  const points = useMemo(() => report.customers.map(customer => toCustomerMapPoint(customer)).filter((point): point is CustomerMapPoint => point !== null), [report.customers])
+  const { generatedAt } = useEvidence()
+  const [filters, setFilters] = useState({ owner: '', industry: '', product: '', status: '', contact: '', revenue: '' })
+  const updateFilter = (key: keyof typeof filters, value: string) => { setFilters(old => ({ ...old, [key]: value })); setPage(0) }
+  const filtered = report.customers.filter(c =>
+    (!filters.owner || c.ownerName === filters.owner) &&
+    (!filters.industry || c.industry === filters.industry) &&
+    (!filters.product || c.products?.includes(filters.product)) &&
+    (!filters.status || c.status === filters.status) &&
+    (!filters.revenue || c.lifetimeRevenue !== null && c.lifetimeRevenue >= Number(filters.revenue)) &&
+    (!filters.contact || (filters.contact === 'missing' ? !c.lastContactAt : !!c.lastContactAt && Date.parse(generatedAt) - Date.parse(c.lastContactAt) >= Number(filters.contact) * 86400000)))
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(filtered.length / 25) - 1))
+  const points = useMemo(() => filtered.map(customer => toCustomerMapPoint(customer)).filter((point): point is CustomerMapPoint => point !== null), [filtered])
   const exactPoints = points.filter(point => !point.isFallback).length
   const fallbackPoints = points.length - exactPoints
 
   return <WebpartCard>
     <div className="card-heading"><div><p className="sales-eyebrow">KUNDENSTAMM · KARTE</p><h2>Kunden und Gebiete</h2></div><span className="worklist-refresh">{report.customers.length} Kunden · {report.unmappedCount} ohne exakte Koordinaten</span></div>
+    <div className="report-customer-filters" role="group" aria-label="Kunden filtern">
+      {(['owner', 'industry', 'product', 'status'] as const).map((key, index) => {
+        const options = [...new Set(report.customers.flatMap(c => key === 'product' ? c.products ?? [] : [key === 'owner' ? c.ownerName : c[key]]).filter((v): v is string => !!v))].sort()
+        return <label key={key}>{['Betreuer', 'Branche', 'Produkt', 'Kundenstatus'][index]}<select value={filters[key]} onChange={e => updateFilter(key, e.target.value)}><option value="">Alle</option>{options.map(v => <option key={v}>{v}</option>)}</select></label>
+      })}
+      <label>Letzter Kontakt<select value={filters.contact} onChange={e => updateFilter('contact', e.target.value)}><option value="">Alle</option><option value="30">Vor mindestens 30 Tagen</option><option value="90">Vor mindestens 90 Tagen</option><option value="180">Vor mindestens 180 Tagen</option><option value="missing">Nicht dokumentiert</option></select></label>
+      <label>Umsatz ab<input type="number" min="0" value={filters.revenue} onChange={e => updateFilter('revenue', e.target.value)} /></label>
+    </div>
+    <p className="muted">{filtered.length} von {report.customers.length} Kunden. Filter gelten für Kundenkarte und Kundentabelle; die Gebietsreports darunter zeigen den gesamten Bestand.</p>
+    <label>Kartendarstellung<select value={mapMode} onChange={e => setMapMode(e.target.value as typeof mapMode)}><option value="points">Kundenpunkte</option><option value="revenue" disabled={!report.postalAreas}>PLZ-Flächen nach Umsatz</option><option value="count" disabled={!report.postalAreas}>PLZ-Flächen nach Kundenanzahl</option></select></label>
+    {!report.postalAreas && <p className="muted">Für die Flächenansicht fehlen hinterlegte PLZ-Gebietsgrenzen. Kundenpunkte und Ranglisten sind verfügbar.</p>}
+    {mapMode !== 'points' && <p className="muted">Dunklere Flächen bedeuten höhere Werte innerhalb der gefilterten Kunden. Graue Flächen haben keine vergleichbaren Umsatzwerte. Klick zeigt den Wert; Gebiete ohne hinterlegte Grenze erscheinen weiterhin in der Tabelle.</p>}
     <div className="customer-map">
       <div className="customer-map-grid">
-        <CustomerLeafletMap points={points} />
+        <CustomerLeafletMap points={points} customers={filtered} postalAreas={report.postalAreas} mode={mapMode} />
         {points.length === 0 && <div className="customer-map-empty">Für die Kunden sind noch keine verwertbaren Standortdaten vorhanden.</div>}
       </div>
-      <div className="customer-map-copy"><strong>Deutschland als Startausschnitt</strong><span>Die Karte ist interaktiv. Mit den Zoom-Schaltflächen oder dem Mausrad kann der Ausschnitt verändert werden; „Deutschland“ setzt den Startausschnitt zurück und „Alle Standorte“ passt ihn an alle vorhandenen Kunden an. Exakte Koordinaten werden bevorzugt, ansonsten werden die verfügbaren Standortdaten als Näherung dargestellt.</span><small>{points.length} Kartenpositionen · {exactPoints} exakte Standorte · {fallbackPoints} Standort-Näherungen · {report.customers.length - points.length} ohne Kartenposition</small></div>
+      <div className="customer-map-copy"><strong>Deutschland als Startausschnitt</strong><span>Die Karte ist interaktiv. Mit den Zoom-Schaltflächen oder dem Mausrad kann der Ausschnitt verändert werden; „Deutschland“ setzt den Startausschnitt zurück und „Alle Standorte“ passt ihn an alle vorhandenen Kunden an. Exakte Koordinaten werden bevorzugt, ansonsten werden die verfügbaren Standortdaten als Näherung dargestellt. Dichte Standorte werden beim Herauszoomen gebündelt. Bei einheitlicher Währung zeigt die Punktgröße den Umsatz; bei verschiedenen Währungen bleiben die Punkte gleich groß.</span><small>{points.length} Kartenpositionen · {exactPoints} exakte Standorte · {fallbackPoints} Standort-Näherungen · {filtered.length - points.length} ohne Kartenposition</small></div>
     </div>
-    <div className="table-wrap"><table><thead><tr><th>Kunde</th><th>Betreuer</th><th>Standort</th><th>Gewonnener Umsatz (Lifetime)</th><th>Offene Deals</th><th></th></tr></thead><tbody>{report.customers.slice(currentPage * 25, (currentPage + 1) * 25).map(customer => <tr key={customer.id}><td><strong>{customer.name}</strong>{customer.needsReview && <small className="table-note">Prüfen</small>}</td><td>{customer.ownerName ?? '–'}</td><td>{formatCustomerLocation(customer)}</td><td><MetricLink metricKey={`customer:${customer.id}:revenue`} /></td><td><MetricLink metricKey={`customer:${customer.id}:open`} /></td><td>{safeCrmUrl(customer.externalUrl) && <a href={safeCrmUrl(customer.externalUrl)!} target="_blank" rel="noopener noreferrer">CRM ↗</a>}</td></tr>)}</tbody></table></div>
-    <div className="button-row"><button className="secondary-button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Zurück</button><span>Seite {currentPage + 1} von {Math.max(1, Math.ceil(report.customers.length / 25))} · {report.customers.length} Kunden</span><button className="secondary-button" disabled={(currentPage + 1) * 25 >= report.customers.length} onClick={() => setPage(currentPage + 1)}>Weiter</button></div>
-  </WebpartCard>
+    <div className="table-wrap"><table><thead><tr><th>Kunde</th><th>Betreuer</th><th>Standort</th><th>Gewonnener Umsatz (Lifetime)</th><th>Offene Deals</th><th></th></tr></thead><tbody>{filtered.slice(currentPage * 25, (currentPage + 1) * 25).map(customer => <tr key={customer.id}><td><strong>{customer.name}</strong>{customer.needsReview && <small className="table-note">Prüfen</small>}</td><td>{customer.ownerName ?? '–'}</td><td>{formatCustomerLocation(customer)}</td><td><MetricLink metricKey={`customer:${customer.id}:revenue`} /></td><td><MetricLink metricKey={`customer:${customer.id}:open`} /></td><td>{safeCrmUrl(customer.externalUrl) && <a href={safeCrmUrl(customer.externalUrl)!} target="_blank" rel="noopener noreferrer">CRM ↗</a>}</td></tr>)}</tbody></table></div>
+    <div className="button-row"><button className="secondary-button" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Zurück</button><span>Seite {currentPage + 1} von {Math.max(1, Math.ceil(filtered.length / 25))} · {report.customers.length} Kunden</span><button className="secondary-button" disabled={(currentPage + 1) * 25 >= filtered.length} onClick={() => setPage(currentPage + 1)}>Weiter</button></div>
+  <SupplementaryReports area="customers" /></WebpartCard>
 }
 
 type CustomerMapPoint = {
@@ -323,7 +356,8 @@ type CustomerMapPoint = {
 const GERMANY_MAP_CENTER: [number, number] = [51.1657, 10.4515]
 const GERMANY_MAP_ZOOM = 6
 
-function CustomerLeafletMap({ points }: { points: CustomerMapPoint[] }) {
+function CustomerLeafletMap({ points, customers, postalAreas, mode }: { points: CustomerMapPoint[]; customers: Customers['customers']; postalAreas?: FeatureCollection | null; mode: 'points' | 'revenue' | 'count' }) {
+  const [mapError, setMapError] = useState<string | null>(null)
   const mapElementRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
   const markerLayerRef = useRef<L.LayerGroup | null>(null)
@@ -341,11 +375,12 @@ function CustomerLeafletMap({ points }: { points: CustomerMapPoint[] }) {
 
     mapRef.current = map
     markerLayerRef.current = markerLayer
-    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => map.invalidateSize())
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => { if (mapRef.current === map) map.invalidateSize() })
     resizeObserver?.observe(mapElementRef.current)
-    window.setTimeout(() => map.invalidateSize(), 0)
+    const resizeTimer = window.setTimeout(() => { if (mapRef.current === map) map.invalidateSize() }, 0)
 
     return () => {
+      window.clearTimeout(resizeTimer)
       resizeObserver?.disconnect()
       markerLayerRef.current = null
       mapRef.current = null
@@ -358,20 +393,71 @@ function CustomerLeafletMap({ points }: { points: CustomerMapPoint[] }) {
     const markerLayer = markerLayerRef.current
     if (!map || !markerLayer) return
 
-    markerLayer.clearLayers()
-    for (const point of points) {
-      L.circleMarker([point.latitude, point.longitude], {
-        radius: point.isFallback ? 6 : 7,
-        color: point.isFallback ? '#fff0bd' : '#d7fbff',
-        weight: 2,
-        fillColor: point.isFallback ? '#f5c96b' : '#71e4ef',
-        fillOpacity: 0.9,
-      })
-        .bindPopup(createCustomerPopup(point))
-        .addTo(markerLayer)
+    if (mode !== 'points') {
+      if (!postalAreas) return
+      try {
+        const areas = postalAreas.features.filter(feature => {
+          const properties = feature.properties
+          return ['Polygon','MultiPolygon'].includes(feature.geometry?.type) &&
+            typeof properties?.countryCode === 'string' && typeof properties?.postalPrefix === 'string' && properties.postalPrefix.trim().length > 0
+        }).map(feature => {
+          const country = feature.properties!.countryCode.trim().toUpperCase()
+          const prefix = feature.properties!.postalPrefix.trim()
+          const matching = customers.filter(c => c.countryCode?.trim().toUpperCase() === country && c.postalCode?.trim().startsWith(prefix))
+          const comparable = matching.every(c => c.lifetimeRevenue !== null) && new Set(matching.map(c => c.currency ?? 'EUR')).size <= 1
+          const value = mode === 'count' ? matching.length : comparable ? matching.reduce((sum,c) => sum + (c.lifetimeRevenue ?? 0),0) : null
+          return {feature, country, prefix, matching, value, currency: matching[0]?.currency ?? 'EUR'}
+        })
+        const sameCurrency = mode === 'count' || new Set(areas.filter(a => a.matching.length).map(a => a.currency)).size <= 1
+        const maximum = Math.max(1,...areas.map(a => a.value ?? 0))
+        markerLayer.clearLayers()
+        for (const area of areas) {
+          const known = area.value !== null && sameCurrency
+          const popup = document.createElement('div')
+          popup.textContent = area.country + ' · PLZ ' + area.prefix + ' · ' + (known ? area.value!.toLocaleString('de-DE') + (mode === 'count' ? ' Kunden' : ' ' + area.currency) : 'Keine vergleichbare Umsatzsumme') + ' · ' + area.matching.length + ' Kunden'
+          L.geoJSON(area.feature, {style: {color:'#475569',weight:1,fillColor:known?'#0369a1':'#9ca3af',fillOpacity: known ? .15 + .7 * Math.max(0,area.value!) / maximum : .25}})
+            .bindPopup(popup).addTo(markerLayer)
+        }
+        if (!areas.length) setMapError('Keine gültigen PLZ-Flächen mit Land und PLZ-Präfix hinterlegt.')
+        else setMapError(null)
+      } catch {
+        markerLayer.clearLayers()
+        setMapError('Die hinterlegten PLZ-Grenzen konnten nicht dargestellt werden.')
+      }
+      return
     }
+    setMapError(null)
+    const comparable = new Set(points.filter(p => p.customer.lifetimeRevenue !== null).map(p => p.customer.currency ?? 'EUR')).size <= 1
+    const maxRevenue = Math.max(1, ...points.map(p => p.customer.lifetimeRevenue ?? 0))
+    const draw = () => {
+      markerLayer.clearLayers()
+      const groups = new Map<string, CustomerMapPoint[]>()
+      for (const point of points) {
+        const pixel = map.project([point.latitude, point.longitude], map.getZoom())
+        const key = map.getZoom() >= 16 ? point.customer.id : Math.floor(pixel.x / 44) + ':' + Math.floor(pixel.y / 44)
+        groups.set(key, [...(groups.get(key) ?? []), point])
+      }
+      for (const group of groups.values()) {
+        if (group.length > 1) {
+          const bounds = L.latLngBounds(group.map(p => [p.latitude, p.longitude] as [number, number]))
+          L.marker(bounds.getCenter(), { icon: L.divIcon({ className: 'customer-cluster', html: '<span>' + group.length + '</span>', iconSize: [36, 36] }) })
+            .bindTooltip(group.length + ' Kunden · zum Vergrößern anklicken')
+            .on('click', () => map.fitBounds(bounds, { padding: [35, 35], maxZoom: 16 })).addTo(markerLayer)
+          continue
+        }
+        const point = group[0]
+        L.circleMarker([point.latitude, point.longitude], {
+          radius: comparable ? 5 + 11 * Math.sqrt(Math.max(0, point.customer.lifetimeRevenue ?? 0) / maxRevenue) : 7,
+          color: point.isFallback ? '#fff0bd' : '#d7fbff', weight: 2,
+          fillColor: point.isFallback ? '#b45309' : '#0369a1', fillOpacity: 0.9,
+        }).bindPopup(createCustomerPopup(point)).addTo(markerLayer)
+      }
+    }
+    draw()
+    map.on('zoomend', draw)
     map.invalidateSize()
-  }, [points])
+    return () => { map.off('zoomend', draw) }
+  }, [points, customers, postalAreas, mode])
 
   const showGermany = () => mapRef.current?.setView(GERMANY_MAP_CENTER, GERMANY_MAP_ZOOM)
   const showAllLocations = () => {
@@ -382,6 +468,7 @@ function CustomerLeafletMap({ points }: { points: CustomerMapPoint[] }) {
   }
 
   return <>
+    {mapError && <p role="status">{mapError}</p>}
     <div className="customer-map-controls" role="group" aria-label="Kartenausschnitt ändern">
       <button type="button" onClick={showGermany}>Deutschland</button>
       <button type="button" onClick={showAllLocations}>Alle Standorte</button>
@@ -399,6 +486,9 @@ function createCustomerPopup(point: CustomerMapPoint) {
   const location = document.createElement('div')
   location.textContent = formatCustomerLocation(point.customer)
   root.append(location)
+  const values = document.createElement('div')
+  values.textContent = `Betreuer: ${point.customer.ownerName ?? '–'} · Umsatz: ${point.customer.lifetimeRevenue === null ? 'Nicht berechenbar' : point.customer.lifetimeRevenue.toLocaleString('de-DE') + ' ' + (point.customer.currency ?? 'EUR')} · Letzter Kontakt: ${point.customer.lastContactAt ? new Date(point.customer.lastContactAt).toLocaleDateString('de-DE') : 'Nicht dokumentiert'} · Offene Deals: ${point.customer.openDealCount}`
+  root.append(values)
 
   const details = document.createElement('small')
   details.textContent = `${point.locationBasis === 'exact' ? 'Exakter Standort' : `Standort-Näherung (${point.locationBasis})`} · Umsatz und Deal-Nachweise in der Tabelle unter der Karte`
@@ -505,7 +595,7 @@ function formatCustomerLocation(customer: Customers['customers'][number]) {
 }
 
 function GoalsWebpart({ report }: { report: Goals }) {
-  return <WebpartCard><h2>Teamziele · aktuelles Geschäftsjahr</h2><p className="muted">Pace ist die Zielerreichung abzüglich des verstrichenen Jahresanteils in Prozentpunkten. Ohne belastbares Jahresziel gibt es keine Zielerreichung oder Pace.</p><div className="table-wrap"><table><thead><tr><th>Mitarbeiter</th><th>Jahresziel</th><th>Umsatz Geschäftsjahr</th><th>Erreichung</th><th>Pace</th></tr></thead><tbody>{report.members.map(member => <tr key={member.ownerId}><td><strong>{member.name}</strong></td>{['target', 'achieved', 'attainment', 'pace'].map(key => <td key={key}><MetricLink metricKey={`owner:${member.ownerId}:${key}`} /></td>)}</tr>)}</tbody></table></div></WebpartCard>
+  return <WebpartCard><h2>Teamziele · aktuelles Geschäftsjahr</h2><p className="muted">Pace ist die Zielerreichung abzüglich des verstrichenen Jahresanteils in Prozentpunkten. Ohne belastbares Jahresziel gibt es keine Zielerreichung oder Pace.</p><div className="table-wrap"><table><thead><tr><th>Mitarbeiter</th><th>Jahresziel</th><th>Umsatz Geschäftsjahr</th><th>Erreichung</th><th>Pace</th></tr></thead><tbody>{report.members.map(member => <tr key={member.ownerId}><td><strong>{member.name}</strong></td>{['target', 'achieved', 'attainment', 'pace'].map(key => <td key={key}><MetricLink metricKey={`owner:${member.ownerId}:${key}`} /></td>)}</tr>)}</tbody></table></div><SupplementaryReports area="goals" /></WebpartCard>
 }
 
 function CleanupWebpart({ report }: { report: Cleanup }) {

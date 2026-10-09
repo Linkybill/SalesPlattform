@@ -38,6 +38,7 @@ public static class SalesWebPartCatalog
         new("goals", "Ziele und Pace", "Zielerreichung, Zeitanteil und Pace je Mitarbeiter.", "sales-user"),
         new("cleanup", "Aufräumen", "Datenqualität und mögliche Dubletten zur manuellen Prüfung.", "sales-cleanup"),
         new("service", "Servicefälle", "Beschwerden, Supportfälle, Prioritäten und Überfälligkeiten.", "sales-user"),
+        new("contact-reports", "Kontakte und Wiedervorlagen", "Kontaktalter, erfolglose Anrufe, Terminvorbereitung und auslaufende Verträge.", "sales-user"),
         new("commercial", "Angebote, Aufträge und Rechnungen", "Kommerzielle Kette von Angebot bis Zahlung.", "sales-user")
     ];
 

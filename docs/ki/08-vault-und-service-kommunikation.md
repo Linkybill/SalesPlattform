@@ -1,5 +1,22 @@
 # Vault, App-Settings und Service-Kommunikation
 
+## Zusätzliche Report-AppSettings (09.10.2026, lokal)
+
+Normale tenantApp-Einstellungen, keine Secrets:
+sales.reports.dormantMonths (5), disinterestStatuses, activeCustomerStatuses,
+lostCustomerStatuses sowie attainmentGreen/Red (90/70), winRateGreen/Red
+(35/20), coverageGreen/Red (3/2). Namenslisten sind exakt, ohne Beachtung
+der Groß-/Kleinschreibung, durch Semikolon getrennt. Schwellen sind im Manifest
+deklariert; widersprüchliche Ampelschwellen liefern keine erfundene Bewertung.
+
+sales.reports.locations ist ein JSON-Objekt für ergänzende Standorte.
+Schlüssel owner:<interne GUID> bzw. lead:<interne GUID>; Werte mit latitude,
+longitude, countryCode, postalCode. Leerer Standard: {}. Kanonische
+Kundenkoordinaten bleiben führend; keine CRM-Schreiboperation.
+Nur schematisches Beispiel: {"owner:<ID>":{"latitude":0,"longitude":0}}.
+Erfolglose-Anruf-Reports verwenden die vorhandenen sales.rules.call*-Grenzen.
+
+
 Abgleich: 19.09.2026. Diese Datei beschreibt die verbindlichen
 Anforderungen der SalesPlattform, keine Fehler- oder Datenhistorie.
 Paket-Pins am 06.10.2026: Shared 0.1.77 und React 0.1.60 (Registry geprüft).
@@ -177,3 +194,8 @@ Zoho- und fachliche Mail-Settings bleiben davon getrennt.
 Maßgebliche Sales-Dateien: `backend/manifest.json`,
 `backend/Integrations/Zoho/ZohoConfigurationService.cs` und
 `backend/Integrations/Zoho/ZohoConnectionStore.cs`.
+
+PLZ-Flächenansicht: sales.reports.postalAreas enthält eine GeoJSON-
+FeatureCollection mit Polygon/MultiPolygon, properties.countryCode und
+properties.postalPrefix. Kein externer Upload von Kundendaten. Fehlende,
+leere oder ungültige Grenzkonfiguration aktiviert keine erfundenen Flächen.

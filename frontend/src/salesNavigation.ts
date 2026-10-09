@@ -47,6 +47,7 @@ export const reportSections = [
   { key: 'goals', title: 'Ziele & Pace', reports: ['goals'] },
   { key: 'cleanup', title: 'Aufräumen', reports: ['cleanup'] },
   { key: 'service', title: 'Servicefälle', reports: ['service'] },
+  { key: 'contacts', title: 'Kontakte & Wiedervorlagen', reports: ['contact-reports'] },
   { key: 'commercial', title: 'Angebote, Aufträge & Rechnungen', reports: ['commercial'] },
 ] satisfies { key: string; title: string; reports: string[]; timeframe?: string }[]
 

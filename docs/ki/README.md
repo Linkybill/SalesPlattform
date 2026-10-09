@@ -16,6 +16,10 @@ geben, ersetzen aber nicht die Fachquelle unter `docs/pflichtenheft/`.
 | [`07-ziel-datenmodell.md`](./07-ziel-datenmodell.md) | Vollständige Tabellen-, Entitäten- und Importplanung inklusive aktuellem Implementierungsstatus |
 | [`08-vault-und-service-kommunikation.md`](./08-vault-und-service-kommunikation.md) | Aktueller Settings-/Credential-Vertrag, Vault-Zuständigkeit und Service-Authentisierung |
 
+| [09-deployment-und-betriebsstand.md](./09-deployment-und-betriebsstand.md) | Rolloutbelege und davon getrennter lokaler Prüfstand |
+| [10-report-screenshot-abgleich.md](./10-report-screenshot-abgleich.md) | Ausgangsbefund der Originalscreenshots |
+| [11-report-umsetzungsstand.md](./11-report-umsetzungsstand.md) | Reportkatalog, UI-Einstiege, Berechnungen und Datenvoraussetzungen |
+
 ## Pflegeprinzip
 
 Die Markdown-Fachspezifikation bleibt die kompakte Referenz. Änderungen an den

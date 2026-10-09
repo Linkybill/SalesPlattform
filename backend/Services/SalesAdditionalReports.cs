@@ -27,10 +27,11 @@ public sealed partial class SalesReportService
         {
             var groups = rows.DistinctBy(r => r.Key).GroupBy(groupKey, StringComparer.OrdinalIgnoreCase)
                 .OrderByDescending(g => g.Count()).ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase).ToArray();
-            foreach (var group in groups.Take(8))
+            var limit = prefix == "product-count:" ? 8 : int.MaxValue;
+            foreach (var group in groups.Take(limit))
                 builder.Count(prefix + "group:" + group.Key, group.Key, group, reportPeriod, source, title + ": " + calculation);
-            if (groups.Length > 8)
-                builder.Count(prefix + "__other", "Sonstige", groups.Skip(8).SelectMany(g => g), reportPeriod, source,
+            if (groups.Length > limit)
+                builder.Count(prefix + "__other", "Sonstige", groups.Skip(limit).SelectMany(g => g), reportPeriod, source,
                     title + $": übrige {groups.Length - 8} Gruppen nach den Top 8. " + calculation);
         }
 
@@ -115,7 +116,7 @@ public sealed partial class SalesReportService
         public string? CustomerName(Guid? id) => id.HasValue ? customers.GetValueOrDefault(id.Value)?.Name : null;
         public string CustomerIndustry(Guid? id) => NameOr(id.HasValue ? customers.GetValueOrDefault(id.Value)?.Industry : null, "Ohne Branche");
 
-        private Guid? RelationCustomer(SalesAppointmentRelation relation) => relation.TargetType switch
+        public Guid? RelationCustomer(SalesAppointmentRelation relation) => relation.TargetType switch
         {
             "customer" => relation.TargetId,
             "deal" => deals.GetValueOrDefault(relation.TargetId)?.CustomerId,

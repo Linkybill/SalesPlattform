@@ -1,5 +1,16 @@
 # Regelwerk, Priorisierung und KPIs
 
+## Zusätzliche Spezifikationsreports (09.10.2026, lokal)
+
+Die Reports sind in den vorhandenen Themenbereichen eingebunden; Details und
+Abgrenzungen stehen in [11-report-umsetzungsstand.md](11-report-umsetzungsstand.md).
+Neu sind insbesondere eigenständige Fünf-Monats-Kontaktlisten, jährliche
+Lifetime-Reihen, Stage-History-Conversion, gewichtete Pipeline, Arbeitszeit-
+Response, Cross-Selling/Churn, konfigurierbare Cockpit-Ampel sowie Monats-/
+Quartalsziele mit korrekter Rundung. Ein Report erzeugt keinen Kundenkontakt.
+Formeln/Zeiträume werden in der UI aus derselben Evidence-Antwort angezeigt.
+
+
 ## Kuchendarstellung der Verteilungen (09.10.2026)
 
 Benutzerentscheidung: Umsatz nach Branche/Produkt, Erstgespräche/Folgetermine

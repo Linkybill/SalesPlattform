@@ -2044,7 +2044,7 @@ public sealed class WorklistService(
         return start.AddHours((double)hours);
     }
 
-    private static double CalculateWorkingHours(
+    internal static double CalculateWorkingHours(
         DateTimeOffset start,
         DateTimeOffset end,
         SalesWorkCalendar? calendar)

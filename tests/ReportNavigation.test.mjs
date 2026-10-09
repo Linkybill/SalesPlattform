@@ -153,3 +153,29 @@ test('pie charts never invent shares for zero, missing, negative or mixed-curren
     assert.equal((html.match(/class="chart-detail-button pie-legend-button"/g) ?? []).length, 2)
   }
 })
+
+const supplementary = load('SpecifiedReports.tsx', { './ReportEvidence': evidence })
+function renderSupplementary(values, kind = 'stacked') {
+  const metrics = Object.fromEntries(values.map((value, index) => ['metric-' + index, {
+    key: 'metric-' + index, label: 'Series ' + index, value: value.value, unit: value.unit ?? 'money',
+    currency: value.currency ?? 'EUR', period: 'Synthetic year', source: 'Synthetic', calculation: 'Fixture',
+    unavailableReason: value.value === null ? 'Source missing' : null, recordKeys: [],
+  }]))
+  return renderToStaticMarkup(React.createElement(evidence.ReportEvidenceProvider, {
+    evidence: { metrics, records: {}, panels: [{key:'test',area:'test',title:'Test',kind,description:'',columns:values.map((_,i)=>'Series '+i),rows:[{label:'2026',metricKeys:Object.keys(metrics)}]}] },
+    generatedAt:'2026-10-09T12:00:00Z',
+  }, React.createElement(supplementary.SupplementaryReports, {area:'test'})))
+}
+test('supplementary charts preserve unavailable, negative and mixed-currency values in details', () => {
+  const unavailable=renderSupplementary([{value:null}], 'area')
+  assert.match(unavailable,/fehlen berechenbare Werte/)
+  assert.doesNotMatch(unavailable,/report-series-svg/)
+  const negative=renderSupplementary([{value:-5},{value:10}])
+  assert.match(negative,/Negative Werte/)
+  assert.doesNotMatch(negative,/report-stacked-track/)
+  const mixed=renderSupplementary([{value:10,unit:'calculated-money',currency:'EUR'},{value:20,unit:'calculated-money',currency:'USD'}],'line')
+  assert.match(mixed,/Unterschiedliche Währungen/)
+  assert.doesNotMatch(mixed,/report-series-svg/)
+  assert.match(mixed,/10 EUR/)
+  assert.match(mixed,/20 USD/)
+})

@@ -96,8 +96,11 @@ internal static class ZohoFieldReader
             return null;
         foreach (var fieldName in fieldNames)
         {
-            if (record.TryGetProperty(fieldName, out var value))
-                return value;
+            if (!record.TryGetProperty(fieldName, out var value)
+                || value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined
+                || value.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(value.GetString()))
+                continue;
+            return value;
         }
 
         return null;

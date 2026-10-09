@@ -1,5 +1,44 @@
 # Offene Punkte, Entscheidungen und Status
 
+## Vollständiger Reportumfang aus HTML und Screenshots (09.10.2026)
+
+Benutzer beauftragt ausdrücklich alle Reports aus der Original-HTML-Spezifikation
+und den vorhandenen Screenshots einschließlich UI-Einordnung. Zunächst ausdrücklich
+kein Deployment; anschließend am 09.10.2026 neuer Auftrag: push und deploy.
+Diese neueste Anweisung autorisiert Commit, Push und Sales-Release.
+
+Die vorhandenen Reports werden um historische Jahresverläufe, Funnel aus
+Stufenhistorie, Teamaktivitäten, Neu-/Bestandsumsatz, normalisierten ARR,
+Cross-Selling-Matrix, Regionen/Vorjahr, Ziele/Perioden und die Screenshotlisten
+ergänzt. Alle neuen Kennzahlen erhalten Quelle, Zeitraum, Formel und Nachweise.
+Fehlende Voraussetzungen ergeben eine begründete Nichtberechenbarkeit.
+
+Konflikte beider Vorlagen werden transparent aufgelöst: Kuchendiagramme bleiben
+gemäß Benutzerentscheidung; Verteilungen bieten alle Gruppen, Ranglisten behalten
+Top 8 + Sonstige. Screenshot-Produktzählung und verkaufte Deals sind getrennte
+Kennzahlen. Fünf-Monats-Kontaktreports ergänzen R-07, ändern dessen Regeln nicht.
+Konfigurierbare Typ-/Statuslisten werden verwendet, keine Ableitung aus
+Kundennamen/Betreff. Fachliche UI-Bereiche erben die bestehenden Reportrechte
+und Layoutsichtbarkeit; zusätzliche Reports sind direkt auffindbar.
+
+
+
+## Fachlicher Screenshot-Abgleich erneut geöffnet (09.10.2026)
+
+Benutzer meldet falsche Daten und fehlende Originalauswertungen. Die Original-
+Screenshots wurden jetzt visuell gelesen; die bisherige Umsetzung ist keine
+abgenommene Analytics-Parität. Verbindlicher Einzelvergleich:
+[Report-Abgleich](10-report-screenshot-abgleich.md). Jahres-/Monatsvergleich,
+individuelle Produktzählung gegenüber Dealanzahl, Top-8-Gruppierung und
+Schlummernde-Leads-Filter (> fünf Monate gegenüber R-07/90 Tage) weichen ab.
+Terminarten und Angebotsquelle sind ohne Quelldefinition nicht gleichzusetzen.
+
+Zunächst reproduzierbare Importfehler korrigieren: null/leere Aliaswerte dürfen
+befüllte Ersatzfelder nicht verdecken. Bereits unterstütztes Produkt-Feld bei
+Feldanforderung und Lookup-ID berücksichtigen. Keine geratenen Terminarten,
+Stages oder Produktnamen; keine CRM-Schreibvorgänge. Ein erfolgreicher
+synthetischer Test ersetzt weiterhin keinen produktiven Soll/Ist-Abgleich.
+
 ## Kuchendiagramme und Einstieg in die Reports (09.10.2026)
 
 Benutzerkorrektur: Die gewünschten Kuchendiagramme fehlen trotz ergänzter

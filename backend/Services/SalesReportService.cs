@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using System.Security.Claims;
 using IdentityPlatform.Shared.Authorization;
 using IdentityPlatform.Shared.Database;
@@ -53,7 +54,7 @@ public sealed partial class SalesReportService(
             canSeeManagement ? BuildTeam(model, period, now) : null,
             canSeeManagement ? BuildMeetings(model, period, now) : null,
             canSeeManagement ? BuildAnalysis(model, period, now) : null,
-            canSeeManagement ? BuildCustomers(model, period, now) : null,
+            canSeeManagement ? BuildCustomers(model, period, now) with { PostalAreas=reportConfiguration.PostalAreas } : null,
             BuildGoals(model, period, now),
             canSeeCleanup ? BuildCleanup(model) : null,
             BuildService(model, period, now),
@@ -62,7 +63,7 @@ public sealed partial class SalesReportService(
             CanManageAnnualTargets = CanManageAnnualTargets(user),
             SourceSync = sourceSync,
             Evidence = BuildEvidence(model, period, now, rules.DealInactiveDays, rules.ContractRenewalHorizonDays,
-                canSeeManagement, canSeeCleanup, reportConfiguration)
+                canSeeManagement, canSeeCleanup, reportConfiguration with { CallEmailAttempts=rules.CallEmailFollowUpAttempts, CallLongMin=rules.CallLongRunnerMinAttempts, CallLongMax=rules.CallLongRunnerMaxAttempts, CallUnreachableAfter=rules.CallNotReachableAfterAttempts })
         };
     }
 
@@ -88,7 +89,7 @@ public sealed partial class SalesReportService(
         CancellationToken cancellationToken)
     {
         var owners = await db.SalesOwners.AsNoTracking().ToArrayAsync(cancellationToken);
-        var customers = await db.SalesCustomers.AsNoTracking().ToArrayAsync(cancellationToken);
+        var customers = await db.SalesCustomers.AsNoTracking().Include(c => c.StatusHistory).AsSplitQuery().ToArrayAsync(cancellationToken);
         var deals = await db.SalesDeals.AsNoTracking()
             .Include(deal => deal.Customer)
             .Include(deal => deal.Owner)
@@ -98,7 +99,8 @@ public sealed partial class SalesReportService(
                 .ThenInclude(product => product!.Category)
             .ToArrayAsync(cancellationToken);
         var contracts = await db.SalesContracts.AsNoTracking().ToArrayAsync(cancellationToken);
-        var activities = await db.SalesActivities.AsNoTracking().ToArrayAsync(cancellationToken);
+        var activities = await db.SalesActivities.AsNoTracking().Include(a => a.Relations).AsSplitQuery().ToArrayAsync(cancellationToken);
+        var calendars = await db.SalesWorkCalendars.AsNoTracking().Include(c => c.WorkingHours).Include(c => c.Holidays).AsSplitQuery().ToArrayAsync(cancellationToken);
         var appointments = await db.SalesAppointments.AsNoTracking()
             .Include(appointment => appointment.Relations)
             .Include(appointment => appointment.StatusHistory)
@@ -148,7 +150,8 @@ public sealed partial class SalesReportService(
             categories,
             pipelines,
             pipelineStages,
-            leads);
+            leads,
+            calendars);
     }
 
     private static async Task<ReportPeriod> LoadPeriodAsync(
@@ -329,6 +332,7 @@ public sealed partial class SalesReportService(
             .GroupBy(link => link.InternalEntityId)
             .ToDictionary(group => group.Key, group => group.Select(item => item.ExternalUrl).FirstOrDefault(url => !string.IsNullOrWhiteSpace(url)));
         var dealsByCustomer = model.Deals.Where(IsActive).Where(deal => deal.CustomerId.HasValue).GroupBy(deal => deal.CustomerId!.Value).ToDictionary(group => group.Key, group => group.ToArray());
+        decimal? Revenue(Guid id) { var won=dealsByCustomer.GetValueOrDefault(id)?.Where(d=>IsStatus(d.Status,"won")).ToArray()??[]; return won.Select(d=>SalesEvidenceBuilder.CurrencyOrEuro(d.Currency)).Distinct().Count()>1?null:won.Sum(SafeAmount); }
         var rows = model.Customers.Where(customer => customer.IsActive && customer.SourceDeletedAt is null).Select(customer => new CustomerMapPoint(
             customer.Id,
             customer.Name,
@@ -341,12 +345,15 @@ public sealed partial class SalesReportService(
             customer.HouseNumber,
             customer.Latitude,
             customer.Longitude,
-            customer.LifetimeRevenue ?? 0m,
+            Revenue(customer.Id),
             customer.LastContactAt,
             dealsByCustomer.TryGetValue(customer.Id, out var deals) ? deals.Count(deal => IsStatus(deal.Status, "open")) : 0,
             customer.NeedsReview || !customer.Latitude.HasValue || !customer.Longitude.HasValue,
-            customerLinks.TryGetValue(customer.Id, out var url) ? url : null)).OrderByDescending(customer => customer.LifetimeRevenue).ToArray();
-        var regions = rows.GroupBy(row => PostalRegion(row.PostalCode)).OrderByDescending(group => group.Sum(row => row.LifetimeRevenue)).Select(group => new BreakdownReport(group.Key, group.Count(), group.Sum(row => row.LifetimeRevenue))).Take(20).ToArray();
+            customerLinks.TryGetValue(customer.Id, out var url) ? url : null)
+            { Industry = customer.Industry, Status = customer.Status,
+                Currency = dealsByCustomer.GetValueOrDefault(customer.Id)?.Where(d=>IsStatus(d.Status,"won")).Select(d=>SalesEvidenceBuilder.CurrencyOrEuro(d.Currency)).FirstOrDefault(),
+                Products = dealsByCustomer.GetValueOrDefault(customer.Id)?.Select(d => d.Product?.Name).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct().Cast<string>().ToArray() ?? [] }).OrderByDescending(customer => customer.LifetimeRevenue).ToArray();
+        var regions = rows.GroupBy(row => PostalRegion(row.PostalCode)).OrderByDescending(group => group.Sum(row => row.LifetimeRevenue)).Select(group => new BreakdownReport(group.Key, group.Count(), group.Any(r=>r.LifetimeRevenue is null)||group.Select(r=>r.Currency).Where(c=>c is not null).Distinct().Count()>1?null:group.Sum(row => row.LifetimeRevenue))).Take(20).ToArray();
         return new(period.Name, rows, rows.Count(row => row.NeedsReview), regions);
     }
 
@@ -582,7 +589,8 @@ public sealed partial class SalesReportService(
         IReadOnlyCollection<SalesProductCategory> Categories,
         IReadOnlyCollection<SalesPipeline> Pipelines,
         IReadOnlyCollection<SalesPipelineStage> PipelineStages,
-        IReadOnlyCollection<SalesLead> Leads);
+        IReadOnlyCollection<SalesLead> Leads,
+        IReadOnlyCollection<SalesWorkCalendar> Calendars);
 }
 
 public sealed record SalesDashboardResponse(
@@ -634,8 +642,17 @@ public sealed record BreakdownReport(string Label, int Count, decimal? Amount);
 public sealed record SalesAnalysisReport(string PeriodName, IReadOnlyCollection<BreakdownReport> ByProduct, IReadOnlyCollection<BreakdownReport> ByIndustry, IReadOnlyCollection<BreakdownReport> ByRegion, IReadOnlyCollection<BreakdownReport> LossReasons, IReadOnlyCollection<StageDwellReport> StageDwell, IReadOnlyCollection<CrossSellingReport> CrossSelling);
 public sealed record StageDwellReport(string Stage, int DealCount, double AverageDays);
 public sealed record CrossSellingReport(Guid CustomerId, string CustomerName, IReadOnlyCollection<string> Categories, int CategoryCount);
-public sealed record SalesCustomerReport(string PeriodName, IReadOnlyCollection<CustomerMapPoint> Customers, int UnmappedCount, IReadOnlyCollection<BreakdownReport> Regions);
-public sealed record CustomerMapPoint(Guid Id, string Name, string? OwnerName, string? CountryCode, string? PostalCode, string? City, string? RegionCode, string? AddressLine1, string? HouseNumber, decimal? Latitude, decimal? Longitude, decimal LifetimeRevenue, DateTimeOffset? LastContactAt, int OpenDealCount, bool NeedsReview, string? ExternalUrl);
+public sealed record SalesCustomerReport(string PeriodName, IReadOnlyCollection<CustomerMapPoint> Customers, int UnmappedCount, IReadOnlyCollection<BreakdownReport> Regions)
+{
+    public JsonElement? PostalAreas { get; init; }
+}
+public sealed record CustomerMapPoint(Guid Id, string Name, string? OwnerName, string? CountryCode, string? PostalCode, string? City, string? RegionCode, string? AddressLine1, string? HouseNumber, decimal? Latitude, decimal? Longitude, decimal? LifetimeRevenue, DateTimeOffset? LastContactAt, int OpenDealCount, bool NeedsReview, string? ExternalUrl)
+{
+    public string? Currency { get; init; }
+    public string? Industry { get; init; }
+    public string? Status { get; init; }
+    public string[] Products { get; init; } = [];
+}
 public sealed record SalesGoalsReport(string PeriodName, decimal TimeSharePercent, IReadOnlyCollection<GoalPaceReport> Members);
 public sealed record GoalPaceReport(Guid OwnerId, string Name, decimal Target, decimal Achieved, decimal AttainmentPercent, decimal TimeSharePercent, decimal Pace, string Status);
 public sealed record SalesCleanupReport(IReadOnlyCollection<DuplicateCandidateReport> Duplicates, IReadOnlyCollection<BreakdownReport> QualityFindings, int OpenFindingCount);

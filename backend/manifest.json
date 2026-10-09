@@ -190,6 +190,172 @@
       }
     },
     {
+      "key": "sales.reports.attainmentGreen",
+      "name": "Zielerreichung: grün über (%)",
+      "description": "Grenzwert der Cockpit-Statusampel. Zwischen Rot- und Grüngrenze gilt Gelb.",
+      "category": "Reports · Ampel",
+      "type": "integer",
+      "defaultValue": 90,
+      "scopes": [
+        "tenantApp"
+      ],
+      "validation": {
+        "minimum": 0,
+        "maximum": 1000,
+        "step": 1
+      }
+    },
+    {
+      "key": "sales.reports.attainmentRed",
+      "name": "Zielerreichung: rot unter (%)",
+      "description": "Grenzwert der Cockpit-Statusampel. Zwischen Rot- und Grüngrenze gilt Gelb.",
+      "category": "Reports · Ampel",
+      "type": "integer",
+      "defaultValue": 70,
+      "scopes": [
+        "tenantApp"
+      ],
+      "validation": {
+        "minimum": 0,
+        "maximum": 1000,
+        "step": 1
+      }
+    },
+    {
+      "key": "sales.reports.winRateGreen",
+      "name": "Win Rate: grün über (%)",
+      "description": "Grenzwert der Cockpit-Statusampel. Zwischen Rot- und Grüngrenze gilt Gelb.",
+      "category": "Reports · Ampel",
+      "type": "integer",
+      "defaultValue": 35,
+      "scopes": [
+        "tenantApp"
+      ],
+      "validation": {
+        "minimum": 0,
+        "maximum": 100,
+        "step": 1
+      }
+    },
+    {
+      "key": "sales.reports.winRateRed",
+      "name": "Win Rate: rot unter (%)",
+      "description": "Grenzwert der Cockpit-Statusampel. Zwischen Rot- und Grüngrenze gilt Gelb.",
+      "category": "Reports · Ampel",
+      "type": "integer",
+      "defaultValue": 20,
+      "scopes": [
+        "tenantApp"
+      ],
+      "validation": {
+        "minimum": 0,
+        "maximum": 100,
+        "step": 1
+      }
+    },
+    {
+      "key": "sales.reports.coverageGreen",
+      "name": "Pipeline-Deckung: grün über (Faktor)",
+      "description": "Grenzwert der Cockpit-Statusampel. Zwischen Rot- und Grüngrenze gilt Gelb.",
+      "category": "Reports · Ampel",
+      "type": "integer",
+      "defaultValue": 3,
+      "scopes": [
+        "tenantApp"
+      ],
+      "validation": {
+        "minimum": 0,
+        "maximum": 1000,
+        "step": 1
+      }
+    },
+    {
+      "key": "sales.reports.coverageRed",
+      "name": "Pipeline-Deckung: rot unter (Faktor)",
+      "description": "Grenzwert der Cockpit-Statusampel. Zwischen Rot- und Grüngrenze gilt Gelb.",
+      "category": "Reports · Ampel",
+      "type": "integer",
+      "defaultValue": 2,
+      "scopes": [
+        "tenantApp"
+      ],
+      "validation": {
+        "minimum": 0,
+        "maximum": 1000,
+        "step": 1
+      }
+    },
+    {
+      "key": "sales.reports.dormantMonths",
+      "name": "Kontaktreport: Monate ohne Kontakt",
+      "description": "Zusätzliche Screenshot-Auswertung; verändert die Regeln der Arbeitsliste nicht.",
+      "type": "integer",
+      "defaultValue": 5,
+      "validation": {
+        "minimum": 1,
+        "maximum": 120,
+        "step": 1
+      },
+      "category": "Reports · Zuordnung",
+      "scopes": [
+        "tenantApp"
+      ]
+    },
+    {
+      "key": "sales.reports.disinterestStatuses",
+      "name": "Status-/Verlustwerte ohne Interesse",
+      "description": "Exakte Werte, durch Semikolon getrennt.",
+      "type": "string",
+      "defaultValue": "Kein Interesse; Keine Interesse; Ohne Interesse; Not interested",
+      "category": "Reports · Zuordnung",
+      "scopes": [
+        "tenantApp"
+      ]
+    },
+    {
+      "key": "sales.reports.activeCustomerStatuses",
+      "name": "Aktive Kundenstatus für Bestandsreports",
+      "description": "Exakte Statuswerte aus der Kundenhistorie, durch Semikolon getrennt.",
+      "type": "string",
+      "defaultValue": "active; aktiv; customer; Kunde",
+      "category": "Reports · Zuordnung",
+      "scopes": [
+        "tenantApp"
+      ]
+    },
+    {
+      "key": "sales.reports.lostCustomerStatuses",
+      "name": "Verluststatus für Churn",
+      "description": "Exakte Kundenstatus, durch Semikolon getrennt. CRM-Löschungen gelten nicht automatisch als Kundenverlust.",
+      "type": "string",
+      "defaultValue": "lost; verloren; churned; gekündigt",
+      "category": "Reports · Zuordnung",
+      "scopes": [
+        "tenantApp"
+      ]
+    },
+    {
+      "key": "sales.reports.postalAreas",
+      "name": "PLZ-Gebietsgrenzen (GeoJSON)",
+      "description": "GeoJSON FeatureCollection mit Polygon/MultiPolygon und properties.countryCode sowie postalPrefix. Echte lizenzierte Gebietsgrenzen für die optionale Umsatz-/Kundenflächenkarte.",
+      "category": "Reports · Karte",
+      "type": "string",
+      "defaultValue": "",
+      "scopes": [
+        "tenantApp"
+      ]
+    },
+    {
+      "key": "sales.reports.locations",
+      "name": "Ergänzende Report-Standorte",
+      "description": "JSON-Objekt mit Schlüsseln owner:<interne ID> oder lead:<interne ID>. Standortwerte: latitude, longitude, countryCode, postalCode. Ergänzt fehlende CRM-Standorte nur für Reports.",
+      "category": "Reports · Zuordnung",
+      "type": "string",
+      "defaultValue": "{}",
+      "scopes": [
+        "tenantApp"
+      ]
+    },    {
       "key": "sales.reports.firstMeetingTypes",
       "name": "Terminarten für Erstgespräche",
       "description": "Exakte CRM-Terminarten, durch Semikolon getrennt. Leerer Wert deaktiviert die Gruppe.",

@@ -28,7 +28,12 @@ const errors = []
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 let sequence = 0
 async function eventually(check, message) {
-  for (let i = 0; i < 100; i++) { if (await check()) return; await sleep(100) }
+  for (let i = 0; i < 100; i++) {
+    try { if (await check()) return } catch(error) {
+      if (!/Inspected target navigated|Execution context was destroyed|Cannot find context/.test(error.message)) throw error
+    }
+    await sleep(100)
+  }
   throw new Error(message)
 }
 try {
@@ -51,7 +56,7 @@ try {
   const send = (method, params = {}) => new Promise((resolve, reject) => {
     const id = ++sequence
     const timer = setTimeout(() => { pending.delete(id); reject(new Error(`CDP timeout: ${method}`)) }, 15000)
-    pending.set(id, { resolve, reject, timer }); socket.send(JSON.stringify({ id, method, params }))
+    pending.set(id, { resolve, reject: error => reject(new Error(method + ': ' + (params.expression ?? params.url ?? '') + '\n' + error.message)), timer }); socket.send(JSON.stringify({ id, method, params }))
   })
   const evaluate = async expression => {
     const result = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
@@ -152,6 +157,40 @@ try {
   }
   await click('Allgemein - Lifetime')
   await eventually(() => evaluate(`document.querySelector('.report-toolbar select').value === 'lifetime'`), 'Lifetime report did not select lifetime.')
+  await click('Allgemein - Lifetime')
+  await eventually(() => evaluate(`!!document.querySelector('[data-report-area="lifetime"] .report-series-svg')`), 'Lifetime annual area chart missing.')
+  await evaluate(`document.querySelector('[data-report-area="lifetime"] input[type="checkbox"]').click()`)
+  await eventually(() => evaluate(`document.querySelector('[data-report-area="lifetime"] svg').getAttribute('aria-label').includes('Prozent')`), 'Absolute/percent toggle must change lifetime chart.')
+  await evaluate(`document.querySelector('[data-report-area="lifetime"] circle').dispatchEvent(new MouseEvent('click', { bubbles: true }))`)
+  await eventually(() => evaluate(`document.querySelector('dialog').open`), 'Annual chart must open original evidence.')
+  assert.equal(await evaluate(`document.querySelectorAll('dialog tbody tr').length`), 2)
+  await click('Schließen ×')
+  await click('Vertriebsteam')
+  await eventually(() => evaluate(`!!document.querySelector('.report-time-marker')`), 'Team targets need a time-reference marker.')
+  await click('Jahresreport')
+  await eventually(() => evaluate(`document.querySelectorAll('[id="report-cross-selling-matrix"] tbody tr').length === 25`), 'Matrix must paginate.')
+  await evaluate(`[...document.querySelectorAll('[id="report-cross-selling-matrix"] button')].find(b=>b.textContent==='Weiter').click()`)
+  await eventually(() => evaluate(`document.querySelectorAll('[id="report-cross-selling-matrix"] tbody tr').length === 2`), 'Matrix next page must retain remaining customers.')
+  await evaluate(`(() => { const input=document.querySelector('[id="report-cross-selling-matrix"] input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Matrixkunde 27');input.dispatchEvent(new Event('input',{bubbles:true})) })()`)
+  await eventually(() => evaluate(`document.querySelectorAll('[id="report-cross-selling-matrix"] tbody tr').length === 1`), 'Matrix search must reset page.')
+  await click('Schlummernde Leads')
+  await eventually(() => evaluate(`document.querySelectorAll('[data-report-area="dormant"] tbody tr').length === 1`), 'Dormant source report must be visible alongside rule tasks.')
+  await click('Wiedervorlagen')
+  await eventually(() => evaluate(`document.querySelectorAll('[data-report-area="followups"] tbody tr').length === 2`), 'Failed-call source report must use its own rows.')
+  await click('Kundenstamm')
+  await eventually(() => evaluate(`document.querySelectorAll('.report-customer-filters select').length===5`), 'All customer filters must be reachable.')
+  await eventually(() => evaluate(`document.querySelectorAll('.customer-map ~ .table-wrap tbody tr').length === 3 && !!document.querySelector('.customer-cluster')`), 'Customer rows and clustered map must render.')
+  await evaluate(`(() => {const select=document.querySelectorAll('.report-customer-filters select')[1];select.value='Handel';select.dispatchEvent(new Event('change',{bubbles:true}))})()`)
+  await eventually(() => evaluate(`document.querySelectorAll('.customer-map ~ .table-wrap tbody tr').length === 1 && !document.querySelector('.customer-cluster')`), 'Industry filter must update both table and map.')
+  await evaluate(`(() => {const select=document.querySelectorAll('.report-customer-filters select')[1];select.value='';select.dispatchEvent(new Event('change',{bubbles:true}))})()`)
+  await eventually(() => evaluate(`document.querySelectorAll('.customer-map ~ .table-wrap tbody tr').length === 3`), 'Reset customer filter.')
+  await evaluate(`(() => {const select=[...document.querySelectorAll('select')].find(s=>s.value==='points');select.value='count';select.dispatchEvent(new Event('change',{bubbles:true}))})()`)
+  await eventually(() => evaluate(`document.querySelectorAll('.customer-map-leaflet path.leaflet-interactive').length===1 && !document.querySelector('.customer-cluster')`), 'Configured postal polygons must replace point layer.')
+  await evaluate(`document.querySelector('.customer-map-leaflet path.leaflet-interactive').dispatchEvent(new MouseEvent('click',{bubbles:true}))`)
+  await eventually(() => evaluate(`document.querySelector('.leaflet-popup-content')?.textContent.includes('2 Kunden')`), 'Postal count must use country plus postal prefix.')
+  await click('Jahresreport')
+  await click('Allgemein - Lifetime')
+  await eventually(() => evaluate(`!!document.querySelector('[data-report-area="lifetime"]')`), 'Lifetime must finish loading before reload.')
   const previousDocument = await evaluate('performance.timeOrigin')
   await send('Page.reload')
   await eventually(() => evaluate(`performance.timeOrigin !== ${previousDocument} && document.querySelector('.report-toolbar select')?.value === 'lifetime' && !!document.querySelector('.metric-open')`), 'Reload must retain the report and its period.')

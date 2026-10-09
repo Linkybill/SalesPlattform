@@ -53,7 +53,46 @@ public sealed class SalesApplicationSettingsService(
             ReadNames(settings, FirstMeetingTypesKey, SalesReportConfiguration.Default.FirstMeetingTypes),
             ReadNames(settings, FollowUpMeetingTypesKey, SalesReportConfiguration.Default.FollowUpMeetingTypes),
             ReadNames(settings, OfferStageNamesKey, SalesReportConfiguration.Default.OfferStageNames),
-            ReadInteger(settings, PreparationDaysKey, 5, 1, 90));
+            ReadInteger(settings, PreparationDaysKey, 5, 1, 90))
+        {
+            DormantMonths = ReadInteger(settings, "sales.reports.dormantMonths", 5, 1, 120),
+            DisinterestStatuses = ReadNames(settings, "sales.reports.disinterestStatuses", SalesReportConfiguration.Default.DisinterestStatuses),
+            ActiveCustomerStatuses = ReadNames(settings, "sales.reports.activeCustomerStatuses", SalesReportConfiguration.Default.ActiveCustomerStatuses),
+            LostCustomerStatuses = ReadNames(settings, "sales.reports.lostCustomerStatuses", SalesReportConfiguration.Default.LostCustomerStatuses),
+            Locations = ReadReportLocations(settings),
+            PostalAreas = ReadPostalAreas(settings),
+            AttainmentGreen = ReadDecimal(settings,"sales.reports.attainmentGreen",90,0,1000),
+            AttainmentRed = ReadDecimal(settings,"sales.reports.attainmentRed",70,0,1000),
+            WinRateGreen = ReadDecimal(settings,"sales.reports.winRateGreen",35,0,100),
+            WinRateRed = ReadDecimal(settings,"sales.reports.winRateRed",20,0,100),
+            CoverageGreen = ReadDecimal(settings,"sales.reports.coverageGreen",3,0,1000),
+            CoverageRed = ReadDecimal(settings,"sales.reports.coverageRed",2,0,1000)
+        };
+    }
+
+    private static JsonElement? ReadPostalAreas(IReadOnlyDictionary<string, JsonElement> settings)
+    {
+        var value=FindValue(settings,"sales.reports.postalAreas");
+        if(value is not {ValueKind:JsonValueKind.String}) return null;
+        try
+        {
+            using var document=JsonDocument.Parse(value.Value.GetString()!);
+            var root=document.RootElement;
+            if(root.ValueKind!=JsonValueKind.Object || !root.TryGetProperty("type",out var type) || type.GetString()!="FeatureCollection"
+                || !root.TryGetProperty("features",out var features) || features.ValueKind!=JsonValueKind.Array || features.GetArrayLength()==0) return null;
+            return root.Clone();
+        }
+        catch(JsonException) { return null; }
+        catch(InvalidOperationException) { return null; }
+    }
+
+    private static IReadOnlyDictionary<string, SalesReportLocation> ReadReportLocations(IReadOnlyDictionary<string, JsonElement> settings)
+    {
+        var value = FindValue(settings, "sales.reports.locations");
+        if (value is not { ValueKind: JsonValueKind.String }) return new Dictionary<string, SalesReportLocation>();
+        try { return JsonSerializer.Deserialize<Dictionary<string, SalesReportLocation>>(value.Value.GetString()!,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new(); }
+        catch (JsonException) { return new Dictionary<string, SalesReportLocation>(); }
     }
 
     private static string[] ReadNames(IReadOnlyDictionary<string, JsonElement> settings, string key, string[] fallback)
@@ -217,9 +256,28 @@ public sealed class SalesApplicationSettingsService(
     }
 }
 
+public sealed record SalesReportLocation(decimal? Latitude, decimal? Longitude, string? CountryCode, string? PostalCode);
+
 public sealed record SalesReportConfiguration(
     string[] FirstMeetingTypes, string[] FollowUpMeetingTypes, string[] OfferStageNames, int PreparationDays)
 {
+    public JsonElement? PostalAreas { get; init; }
+    public IReadOnlyDictionary<string, SalesReportLocation> Locations { get; init; } = new Dictionary<string, SalesReportLocation>();
+    public int CallEmailAttempts { get; init; } = 5;
+    public int CallLongMin { get; init; } = 6;
+    public int CallLongMax { get; init; } = 10;
+    public int CallUnreachableAfter { get; init; } = 10;
+    public decimal AttainmentGreen { get; init; } = 90;
+    public decimal AttainmentRed { get; init; } = 70;
+    public decimal WinRateGreen { get; init; } = 35;
+    public decimal WinRateRed { get; init; } = 20;
+    public decimal CoverageGreen { get; init; } = 3;
+    public decimal CoverageRed { get; init; } = 2;
+    public int DormantMonths { get; init; } = 5;
+    public int RenewalDays { get; init; } = 90;
+    public string[] DisinterestStatuses { get; init; } = ["Kein Interesse", "Keine Interesse", "Ohne Interesse", "Not interested"];
+    public string[] ActiveCustomerStatuses { get; init; } = ["active", "aktiv", "customer", "Kunde"];
+    public string[] LostCustomerStatuses { get; init; } = ["lost", "verloren", "churned", "gekündigt"];
     public static SalesReportConfiguration Default => new(
         ["Erstgespräch", "Ersttermin", "Erstkontakt", "Kennenlernen", "First meeting", "Initial meeting"],
         ["Folgetermin", "Folgegespräch", "Follow-up", "Follow-up-Termin", "Follow-up meeting", "Follow up"],

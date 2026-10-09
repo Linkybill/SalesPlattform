@@ -1,5 +1,15 @@
 # Datenmodell, Zoho und Synchronisation
 
+## Report-Aliasfehler korrigiert (09.10.2026, lokal)
+
+ZohoFieldReader überspringt null, undefined und leere Strings, damit nachrangige
+befüllte Mappingalias-Felder nicht verdrängt werden. Numerische 0 und false
+bleiben gültige Werte. Deals führen Produkt zusätzlich in PreferredFields
+und der Lookup-ID-Auswahl. Regressionen verwenden synthetische Nutzdaten.
+Das behebt einen reproduzierbaren Importfehler; produktive Datenparität ist
+damit nicht automatisch nachgewiesen. Keine Schemaänderung erforderlich.
+
+
 ## Kontaktmessung ohne Task-Rückkopplung (09.10.2026)
 
 Tasks werden weiterhin vollständig gespeichert und gespiegelt, verändern aber

@@ -1,5 +1,52 @@
 # Sales: Deployment- und Betriebsstand
 
+## Veröffentlichung beauftragt – 09.10.2026
+
+Nach Abschluss der lokalen Implementierung lautet der neue Benutzerauftrag
+ausdrücklich: push und deploy. Das vorherige Deployment-Verbot ist damit
+aufgehoben. Der geprüfte Reportstand wird auf main veröffentlicht und über
+release.yml ausschließlich für Sales auf ax42-1/dev ausgerollt. Der darunter
+dokumentierte lokale Prüfstand bleibt als zeitlich vorheriger Nachweis erhalten.
+Ein erfolgreicher Rollout wird erst nach dem tatsächlichen Release-Ergebnis
+bestätigt; produktive Analytics-Parität ist davon unabhängig.
+
+## Spezifikationsreports lokal umgesetzt und geprüft – 09.10.2026
+
+**Nicht ausgerollt.** Jüngste Benutzeranweisung: kein Deployment starten.
+Kein Release-Workflow, kein Push, keine produktive Datenänderung und kein
+CRM-Import wurden für diese Erweiterung ausgelöst. Änderungen liegen lokal
+im SalesPlattform-Arbeitsverzeichnis; die älteren Rolloutbelege darunter
+beziehen sich ausschließlich auf die jeweils genannten Revisionen.
+
+Umfang und Datenvoraussetzungen:
+[Report-Umsetzungsstand](11-report-umsetzungsstand.md).
+Abgleich der ursprünglichen Screenshots:
+[Ausgangsbefund](10-report-screenshot-abgleich.md).
+
+Native Windows-Prüfungen bestanden:
+
+- Backend Release mit -warnaserror: 0 Warnungen, 0 Fehler.
+- Reportnachweise: 373 Assertions.
+- Kontaktregressionen: 25; bisherige Zusatzreports: 113.
+- Importalias-Regressionsfälle: 20; neue Spezifikationsreports: 94.
+- Gemeinsamer Zoho-Feldleser: Webhook 282 Checks, Task-Payload 34 Fälle.
+- TypeScript und Vite-Produktionsbuild; Vite meldet den Bundle-Größenhinweis
+  für das gemeinsame Frontend-Bundle, keine Buildfehler.
+- 13 Darstellungs-/Navigations-/URL-Tests, darunter Geld-/Währungs-/
+  Negativwertgrenzen für Zusatzdiagramme.
+- Native Chrome-Abnahme mit synthetischen API-Antworten: sechs Kuchen,
+  individuelle Nachweise, Kontakt-/Anruflisten, jährliche Flächen und
+  Prozentumschaltung, Zielzeitmarke, Matrix-Suche/Seitenwechsel,
+  Kundenfilter/Kartenbündelung und PLZ-Polygonkarte, mobile 390px-Ansicht,
+  Navigation/Reload/Zurück/Vorwärts, Fokus und Escape.
+- Browserprüfung fand einen verzögerten Kartenaufruf nach dem Unmount.
+  Timer wird nun abgeräumt; Resize-Aufrufe prüfen die noch aktive Karte.
+
+Keine Gleichheit der produktiven Analytics-Zahlen behauptet. Fehlende
+Historien, Typ-/Produktzuordnung, Kalender, Standorte oder Gebietsgrenzen
+sind weiterhin echte Datenvoraussetzungen und werden in den Reports erklärt.
+
+
 ## Kuchendiagramme ausgerollt und öffentliche Dateien bestätigt – 09.10.2026
 
 Code-Revision 0bc837364b8603b323394e2865aa643f47378e4f auf main gepusht.

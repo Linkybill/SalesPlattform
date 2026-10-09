@@ -168,3 +168,7 @@ Console.WriteLine($"Report evidence: {assertions} assertions passed; no database
 
 await ContactRegressions.Run();
 await AdditionalReportRegressions.Run();
+
+ImportFieldRegressions.Run();
+
+SpecifiedReportRegressions.Run();
