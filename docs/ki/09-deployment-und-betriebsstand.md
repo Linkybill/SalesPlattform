@@ -1,5 +1,17 @@
 # Sales: Deployment- und Betriebsstand
 
+## Shared 0.1.78 lokal ueber NuGet eingespielt – 16.10.2026
+
+Backend-Pin auf 0.1.78 erhoeht und aus dem lokal gebauten Plattform-NuGet
+restauriert. Shared wartet jetzt immer auf eine bestaetigte Runtime-Identitaet,
+bevor fachliche Requests/Jobs zugelassen werden; kein RuntimeBootstrap-Schalter.
+Nativer Windows-Releasebuild bestanden, mit bestehenden NuGet-Warnungen zu
+System.Security.Cryptography.Pkcs 10.0.0. Paket anschliessend lokal nach GitHub
+Packages veroeffentlicht, heruntergeladen und per SHA256 verglichen; erneuter
+Restore mit regulaeren Paketquellen bestanden. Eingecheckte Paketquelle unveraendert;
+kein Actions-Lauf, Commit/Push oder Server-Rollout. Plattform-Publish-Nachweis
+im benachbarten IdentityPlattform/docs/ki-kontext.md beachten.
+
 ## Spezifikationsreports erfolgreich ausgerollt – 09.10.2026
 
 Code-Revision 6a798ccf27502dd6e08370b6db2259ae2e1888be auf main gepusht.
