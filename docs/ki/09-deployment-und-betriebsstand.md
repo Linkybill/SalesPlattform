@@ -1,5 +1,12 @@
 # Sales: Deployment- und Betriebsstand
 
+## Shared 0.1.79 vollstaendig integriert – 16.10.2026
+
+Backend auf das lokal gebaute und nach GitHub Packages veroeffentlichte Shared
+0.1.79 aktualisiert. NuGet-Assets bestaetigen 0.1.79 sowie die hinzugekommene
+PKCS-Abhaengigkeit 10.0.13. Nativer Windows-Releasebuild ohne Warnungen bestanden.
+Damit ist der unten dokumentierte 0.1.78-Paketstand abgeloest. Kein Live-Rollout.
+
 ## Shared 0.1.78 lokal ueber NuGet eingespielt – 16.10.2026
 
 Backend-Pin auf 0.1.78 erhoeht und aus dem lokal gebauten Plattform-NuGet
