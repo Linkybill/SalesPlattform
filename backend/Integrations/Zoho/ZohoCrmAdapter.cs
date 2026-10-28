@@ -1,9 +1,13 @@
 using System.Diagnostics;
+using Com.Zoho.Crm.API.Notifications;
+using Com.Zoho.Crm.API.Util;
 using System.Net.Http.Headers;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using IdentityPlatform.Shared.Jobs;
+using IdentityPlatform.Shared.Logging;
 using SalesPlattform.Backend.Integrations.Abstractions;
 
 namespace SalesPlattform.Backend.Integrations.Zoho;
@@ -21,7 +25,8 @@ public sealed partial class ZohoCrmAdapter(
     IHttpClientFactory httpClientFactory,
     ZohoTokenService tokenService,
     ICrmApiUsageRecorder apiUsage,
-    ILogger<ZohoCrmAdapter> logger) : ICrmAdapter
+    ILogger<ZohoCrmAdapter> logger,
+    PlatformLoggingOptions? loggingOptions = null) : ICrmAdapter
 {
     private bool organizationLookupCompleted;
     private string? organizationDomain;
@@ -330,6 +335,9 @@ public sealed partial class ZohoCrmAdapter(
         string channelId,
         string module,
         bool allOperations,
+        IPlatformJobLogger? requestLogger,
+        Action<string, JsonElement>? requestSink,
+        Action<string, JsonElement>? responseSink,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(token) || token.Length > 50)
@@ -337,42 +345,178 @@ public sealed partial class ZohoCrmAdapter(
         if (!long.TryParse(channelId, NumberStyles.None, CultureInfo.InvariantCulture, out _))
             throw new ArgumentException("Die Zoho-Channel-ID muss numerisch sein.", nameof(channelId));
 
-        var payload = BuildNotificationPayload(webhookBaseUrl, tenantId, token, channelId, module, allOperations, DateTimeOffset.UtcNow);
-        using var content = new StringContent(
-            payload.ToJsonString(),
-            Encoding.UTF8,
-            "application/json");
-        using var response = await SendAsync(
-            HttpMethod.Post,
-            "/crm/v8/actions/watch",
-            cancellationToken,
-            content: content,
-            recordsAffected: 1);
-        using var document = await ParseDocumentAsync(response, cancellationToken);
+        var request = BuildNotificationRequest(webhookBaseUrl, tenantId, token, channelId, module, allOperations, DateTimeOffset.UtcNow);
+        var accessToken = await tokenService.GetAccessTokenAsync(cancellationToken);
+        const string path = "/crm/v8/actions/watch";
+        var endpoint = $"{accessToken.ApiDomain.TrimEnd('/')}{path}";
+        using var activity = new Activity("IdentityPlatform.Zoho.Register").SetIdFormat(ActivityIdFormat.W3C).Start();
+        var callId = activity.SpanId.ToHexString();
+        var startedAt = DateTimeOffset.UtcNow;
+        var stopwatch = Stopwatch.StartNew();
+        var redactedBody = RedactNotificationToken(request);
+        var diagnosticRequest = JsonSerializer.SerializeToElement(new
+        {
+            method = "POST", endpoint, contentType = "application/json",
+            body = JsonSerializer.Deserialize<JsonElement>(redactedBody)
+        });
+        var startSummary = $"Ausgang · POST {path} · Start · Modul={module} · Channel-ID={channelId}";
+        var startDetails = JsonSerializer.SerializeToElement(new { callId, startedAt, module, channelId, tenantId, request = diagnosticRequest });
+        using (logger.BeginScope(new Dictionary<string, object?>
+        { ["Phase"] = "started", ["HttpMethod"] = "POST", ["DependencyPath"] = path }))
+            logger.LogInformation("{ZohoSubscriptionStart}", FormatCentralNotificationDetails(startSummary, startDetails));
+        requestSink?.Invoke(startSummary, diagnosticRequest);
+        if (requestLogger is not null)
+            await requestLogger.InfoAsync(startSummary, "Start: POST /crm/v8/actions/watch", startDetails, cancellationToken);
+        async Task LogExchangeAsync(string outcome, object responseData, CancellationToken ct, int? httpStatus = null)
+        {
+            var summary = $"Ausgang · POST {path} · {outcome} · Modul={module} · Channel-ID={channelId}";
+            var durationMs = stopwatch.Elapsed.TotalMilliseconds;
+            var details = JsonSerializer.SerializeToElement(new
+            {
+                callId, startedAt, finishedAt = DateTimeOffset.UtcNow, durationMs,
+                module, channelId, response = responseData
+            });
+            responseSink?.Invoke(summary, details);
+            using (logger.BeginScope(new Dictionary<string, object?>
+            { ["Phase"] = httpStatus is >= 200 and < 400 ? "completed" : "failed", ["HttpMethod"] = "POST",
+                ["DependencyPath"] = path, ["StatusCode"] = httpStatus, ["DurationMs"] = durationMs }))
+                logger.LogInformation("{ZohoSubscriptionExchange}", FormatCentralNotificationDetails(summary, details));
+            if (requestLogger is not null)
+                await requestLogger.InfoAsync(summary, "Antwort: POST /crm/v8/actions/watch", details, ct);
+        }
+        APIResponse<ActionHandler> response;
+        try
+        {
+            response = await ZohoNotificationSdk.RegisterAsync(accessToken, request, cancellationToken);
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or HttpRequestException)
+        {
+            await LogExchangeAsync("keine auswertbare SDK-Antwort",
+                new { received = false, errorType = exception.GetType().Name }, CancellationToken.None);
+            apiUsage.Record(new CrmApiUsageObservation(ProviderKey, "default", "POST", path,
+                $"POST {path}", ZohoCrmApiUsageCostModel.Classify("POST", path), null, false, false,
+                RecordsAffected: 1, DurationMilliseconds: stopwatch.ElapsedMilliseconds));
+            throw;
+        }
+        var statusCode = response.StatusCode;
+        var responseBody = response.ResponseJSON?.ToString(Newtonsoft.Json.Formatting.None) ?? "{}";
+        var remaining = response.Headers.FirstOrDefault(header =>
+            header.Key.Equals("X-API-CREDITS-REMAINING", StringComparison.OrdinalIgnoreCase)).Value;
+        apiUsage.Record(new CrmApiUsageObservation(ProviderKey, "default", "POST", path,
+            $"POST {path}", ZohoCrmApiUsageCostModel.Classify("POST", path), statusCode,
+            statusCode is >= 200 and < 300, statusCode == 429 || statusCode >= 500,
+            ProviderUnitsRemaining: int.TryParse(remaining, NumberStyles.Integer, CultureInfo.InvariantCulture, out var credits) ? credits : null,
+            RecordsAffected: 1, DurationMilliseconds: stopwatch.ElapsedMilliseconds));
+        await LogExchangeAsync($"Antwort HTTP {statusCode}", new
+        {
+            statusCode, contentType = "application/json", body = RedactNotificationResponse(responseBody, loggingOptions?.VisibleQueryParameters)
+        }, cancellationToken, statusCode);
+        if (statusCode == 429)
+            throw new ZohoApiRateLimitException($"Zoho CRM antwortete auf {path} mit HTTP {statusCode}.");
+        if (statusCode == 400 && responseBody.Contains("NOT_SUPPORTED", StringComparison.OrdinalIgnoreCase))
+            throw new ZohoUnsupportedModuleException($"Zoho CRM unterstützt die Registrierung nicht (HTTP {statusCode}).");
+        if (statusCode is < 200 or >= 300)
+            throw new InvalidOperationException($"Zoho CRM antwortete auf {path} mit HTTP {statusCode}.");
+        using var document = JsonDocument.Parse(responseBody);
         return ParseRegistrationConfirmation(document.RootElement, channelId, module, DateTimeOffset.UtcNow);
     }
 
-    private static JsonObject BuildNotificationPayload(
+    // Diagnostic projection only. Request serialization and transmission belong to the SDK.
+    private static string RedactNotificationToken(BodyWrapper request)
+        => JsonSerializer.Serialize(new
+        {
+            watch = request.Watch.Select(watch => new
+            {
+                token = "[REDACTED]",
+                notify_url = watch.NotifyUrl,
+                channel_id = watch.ChannelId,
+                channel_expiry = watch.ChannelExpiry?.ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture),
+                return_affected_field_values = watch.ReturnAffectedFieldValues,
+                notify_on_related_action = watch.NotifyOnRelatedAction,
+                events = watch.Events
+            })
+        });
+
+    private static JsonNode? RedactNotificationResponse(string responseBody, IEnumerable<string>? visibleQueryParameters)
+    {
+        if (string.IsNullOrWhiteSpace(responseBody)) return null;
+        if (Encoding.UTF8.GetByteCount(responseBody) > 32 * 1024)
+            return JsonValue.Create("[Antwort größer als 32 KiB; nicht protokolliert]");
+        try
+        {
+            var response = JsonNode.Parse(responseBody);
+            if (response is not (JsonObject or JsonArray))
+                return JsonValue.Create("[JSON-Antwort ohne Objekt/Array; Inhalt nicht protokolliert]");
+            RedactSensitiveResponseFields(response, visibleQueryParameters);
+            return response;
+        }
+        catch (JsonException)
+        {
+            return JsonValue.Create("[Antwort ist kein JSON; Inhalt nicht protokolliert]");
+        }
+    }
+
+    private static void RedactSensitiveResponseFields(JsonNode? node, IEnumerable<string>? visibleQueryParameters)
+    {
+        if (node is JsonObject obj)
+        {
+            foreach (var field in obj.ToArray())
+            {
+                var key = field.Key.Replace("_", "", StringComparison.Ordinal).ToLowerInvariant();
+                if (key.Contains("token", StringComparison.Ordinal)
+                    || key.Contains("secret", StringComparison.Ordinal)
+                    || key.Contains("password", StringComparison.Ordinal)
+                    || key.Contains("authorization", StringComparison.Ordinal)
+                    || key.Contains("credential", StringComparison.Ordinal)
+                    || key.Contains("cookie", StringComparison.Ordinal)
+                    || key.Contains("apikey", StringComparison.Ordinal))
+                    obj[field.Key] = "[REDACTED]";
+                else if (field.Value is JsonValue text && text.GetValueKind() == JsonValueKind.String)
+                    obj[field.Key] = PlatformLogSanitizer.Text(text.GetValue<string>(), 2048, visibleQueryParameters);
+                else
+                    RedactSensitiveResponseFields(field.Value, visibleQueryParameters);
+            }
+        }
+        else if (node is JsonArray array)
+        {
+            for (var index = 0; index < array.Count; index++)
+            {
+                if (array[index] is JsonValue text && text.GetValueKind() == JsonValueKind.String)
+                    array[index] = PlatformLogSanitizer.Text(text.GetValue<string>(), 2048, visibleQueryParameters);
+                else
+                    RedactSensitiveResponseFields(array[index], visibleQueryParameters);
+            }
+        }
+    }
+
+    private static string BuildCentralNotificationRequestSummary(
+        string method, string path, string endpoint, string module, string redactedRequestBody)
+    {
+        using var document = JsonDocument.Parse(redactedRequestBody);
+        var watch = document.RootElement.GetProperty("watch")[0];
+        return $"{method} {path} · Modul={module} · Channel-ID={watch.GetProperty("channel_id").GetString()} · API={endpoint}";
+    }
+
+    private static string FormatCentralNotificationDetails(string summary, JsonElement details)
+        => summary + "\n" + JsonSerializer.Serialize(details, new JsonSerializerOptions { WriteIndented = true });
+
+    private static BodyWrapper BuildNotificationRequest(
         Uri webhookBaseUrl, Guid tenantId, string token, string channelId, string module, bool allOperations, DateTimeOffset now)
     {
-        var notifyUrl = ZohoCrmHookUpdateService.BuildTenantWebhookUrl(webhookBaseUrl, tenantId);
-        var watch = new JsonObject
+        var expiry = now.AddDays(6).AddHours(23);
+        return new BodyWrapper
         {
-            ["token"] = token,
-            ["notify_url"] = notifyUrl,
-            ["channel_id"] = channelId,
-            // Zoho watch rejects round-trip ("O") timestamps with fractional seconds.
-            // Keep an explicit UTC offset and stay below the seven-day expiry limit.
-            ["channel_expiry"] = now.AddDays(6).AddHours(23)
-                .ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture),
-            ["return_affected_field_values"] = true,
-            ["notify_on_related_action"] = false
+            Watch = [new Notification
+            {
+                Token = token,
+                NotifyUrl = ZohoCrmHookUpdateService.BuildTenantWebhookUrl(webhookBaseUrl, tenantId),
+                ChannelId = channelId,
+                ChannelExpiry = expiry.AddTicks(-(expiry.Ticks % TimeSpan.TicksPerSecond)),
+                ReturnAffectedFieldValues = true,
+                NotifyOnRelatedAction = false,
+                Events = NotificationOperations(module, allOperations).ToList()
+            }]
         };
-        var events = new JsonArray();
-        foreach (var operation in NotificationOperations(module, allOperations))
-            events.Add(operation);
-        watch["events"] = events;
-        return new JsonObject { ["watch"] = new JsonArray(watch) };
     }
 
     public async Task DisableNotificationsAsync(
@@ -948,9 +1092,10 @@ public sealed partial class ZohoCrmAdapter(
         int? recordsAffected = null)
     {
         var token = await tokenService.GetAccessTokenAsync(cancellationToken);
+        var endpoint = $"{token.ApiDomain.TrimEnd('/')}{path}";
         using var request = new HttpRequestMessage(
             method,
-            $"{token.ApiDomain.TrimEnd('/')}{path}");
+            endpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Zoho-oauthtoken", token.Value);
         request.Content = content;
         if (modifiedSince is not null)
@@ -966,9 +1111,9 @@ public sealed partial class ZohoCrmAdapter(
         try
         {
             response = await httpClientFactory.CreateClient().SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -986,7 +1131,6 @@ public sealed partial class ZohoCrmAdapter(
                 DurationMilliseconds: stopwatch.ElapsedMilliseconds));
             throw;
         }
-
         var statusCode = (int)response.StatusCode;
         var normalizedEndpoint = ZohoCrmApiUsageCostModel.NormalizeEndpoint(path);
         apiUsage.Record(new CrmApiUsageObservation(

@@ -11,7 +11,7 @@ const events = Array.from({ length: 27 }, (_, index) => ({
 }))
 async function fetchHooks(url: string, init?: RequestInit): Promise<Response> {
   window.hookFixture.requests.push(url)
-  if (url.endsWith('/hooks/check')) {
+  if (url.endsWith('/hooks/check') || url.endsWith('/hooks/postman')) {
     if (init?.method !== 'POST') throw new Error('Live check must be explicit POST')
     const module = (JSON.parse(String(init.body)) as { module: string }).module
     window.hookFixture.checkedModules.push(module)
@@ -31,6 +31,10 @@ async function fetchHooks(url: string, init?: RequestInit): Promise<Response> {
       localChannelCheck: { status: window.hookFixture.checkMode === 'local-not-ready' ? 'expired' : 'ready',
         message: window.hookFixture.checkMode === 'local-not-ready' ? 'Lokaler Channel ist abgelaufen.' : 'Lokaler Channel stimmt überein, ist aktiv und gültig.' },
       localExpiresAt: time, notifyOnRelatedAction: false,
+      ...(url.endsWith('/hooks/postman') && window.hookFixture.checkMode === 'verified' ? { postman: {
+        url: 'https://sales.example.test/api/integrations/zoho/webhook?tenant_id=12345678-1234-4123-8123-123456789abc',
+        module, channelId: '123456789', token: "synthetic-'$token", expiresAt: new Date(Date.now() + 60000).toISOString(),
+      } } : {}),
     })
   }
   if (window.hookFixture.fail) return new Response('not shown', { status: 500 })

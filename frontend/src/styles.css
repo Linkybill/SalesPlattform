@@ -247,6 +247,10 @@ h2 { margin-bottom: 0; font-size: 22px; }
 .daily-usage summary { cursor: pointer; }
 .hook-overview { min-width: 0; }
 .hook-url { overflow-wrap: anywhere; }
+.hook-postman { min-width: 0; margin: 18px 0; padding: 16px; border: 1px solid var(--ip-border-strong, #466482); border-radius: 8px; }
+.hook-postman label { display: grid; gap: 6px; margin: 12px 0; }
+.hook-postman input, .hook-postman textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 9px; border: 1px solid var(--ip-border-strong, #466482); border-radius: 6px; color: var(--ip-text, #e8eef8); background: var(--ip-surface-inset, #0d2034); font: inherit; }
+.hook-postman textarea { font-family: monospace; resize: vertical; }
 .hook-filters { display: flex; flex-wrap: wrap; gap: 16px; margin: 16px 0; }
 .hook-filters label { display: grid; gap: 6px; }
 .hook-overview summary { cursor: pointer; }

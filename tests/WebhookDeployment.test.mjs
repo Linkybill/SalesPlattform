@@ -7,6 +7,19 @@ const config = read('../appsettings.Deployment.json');
 const manifest = read('../backend/manifest.json');
 const path = '/api/integrations/zoho/webhook';
 
+test('diagnostic callbacks remain tenant routed and use the normal queue receiver', () => {
+  const setting = manifest.settings.find(x => x.key === 'zoho.webhookDiagnostic');
+  assert.deepEqual(setting.scopes, ['tenantApp']);
+  assert.equal(setting.defaultValue, false);
+  const source = readFileSync(new URL('../backend/Integrations/Zoho/ZohoEndpointExtensions.cs', import.meta.url), 'utf8');
+  const callback = source.split('endpoints.MapPost("/api/integrations/zoho/webhook"')[1];
+  assert.ok(callback.indexOf('TryReadWebhookTenant') < callback.indexOf('receiver.ReceiveAsync'));
+  assert.doesNotMatch(callback, /diagnosticReceipt|TryReceiveAsync/);
+  const receiver = readFileSync(new URL('../backend/Integrations/Zoho/ZohoSubscriptionAdapter.cs', import.meta.url), 'utf8');
+  assert.match(receiver, /var diagnostic = await diagnostics.IsEnabledAsync\(cancellationToken\)/);
+  assert.match(receiver, /ReceiveCoreAsync\(session.Context, payload, diagnostic, cancellationToken\)/);
+});
+
 for (const target of ['ax42-1', 'ax42-2']) test(`${target}: webhook URL is not injected by the deployment profile`, () => {
   const profile = config.Targets[target].Environments.dev;
   assert.equal(profile.BackendUrls.Zoho__WebhookUrl, undefined);
@@ -62,6 +75,16 @@ test('live verification never writes subscriptions and only reads scoped channel
   assert.match(adapter, /channel_id=/);
   assert.doesNotMatch(adapter, /HttpMethod.Post|HttpMethod.Delete/);
   assert.match(adapter, /\[property: JsonIgnore\] string\? TokenHash/);
+});
+test('Postman credentials require tenant-admin access and a separate non-cacheable request', () => {
+  const source = readFileSync(new URL('../backend/Integrations/Zoho/ZohoEndpointExtensions.cs', import.meta.url), 'utf8');
+  const endpoint = source.split('protectedGroup.MapPost("/hooks/postman"')[1].split('protectedGroup.MapGet("/oauth/start"')[0];
+  assert.match(endpoint, /CacheControl = "no-store"/);
+  assert.ok(endpoint.indexOf('IsCurrentTenantAdminAsync') < endpoint.indexOf('verification.CheckAsync'));
+  assert.match(endpoint, /return Results.Forbid\(\)/);
+  assert.match(endpoint, /includePostman: true/);
+  const ordinaryCheck = source.split('protectedGroup.MapPost("/hooks/check"')[1].split('protectedGroup.MapPost("/hooks/postman"')[0];
+  assert.doesNotMatch(ordinaryCheck, /includePostman: true/);
 });
 test('live verification is explicit, abortable and independent of overview refresh', () => {
   const source = readFileSync(new URL('../frontend/src/ZohoHookCheck.tsx', import.meta.url), 'utf8');

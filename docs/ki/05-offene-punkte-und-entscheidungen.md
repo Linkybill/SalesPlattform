@@ -1,5 +1,158 @@
 # Offene Punkte, Entscheidungen und Status
 
+## Start und Antwort allgemein getrennt protokollieren (28.10.2026)
+
+Neuer Benutzerauftrag ersetzt die Ein-Eintrag-Entscheidung vom 22.10.:
+HTTP-Start mit Übergaben und Antwort mit Ergebnis, jeweils sprechender
+Endpunkttitel, Uhrzeit, Richtung und gemeinsame Aufruf-ID. Umsetzung allgemein
+in den Plattformpaketen; SDK-Registrierung ergänzt dieselben strukturierten
+Phasen explizit, da Zoho nicht über IHttpClientFactory sendet. Zentrale Logs
+auch bei geplanten Registrierungen, ausführliches Jobprotokoll bei manuellen
+Läufen. Keine Authentifizierungsheader oder Tokens im Log.
+
+## Offizielles Zoho-SDK für Callback-Registrierung (28.10.2026)
+
+Benutzer verlangt ausdrücklich, ersetzten Code zu entfernen. Der anfängliche
+SDK-Sonderzweig im allgemeinen HTTP-Sender ist entfernt; Registrierung nutzt
+SDK-Request und SDK-Response direkt. Der bisherige JSON-Payloadbuilder und
+die JSON-zu-SDK-/SDK-zu-HTTP-Übersetzungen entfallen. Erhalten bleiben die
+Mandanten-/Tokenanbindung, Protokollierung und fachliche Bestätigungsprüfung.
+
+Benutzer beauftragt die Einbindung des offiziellen C#-SDKs. Der erste
+umgestellte Schreibweg ist die besprochene Watch-Registrierung über
+`NotificationsOperations.EnableNotifications`. Andere CRM-Aufrufe bleiben
+vorerst beim bestehenden HTTP-Adapter. Kein automatischer Rückfall auf einen
+zweiten POST bei SDK-Fehlern. Vault-/Tenant-Tokenverwaltung bleibt appseitig;
+das SDK erhält nur den aktuellen Access Token, keinen Refresh-Token.
+SDK-Version 4.0.0 ist für .NET Framework gebaut (NU1701). Der verwendete
+Aufruf ist unter Windows und Linux mit .NET 10 getestet; daraus folgt keine
+Kompatibilitätszusage für alle übrigen SDK-Funktionen. Rollout steht aus.
+
+## Ein Eintrag je Zoho-Registrierungsaufruf (22.10.2026)
+
+Auf ausdrückliche Benutzerkorrektur stehen gesendeter Request und empfangene
+Response gemeinsam in einem Eintrag je Aufruf, im zentralen Log und im
+Job-Protokoll. Die sichtbare Zeile beginnt mit dem API-Pfad und nennt Modul,
+Channel-ID und HTTP-Status. Die Details enthalten `request` und `response`
+mit den redigierten Daten. Separate Request-/Antwort-Einträge und die
+zusätzliche abschließende Aktionslog-Sammlung entfallen. Bei Transportfehlern
+enthält derselbe Eintrag den Request und den Hinweis auf die fehlende Antwort.
+Die Gesamtzusammenfassung des Joblaufs behält `apiRequests`.
+
+## Zoho-Registrierungsantwort für Support sichtbar machen (22.10.2026)
+
+Beim manuellen Neuaufbau enthält der Job-Eintrag
+`Antwort: POST /crm/v8/actions/watch` künftig sowohl den redigierten
+gesendeten Request als auch HTTP-Status und redigierten Zoho-JSON-Body.
+Die Gesamtzusammenfassung des Joblaufs zeigt sie zusätzlich direkt unter
+`apiRequests`, pro Modul zusammen mit Request und Antwort. Die abschließende
+Aktionsübersicht im Job-Protokoll enthält dieselbe Zuordnung.
+Im zentralen Log zeigen die beiden Einträge mit `POST /crm/v8/actions/watch`
+den redigierten Request- beziehungsweise Zoho-Response-Body als mehrzeiliges
+JSON unter ihrer Pfad-/Modul-/Channel-Zeile. Der zentrale Sanitizer maskiert
+zusätzlich URL-Querywerte und begrenzt Meldungen auf 4096 Zeichen; die
+tenantgeschützten Jobdetails sind die vollständige redigierte Diagnose.
+Token-, Secret- und Credential-Felder werden entfernt; Antworten über 32 KiB
+oder ohne JSON werden nicht als Rohtext gespeichert. Bereits ausgeführte
+Registrierungen erhalten dadurch keinen nachträglichen Response-Body.
+`DELETE /crm/v8/actions/watch` entfernt erst nach bestätigter neuer
+Registrierung und lokalem Speichern den alten Channel.
+
+## Ausgehende HTTP-Aufrufe in der Requestübersicht (22.10.2026)
+
+Die zentrale HTTP-Übersicht soll auch ausgehende Aufrufe anzeigen und nach
+Richtung trennen. Sales exportiert dafür die vorhandenen strukturierten
+`IdentityPlatform.Dependency.*`-Starts auf Info-Stufe. Die Übersicht gruppiert
+Methode und API-Pfad; Antworten bleiben in den zentralen Einzellogs. Der
+redigierte Body einer manuellen Zoho-Hook-Registrierung bleibt in den
+tenantgeschützten Jobdetails zugänglich.
+
+## Zoho-Subscription-Request für Support protokollieren (21.10.2026)
+
+Auf Benutzerauftrag protokolliert ein manueller Lauf von „Hooks aktualisieren“
+unmittelbar vor jedem `POST /crm/v8/actions/watch` die tatsächliche Zoho-API-URL
+und den serialisierten Request-Body in den strukturierten Details des
+tenantgeschützten Job-Protokolls. In der Logkopie wird ausschließlich das
+Webhook-Feld `token` durch `[REDACTED]` ersetzt; der gesendete Body bleibt
+unverändert. Der HTTP-Status der Zoho-Antwort steht in einem zweiten Job-Eintrag.
+Die sichtbare Job-Meldung und die zentrale Logmeldung beginnen mit dem konkreten
+API-Pfad `POST /crm/v8/actions/watch`; dahinter stehen Modul, Channel-ID und
+API-Ziel. Der zentrale Sanitizer verwirft eine JSON-Zeile mit dem Feldnamen
+`token` vollständig; deshalb steht der vollständige redigierte JSON-Body in den
+aufklappbaren Jobdetails. OAuth-Header gelangen nicht in die Logs. Seit der
+Ergänzung vom 22.10. steht der redigierte JSON-Antwortbody eines manuellen
+Registrierungsversuchs im tenantgeschützten Job-Protokoll.
+Jeder Request trägt im Job-Protokoll den Schritt `Aktion: POST /crm/v8/actions/watch`.
+Nach dem Lauf steht eine Übersicht mit demselben Schritt, Modulen und redigierten
+JSON-Bodies oben in der regulären Liste. Die
+Plattform heftet Warnungen und den Abschlussstatus davor an.
+Geplante Wartungsläufe erzeugen diese zusätzlichen Einträge nicht. Die
+Diagnoseeinträge dienen dem Supportfall und sollen nach dem Mitschnitt wieder
+entfernt werden.
+
+## Diagnose-Webhooks in die Queue übernehmen (19.10.2026)
+
+Der Benutzer verlangt ausdrücklich auch bei ausgeschalteter Channel-/Tokenprüfung
+die normale Queue-Verarbeitung im Testsystem. Dieser Auftrag ersetzt die reine
+Eingangsdiagnose vom 17.10. `zoho.webhookDiagnostic` bleibt tenantbezogen,
+standardmäßig aus und ohne Ablauf. Bei Aktivierung werden verarbeitbare Events
+ohne Subscription-Prüfung gespeichert und vom vorhandenen Hook-Job verarbeitet.
+Modul, unterstützte Operation und Datensatz-IDs sind erforderlich; leere Probes
+werden mit HTTP 400 abgelehnt. Tenant-/Routerprüfung, Contacts-Ausschluss,
+Dublettenerkennung und tokenfreie Speicherung bleiben wirksam. Die Antwort
+kennzeichnet den übersprungenen Herkunftsnachweis mit `authenticated: false`.
+
+## Webhook-Eingang ohne Channel-/Tokenprüfung (17.10.2026)
+
+Auf ausdrücklichen Benutzerauftrag erhält der Tenant einen einschaltbaren
+Diagnosemodus ohne Zeitlimit. `zoho.webhookDiagnostic` ist ein Tenant-AppSetting,
+standardmäßig aus. Bei aktivem Modus werden gültige JSON-Callbacks nach der
+bestehenden Router-/Tenant-Prüfung ohne Channel-/Tokenprüfung mit HTTP 202
+bestätigt und ohne Nutzdaten/Secrets protokolliert. Keine Queue und kein Import
+aus diesen unbestätigten Requests. Der Modus bleibt bis zum Ausschalten aktiv;
+ein Rollback auf einen Stand ohne Diagnosezweig entfernt seine Wirkung.
+Die vorhandene Admin-AppSettings-Oberfläche dient zum Ein-/Ausschalten.
+Damit lässt sich Eingang prüfen, aber keine Herkunft von Zoho beweisen.
+
+## Rückkehr zum Queryparameter (17.10.2026, jüngster Auftrag)
+
+Benutzer verlangt nach dem Pfad-Versuch wieder `?tenant_id=<Mandant>`.
+Die URL-Erzeugung für Registrierung, Übersicht, Prüfung und Postman wird
+gemeinsam zurückgestellt. Die bestehende Router-Unterstützung beider Formen
+bleibt zur Übergangskompatibilität erhalten; kein erneuter Plattformrollout.
+Sales ausrollen, danach Pfad-Registrierungen über den bestehenden Hook-Job
+ersetzen. Der Versuch um 01:17:04 war laut Benutzer Postman; aus ihm folgt
+keine erfolgreiche Zoho-Zustellung. Die frühere Pfadentscheidung ist abgelöst.
+
+## Tenant im Webhook-Pfad (17.10.2026)
+
+Benutzer beauftragt eine queryfreie Callback-Adresse, um einen möglichen Verlust
+von Queryparametern bei der Zustellung auszuschließen. Ein Abschneiden durch Zoho
+ist bisher nicht nachgewiesen. Sales erzeugt künftig
+`/{tenantId}/api/integrations/zoho/webhook` (am zentralen Einstieg entsprechend
+`/apps/sales-plattform/{tenantId}/api/integrations/zoho/webhook`). Die konfigurierte
+Basisadresse bleibt ohne Tenant. Der Application Router übersetzt den Pfad intern
+in den bisherigen Backend-Pfad mit `tenant_id`; kein HTTP-Redirect. Bestehende
+Query-Callbacks bleiben gültig. Widersprüchliche/mehrfache Tenant-Angaben werden
+weiter abgewiesen; Manifestfreigabe, Tenant-Zuordnung, Trust und Tokenprüfung
+bleiben erforderlich. Zuerst Router bereitstellen, danach Sales und Hooks erneuern.
+Prüf- und Rolloutstand im Betriebsstand; keine bestätigte Zoho-Zustellung hieraus.
+
+## Postman-Testdaten für Zoho-Webhooks (16.10.2026)
+
+Benutzer beauftragt, die vorhandene Backend-Verbindung für eine direkt nutzbare
+UI-Diagnose einzusetzen. Tenant-Admins dürfen nach explizitem Abruf die echte
+Callback-URL, Channel-ID und den Verification-Token eines aktuell bestätigten
+Modul-Hooks anzeigen/kopieren. Diese eng begrenzte Ausnahme ersetzt für diesen
+Diagnoseweg die bisherige Vorgabe, keinerlei Zoho-Tokens an die UI auszugeben.
+OAuth-Access-/Refresh-Tokens und Client-Secrets bleiben ausschließlich im Backend.
+Keine automatische Neuregistrierung und kein automatischer Testversand. Die UI
+erzeugt mit einer eingegebenen Record-ID einen Postman-Body für eine Änderung;
+der spätere manuelle Versand kann einen normalen Import auslösen.
+Normale Prüfantworten bleiben ohne Token; Diagnoseantworten sind nicht cachebar,
+Testdaten werden nicht protokolliert oder im Browser-Storage gespeichert und beim
+Modul-/Tenant-/Benutzerwechsel bzw. Schließen verworfen.
+
 ## Vollständiger Reportumfang aus HTML und Screenshots (09.10.2026)
 
 Benutzer beauftragt ausdrücklich alle Reports aus der Original-HTML-Spezifikation

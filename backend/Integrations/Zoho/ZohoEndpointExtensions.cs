@@ -53,6 +53,24 @@ public static class ZohoEndpointExtensions
             }
         });
 
+        protectedGroup.MapPost("/hooks/postman", async (
+            ZohoHookCheckRequest request, ClaimsPrincipal user, HttpContext httpContext,
+            TenantAdminAccessService tenantAdminAccess, ZohoHookVerificationService verification,
+            CancellationToken cancellationToken) =>
+        {
+            httpContext.Response.Headers.CacheControl = "no-store";
+            if (!await tenantAdminAccess.IsCurrentTenantAdminAsync(user, cancellationToken))
+                return Results.Forbid();
+            try
+            {
+                return Results.Ok(await verification.CheckAsync(request.Module, cancellationToken, includePostman: true));
+            }
+            catch (ArgumentException)
+            {
+                return Results.BadRequest(new { message = "Unbekanntes Zoho-Modul." });
+            }
+        });
+
         protectedGroup.MapGet("/oauth/start", async (
             ClaimsPrincipal user,
             ZohoOAuthService oauth,
@@ -169,7 +187,7 @@ public static class ZohoEndpointExtensions
 
             // Zoho cannot send a user JWT. Shared trust middleware authenticates
             // the router; its tenant header must match the registered callback URL.
-            // The subscription token is then verified in that tenant's database.
+            // The receiver applies that tenant's subscription verification setting.
             httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
             [
                 new Claim("tenant_id", tenantId.ToString("D")),

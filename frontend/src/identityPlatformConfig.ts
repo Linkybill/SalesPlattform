@@ -16,6 +16,7 @@ export const tenantApplicationPath = resolveTenantApplicationPath(
 
 export const identityPlatformConfig: IdentityPlatformApplicationOptions = {
   applicationKey,
+  visibleLogQueryParameters: ['tenant_id'],
   applicationRootUrl: tenantApplicationPath.applicationRootUrl,
   applicationBaseUrl: tenantApplicationPath.applicationBaseUrl,
   platformApiBaseUrl: deploymentEnvironment.VITE_PLATFORM_API_BASE_URL,

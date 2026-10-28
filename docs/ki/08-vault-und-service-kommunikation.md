@@ -66,6 +66,7 @@ Secretwerte aller Scopes werden ausschließlich im zentralen Vault gespeichert.
 | `zoho.datacenter` | `tenantApp` | Normales Setting; Standard `eu` |
 | `zoho.clientId` | `tenantApp` | Normales Setting; Client-ID der Zoho-Anwendung |
 | `zoho.webhookUrl` | `tenantApp` | Normales Setting; öffentliche Callback-Basis-URL des jeweiligen Mandanten; erforderlich für Zoho-Hooks |
+| `zoho.webhookDiagnostic` | `tenantApp` | Boolean, standardmäßig false; ohne Ablauf einschaltbarer Testmodus ohne Channel-/Tokenprüfung, seit Auftrag 19.10. mit normaler Queue/Verarbeitung gültiger Ereignisse; keine Secrets im Log oder Queue-Payload |
 | `zoho.clientSecret` | `tenantApp` | `secret: true`; Client-Secret in Vault |
 | `integration.zoho.default.refresh-token` | `tenantApp` | Internes Credential ohne Manifest-Editor; nach erfolgreichem OAuth vom Zoho-Adapter in Vault gespeichert |
 
@@ -76,7 +77,11 @@ mit `/api/integrations/zoho/webhook` eingetragen. Verschiedene Kunden dürfen
 unterschiedliche Frontend-Hosts verwenden. Übersicht und Hook-Job lesen bei jedem
 Aufruf denselben aktuellen Tenant-App-Wert, unabhängig von OAuth und ohne Neustart.
 Ein fehlender oder ungültiger Wert wird nicht durch eine Deployment-URL ersetzt.
-Die Tenant-ID wird bei Registrierung ergänzt. Nach Änderung den Job
+Die Tenant-ID wird auf jüngsten Benutzerauftrag vom 17.10.2026 wieder als
+Queryparameter `tenant_id` ergänzt. Der zwischenzeitliche Pfad-Versuch ist für
+neue Registrierungen abgelöst. Der vorhandene Router unterstützt beide Formen.
+Die Basisadresse im Setting bleibt unverändert und enthält keinen Tenant.
+Nach Änderung den Job
 „CRM-Hooks erneuern“ starten; bereits gültige Subscriptions mit anderer URL
 werden dabei ersetzt. Das Setting richtet weder DNS noch Routing oder TLS ein.
 Die Zoho-Felder werden bei `crm.integration = zoho` eingeblendet. Das
@@ -129,8 +134,29 @@ Vault-Kubernetes-Auth und verwendet ihren `IPlatformSecretStore` direkt.
 
 Der dedizierte Service-Secret-GET darf den Wert an das berechtigte Backend
 liefern. Normale Settings-Antworten bleiben maskiert; Zoho-Tokens werden nie
-an das Frontend geliefert. Secret-Bodies, Tokenantworten und Credentials
+an das Frontend geliefert, mit der ausdrücklich beauftragten Ausnahme des
+Webhook-Verification-Tokens für den Tenant-Admin-Postman-Export vom 16.10.2026
+(siehe Entscheidungen). OAuth-Access-/Refresh-Tokens bleiben im Backend.
+Secret-Bodies, Tokenantworten und Credentials
 dürfen nicht protokolliert oder ins Repository aufgenommen werden.
+Für den ausdrücklich angeforderten Zoho-Supportmitschnitt vom 21.10.2026
+protokolliert ausschließlich ein manueller Hook-Neuaufbau die Callback-URL
+als Teil einer redigierten Kopie des ausgehenden Registrierungsbodys in den
+tenantgeschützten Jobdetails. Die sichtbare Job-Meldung und der zentrale
+Logexport beginnen mit dem API-Pfad und nennen Modul, Channel-ID und API-Ziel.
+Die Callback-Adresse einschließlich Tenant-Query steht im redigierten JSON-Body
+der aufklappbaren Jobdetails.
+Webhook-Verification-Token und OAuth-Header bleiben aus den Jobdetails ausgeschlossen.
+
+Die Sales-Backend-Konfiguration filtert technische `Information`-Meldungen der
+Kategorien `Microsoft`, `System.Net.Http.HttpClient`,
+`IdentityPlatform.Dependency` und `IdentityPlatform.Shared.Jobs.PlatformJobWorker`.
+Warnungen und Fehler dieser Quellen bleiben sichtbar. Eigene Sales-Infoeinträge
+wie `POST /crm/v8/actions/watch` bleiben in den zentralen Logs; die vollständigen
+Job-Ereignisse werden weiter in der Job-Historie gespeichert. Damit wird die
+automatische Spiegelung von Job-Infoeinträgen ins zentrale Log vermieden.
+`IdentityPlatform.Request` bleibt auf Info-Stufe für die zentrale
+HTTP-Requestübersicht.
 
 ## Service-Identität und fachliche Rollen
 

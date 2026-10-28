@@ -1,5 +1,68 @@
 # Projektkontext
 
+## Übergabe für Git-Veröffentlichung (28.10.2026)
+
+Benutzerauftrag: gesamten aktuellen Quellstand einschließlich Kontexten committen
+und pushen; GitHub Actions wegen aufgebrauchten Guthabens überspringen.
+Zoho-Notification-Registrierung nutzt direkt das offizielle SDK; der ersetzte
+HTTP-Registrierungspfad ist entfernt. Andere CRM-Aufrufe bleiben separat.
+Gemeinsame Pakete: Shared 0.1.83 und React 0.1.64, lokal nach GitHub Packages
+veröffentlicht und aus der Registry eingebunden. Allgemeine HTTP-Diagnose zeigt
+Start/Übergaben und Antwort/Ergebnis mit Uhrzeit und Endpunkttitel.
+Sales gibt ausschließlich `tenant_id` als sichtbaren Queryparameter frei;
+die Plattform enthält keine Zoho-Sonderregel. Backend-/Frontend-Builds,
+Typprüfung und 412 Webhook-Checks bestanden. SDK-Kompatibilitätswarnung NU1701
+bleibt bestehen. Für die vollständige Änderung Plattform und Apps ausrollen;
+Paketveröffentlichung und Git-Push ersetzen kein Deployment. Details und
+historische Nachweise in `09-deployment-und-betriebsstand.md`.
+
+## Diagnose-Webhooks werden eingereiht (19.10.2026, lokal)
+
+Neuer Benutzerauftrag ersetzt die reine Eingangsdiagnose vom 17.10.:
+`zoho.webhookDiagnostic` überspringt Channel-/Tokenprüfung, schreibt verarbeitbare
+Events aber in die normale tenantisolierte Queue. Der vorhandene Hook-Job
+verarbeitet diese Events. Modul, Operation und Datensatz-IDs bleiben erforderlich;
+HTTP 202 enthält Ereignis-ID, `queued: true` und `authenticated: false`.
+Identische Wiederholungen erzeugen keine zweite Zeile. Test-/Rolloutstand siehe
+Betriebsstand.
+
+## Webhook-Diagnose ohne Zeitlimit (17.10.2026, lokal)
+
+Benutzer verlangt einen Test ohne Channel-/Tokenprüfung und ohne Ablauf.
+Tenant-AppSetting `zoho.webhookDiagnostic` (Standard false) aktiviert reine
+Eingangsbestätigung/Protokollierung ohne Queue oder Import. Einschalten in den
+Sales-AppSettings unter Zoho CRM; bestehende Tenant-/Routerprüfung bleibt.
+Details in Datenmodell, Entscheidung und Betriebsstand.
+
+## Rückkehr zum Query-Callback (17.10.2026)
+
+Neuester Benutzerauftrag ersetzt den folgenden Pfad-Versuch: Sales registriert
+wieder `/api/integrations/zoho/webhook?tenant_id=<Mandant>`. Basisadresse bleibt
+unverändert; Registrierung, Übersicht, Soll-Abgleich und Postman-Export folgen
+dem gemeinsamen Builder. Sales-Rollout und anschließende Hook-Erneuerung nötig;
+der Router unterstützt Query bereits. Bestehende Pfad-Aufrufe bleiben kompatibel.
+Prüf-/Rolloutstand im Betriebsstand. Eingang 01:17:04 vom Benutzer als Postman
+bestätigt, weiterhin keine nachgewiesene echte Zoho-Zustellung.
+
+## Tenant-Pfad für Zoho-Webhooks (17.10.2026)
+
+Auf Benutzerauftrag erzeugt Sales Callback-Adressen mit Tenant im Pfad statt
+im Query. Die konfigurierte Basisadresse bleibt ohne Tenant; der aktualisierte
+Application Router übersetzt intern auf den bisherigen Backend-Vertrag.
+Zuerst Router, danach Sales ausrollen und Hooks erneuern. Alte Query-Callbacks
+bleiben am Empfänger unterstützt. Lokaler Arbeitsstand; Details in Datenmodell,
+Entscheidungen und Betriebsstand. Ein Queryverlust durch Zoho ist nicht belegt.
+
+## Postman-Testdaten für Webhooks (16.10.2026)
+
+Auf Benutzerauftrag ergänzt Import → Hooks und Ereignisse eine explizite
+Tenant-Admin-Aktion „Postman-Testdaten laden“. Die vorhandene Backend-Verbindung
+liest und verifiziert die reale Modulregistrierung und liefert Callback-URL,
+Channel und Webhook-Token. Mit einer Zoho-Datensatz-ID erzeugt die UI kopierbares
+JSON und cURL für Postman. OAuth-Zugang bleibt im Backend; kein automatischer
+Testversand. Details/Schutzgrenzen in Datenmodell und Entscheidungen,
+Prüf-/Rolloutstand im Betriebsstand.
+
 ## Spezifikationsreports im lokalen Arbeitsstand (09.10.2026)
 
 Die jüngste Benutzeranforderung ergänzt Kontaktreports, Prozess-/Teamberichte,

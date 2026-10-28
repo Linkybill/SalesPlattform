@@ -79,6 +79,7 @@ builder.Services.AddScoped<ZohoCrmHookUpdateService>();
 builder.Services.AddScoped<ZohoWebhookReceiver>();
 builder.Services.AddScoped<ZohoWebhookOverviewService>();
 builder.Services.AddScoped<ZohoWebhookSettingsService>();
+builder.Services.AddScoped<ZohoWebhookDiagnosticService>();
 builder.Services.AddScoped<ZohoHookVerificationService>();
 builder.Services.AddSingleton<ZohoCrmRecordMapper>();
 builder.Services.AddSingleton<ICrmRecordMapper>(services =>

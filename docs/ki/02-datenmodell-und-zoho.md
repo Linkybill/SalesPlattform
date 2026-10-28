@@ -1,5 +1,59 @@
 # Datenmodell, Zoho und Synchronisation
 
+## Watch-Registrierung mit offiziellem SDK (28.10.2026, lokal)
+
+Nach Benutzerkorrektur ist der ersetzte Registrierungsweg entfernt:
+`BuildNotificationRequest` erstellt direkt SDK-`BodyWrapper`/`Notification`.
+Kein selbst gebautes Versand-JSON, kein `StringContent`, kein Aufruf von
+`SendAsync` und kein SDK-Sonderzweig darin. Der SDK-Aufruf liefert direkt
+`APIResponse<ActionHandler>` statt einer künstlichen `HttpResponseMessage`.
+JSON wird nur für maskierte Diagnosedaten und die bestehende fachliche
+Bestätigungsprüfung verwendet. Abfrage und Deaktivierung sind weiterhin
+eigene HTTP-Aufrufe; diese noch nicht ersetzten Wege bleiben erhalten.
+
+`ZOHOCRMSDK-8.0` 4.0.0 übernimmt den Versand des Registrierungs-POSTs über
+`ZohoNotificationSdk` und `NotificationsOperations.EnableNotifications`.
+Die bestehenden Payload-Regeln, Bestätigungsprüfung, API-Verbrauchserfassung
+und redigierten Request-/Response-Logs bleiben angebunden. Ein Loopback-Test
+vergleicht das tatsächlich vom SDK gesendete JSON mit dem Diagnose-Payload.
+Newtonsoft.Json ist explizit auf 13.0.4 gepinnt, damit Backend und Test-/Consumer-
+Projekte dieselbe API verwenden.
+
+Der globale SDK-Zustand wird durch ein gemeinsames Gate serialisiert; keine
+ThreadLocal-Benutzerwechsel. Der geliehene Access Token wird anschließend im
+SDK-Tokenobjekt gelöscht. Keine SDK-Dateiablage für Tokens und kein SDK-Rohlog;
+Refresh und Secrets bleiben bei ZohoTokenService/Vault. Wartende Aufrufe sind
+abbrechbar. Bereits gesendete synchrone SDK-Aufrufe werden bis zum Ergebnis
+abgewartet; der SDK-Verbindungstimeout ist auf 30 Sekunden gesetzt. Keine
+automatische Wiederholung des Registrierungs-POSTs. Andere Zoho-API-Aufrufe
+bleiben im bisherigen HTTP-Adapter. Test-/Rolloutstand siehe Betriebsstand.
+
+## Queue im Diagnosemodus (19.10.2026, lokal)
+
+Auf neuen Benutzerauftrag ersetzt der Diagnosemodus seine reine Bestätigung
+durch den normalen Queue-Pfad. `zoho.webhookDiagnostic = true` überspringt die
+Subscription-/Channel-/Tokenprüfung. Modul, unterstützte Operation und mindestens
+eine Datensatz-ID bleiben erforderlich; `{}` liefert HTTP 400. Channel und Token
+dürfen fehlen. HTTP 202 meldet bei einem neuen Event `eventId`, `status: queued`,
+`queued: true`, `authenticated: false`. Identische Requests melden die bestehende
+Ereignis-ID und deren Status mit `queued: false`. Tokens und Zusatzfelder werden
+nicht gespeichert. Der vorhandene Hook-Job liest auch Events ohne Channel und
+verarbeitet sie regulär; ein Callback startet keinen sofortigen Job.
+Router-/Tenantprüfung und Contacts-Ausschluss bleiben erhalten. Ausschalten des
+Settings aktiviert die bisherige Verifikation wieder. Keine Schemaänderung.
+
+## Unbegrenzte Webhook-Eingangsdiagnose (17.10.2026)
+
+Tenant-Admins können in Sales-AppSettings → Zoho CRM die Einstellung
+„Zoho Webhook-Eingang ohne Tokenprüfung testen“ einschalten. Ohne Zeitlimit;
+zum Beenden ausschalten oder Backend auf einen Stand ohne Diagnosezweig
+zurückrollen. Standard aus. Callback-URL bleibt beim Queryparameter tenant_id.
+Aktive Diagnose bestätigt JSON-Requests nach Router-/Tenantprüfung mit 202 und
+`status: diagnostic, queued: false, authenticated: false`, auch ohne Channel/Token.
+Keine Ereigniszeile oder CRM-Verarbeitung: Nachweis ausschließlich im technischen
+Log „Zoho webhook diagnostic received“. Log enthält Tenant und Anwesenheit der
+beiden Felder, keine Werte oder Nutzdaten. Bestätigt keinen Zoho-Ursprung.
+
 ## Report-Aliasfehler korrigiert (09.10.2026, lokal)
 
 ZohoFieldReader überspringt null, undefined und leere Strings, damit nachrangige
@@ -42,8 +96,8 @@ müssen für diese Erweiterung bereitgestellt werden.
 
 ## Vollständige Callback-Adresse in der Übersicht (06.10.2026)
 
-Die Hook-Übersicht zeigt als primäre Adresse die konfigurierte Callback-URL
-einschließlich `?tenant_id=<aktiver Mandant>`. Die vom Backend validierte
+Die Hook-Übersicht zeigt als primäre Adresse die vollständige Callback-URL
+mit dem aktiven Mandanten (seit 17.10.2026 im Pfad, zuvor `?tenant_id=…`). Die vom Backend validierte
 Basisadresse bleibt unter „URL-Einstellung“ separat sichtbar. Die Anzeige
 beschreibt die Solladresse der Registrierung; die bereits bei Zoho gespeicherte
 Adresse wird weiterhin über „Registrierung bei Zoho prüfen“ gelesen.
@@ -110,6 +164,59 @@ Jahreswechsel, sekundengenaues Format, Laufzeit sowie unveränderte Callback-,
 Channel-, Token- und Ereignisfelder. Kein Live-Registrierungsnachweis.
 Nach Sales-Backend-Rollout `CRM-Hooks erneuern` starten und Modulstatus prüfen;
 kein Plattform-/Paketupdate und keine Migration für diese Formatkorrektur.
+
+### Rückkehr zum Query-Callback (17.10.2026, jüngster Auftrag)
+
+Sales erzeugt wieder `<Basisadresse>?tenant_id=<Mandant>`. Alle Aufrufer des
+URL-Builders einschließlich Registrierung, Übersicht, Prüfung und Postman nutzen
+denselben Query-Vertrag. Pfad-Registrierungen gelten beim Soll-Abgleich als
+URL-Abweichung und werden beim Hook-Job auch vor Ablauf erneuert. Die weiterhin
+erlaubte Pfadform am Router dient der Kompatibilität während der Umstellung.
+Kein weiterer Router-Rollout; Sales bereitstellen und Hooks erneuern.
+
+### Tenant im Callback-Pfad (17.10.2026, inzwischen abgelöster Versuch)
+
+Neue Registrierungen verwenden `/{tenantId}/api/integrations/zoho/webhook`
+ohne Query. Für den zentralen Router lautet der Pfad
+`/apps/sales-plattform/{tenantId}/api/integrations/zoho/webhook`.
+Das Tenant-AppSetting bleibt die Basisadresse ohne Tenant; bereits tenantbezogene
+oder unbekannte Pfade werden abgewiesen statt mit einem zweiten Tenant ergänzt.
+Registrierung, Soll-Abgleich und Postman-Export verwenden dieselbe erzeugte URL.
+Die Diagnose zeigt erlaubte Callback-Pfade vollständig, inklusive Tenant.
+Zusätzliche geheime URL-Bestandteile werden weiterhin ausgeblendet.
+
+Der separat aktualisierte Application Router schreibt den Pfad intern auf den
+bisherigen Backend-Pfad samt `tenant_id` um. Body, Tokenprüfung und Tenant-Trust
+bleiben erhalten; kein Redirect. Alte Query-Callbacks funktionieren weiterhin.
+Die URL-Abweichung erzwingt beim nächsten Hook-Job eine neue Registrierung,
+auch außerhalb der 36-Stunden-Frist. Daher zuerst Router bereitstellen, danach
+Sales, anschließend Hooks erneuern und echte Zoho-Zustellung prüfen.
+
+### Postman-Testdaten in der UI (16.10.2026)
+
+Unter Import → Hooks und Ereignisse das Modul wählen und „Postman-Testdaten
+laden“ ausführen. Das Backend nutzt die vorhandene Zoho-OAuth-Verbindung, liest
+die aktuelle Registrierung und prüft URL, Channel, Token, Ereignisse und Ablauf
+einschließlich erneut gelesenem lokalem Channel. Nur bei vollständig bestätigter
+Registrierung gibt der zusätzliche Tenant-Admin-Endpunkt
+`POST /api/integrations/zoho/hooks/postman` echte Callback-URL, Channel-ID,
+Verification-Token und die kürzere lokale/Remote-Ablaufzeit aus. Der Browser
+liefert nur das Modul, keine fremde URL/Channel-ID. Antwort mit `no-store`.
+
+Die UI zeigt den Webhook-Token zunächst maskiert; nach Eingabe einer bestehenden
+Zoho-Datensatz-ID des gewählten Moduls entstehen JSON (`operation: update`)
+und ein cURL-Request zum Kopieren/Importieren in Postman. Keine Platzhalter,
+kein OAuth-Token erforderlich, kein automatischer Versand. Ein manueller POST
+kann ein reguläres Ereignis und nachfolgende Verarbeitung auslösen. Modul-,
+Tenant-/Benutzerwechsel, neue Abfrage und Schließen verwerfen die Testdaten;
+abgelaufene Daten lassen sich nicht mehr als Request kopieren. Neuaufbau kann
+die Daten schon vor Ablauf ungültig machen; dann neu laden. Keine Speicherung
+im Browser-Storage und kein Logging der Testdaten.
+
+Die normale Registrierungsprüfung bleibt ohne Tokenausgabe. Ausschließlich
+der explizite Diagnoseweg darf den Webhook-Token im Speicher behalten und an
+den Tenant-Admin liefern; OAuth-Access-/Refresh-Tokens bleiben im Backend.
+Native Prüfungen und Rolloutstatus im Betriebsstand.
 
 ### Registrierung direkt bei Zoho prüfen
 
@@ -409,6 +516,10 @@ verortbare Kunden anzeigen. `NULL` und `1900-01-01` bei Kontaktangaben werden
 vor der Berechnung als „nie kontaktiert“ normalisiert.
 
 ## Tenant-ID im ausgehenden Callback (30.09.2026)
+
+Historischer Query-Vertrag; seit 17.10.2026 wird der Tenant im öffentlichen
+Pfad ergänzt (siehe Abschnitt „Tenant im Callback-Pfad“). Der interne
+Backend-Vertrag verwendet nach Router-Umschreibung weiterhin `tenant_id`.
 
 Der Registrierungsadapter nimmt Basis-URI und Tenant-ID separat entgegen.
 Er bildet notify_url unmittelbar im Zoho-Payload als

@@ -96,7 +96,7 @@
     {
       "key": "zoho.webhookUrl",
       "name": "Zoho Webhook-URL",
-      "description": "Öffentliche Sales-Callback-Basis-URL dieses Mandanten, z. B. https://sales.kunde.de/api/integrations/zoho/webhook. Ohne Query oder Token eintragen; die Tenant-ID wird automatisch ergänzt. Nach einer Änderung den Job CRM-Hooks erneuern starten. Die Adresse muss bereits als erreichbarer Sales-Einstieg eingerichtet sein.",
+      "description": "Öffentliche Sales-Callback-Basis-URL dieses Mandanten, z. B. https://sales.kunde.de/api/integrations/zoho/webhook. Ohne Tenant-ID, Query oder Token eintragen; der Queryparameter tenant_id wird automatisch ergänzt. Nach einer Änderung den Job CRM-Hooks erneuern starten. Die Adresse muss bereits als erreichbarer Sales-Einstieg eingerichtet sein.",
       "category": "Zoho CRM",
       "type": "string",
       "defaultValue": "",
@@ -107,6 +107,15 @@
         "settingKey": "crm.integration",
         "value": "zoho"
       }
+    },
+    {
+      "key": "zoho.webhookDiagnostic",
+      "name": "Zoho Webhook-Eingang ohne Tokenprüfung testen",
+      "description": "Testmodus für diesen Mandanten: reiht Webhook-Ereignisse ohne Channel-/Tokenprüfung zur normalen Verarbeitung ein. Modul, Operation und Datensatz-IDs sind erforderlich. Bleibt ohne Zeitlimit aktiv, bis diese Einstellung ausgeschaltet wird. Ereignisse unter Hooks und Ereignisse prüfen; bestätigt keine Herkunft von Zoho.",
+      "category": "Zoho CRM",
+      "type": "boolean",
+      "defaultValue": false,
+      "scopes": ["tenantApp"]
     },
     {
       "key": "zoho.clientSecret",

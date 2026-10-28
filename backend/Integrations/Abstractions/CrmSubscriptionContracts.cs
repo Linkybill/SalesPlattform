@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using IdentityPlatform.Shared.Jobs;
 
 namespace SalesPlattform.Backend.Integrations.Abstractions;
@@ -19,6 +21,9 @@ public sealed record CrmHookUpdateResult(
     IReadOnlyCollection<string> Warnings)
 {
     public bool HasWarnings => Warnings.Count > 0 || EventsFailed > 0;
+
+    [JsonIgnore]
+    public IReadOnlyCollection<JsonElement> ApiRequests { get; init; } = [];
 }
 
 /// <summary>

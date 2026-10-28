@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { ZohoHookPostman, type HookPostmanData } from './ZohoHookPostman'
 
 type Verification = {
   checkedAt: string; module: string; status: string; message: string
@@ -8,6 +9,7 @@ type Verification = {
   tokenCheck?: { status: string; message: string } | null
   localChannelCheck?: { status: string; message: string } | null
   localExpiresAt?: string | null; notifyOnRelatedAction?: boolean | null
+  postman?: HookPostmanData | null
 }
 
 export function ZohoHookCheck({ authorizedFetch, modules }: {
@@ -21,13 +23,13 @@ export function ZohoHookCheck({ authorizedFetch, modules }: {
   const active = useRef<AbortController | null>(null)
   // Parent is keyed by tenant/user. No late result may survive unmount or another selection.
   useEffect(() => () => { active.current?.abort(); active.current = null }, [])
-  async function check() {
+  async function check(postman = false) {
     active.current?.abort()
     const controller = new AbortController()
     active.current = controller
     setLoading(true); setResult(null); setError(null)
     try {
-      const response = await authorizedFetch('/api/integrations/zoho/hooks/check', {
+      const response = await authorizedFetch(postman ? '/api/integrations/zoho/hooks/postman' : '/api/integrations/zoho/hooks/check', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ module }), signal: controller.signal,
       })
@@ -35,7 +37,11 @@ export function ZohoHookCheck({ authorizedFetch, modules }: {
         ? 'Nur Mandanten-Administratoren dürfen die Registrierung prüfen.'
         : `Zoho-Prüfung nicht verfügbar (HTTP ${response.status}).`)
       const value = await response.json() as Verification
-      if (active.current === controller) setResult(value)
+      if (active.current === controller) {
+        setResult(value)
+        if (postman && !value.postman)
+          setError('Keine Postman-Testdaten verfügbar. Die Registrierung muss mit passender URL, Channel und Token aktiv bestätigt sein. Details siehe Prüfergebnis.')
+      }
     } catch (reason) {
       if (active.current === controller && !controller.signal.aborted)
         setError(reason instanceof Error ? reason.message : 'Zoho-Prüfung fehlgeschlagen.')
@@ -55,6 +61,9 @@ export function ZohoHookCheck({ authorizedFetch, modules }: {
       <button type="button" className="secondary-button" disabled={loading} onClick={() => void check()}>
         {loading ? 'Wird bei Zoho geprüft …' : 'Registrierung bei Zoho prüfen'}
       </button>
+      <button type="button" className="secondary-button" disabled={loading} onClick={() => void check(true)}>
+        Postman-Testdaten laden
+      </button>
     </div>
     {error && <p className="message error-message" role="alert">{error}</p>}
     {result && <div role="status" className={result.status === 'verified' && result.filters?.status === 'none'
@@ -62,7 +71,7 @@ export function ZohoHookCheck({ authorizedFetch, modules }: {
       <p><strong>{result.module}</strong> · Geprüft: {new Date(result.checkedAt).toLocaleString('de-DE')}</p>
       <p>{result.message}</p>
       {result.expectedUrl && <p>Erwartete Callback-Adresse: <code className="hook-url">{result.expectedUrl}</code></p>}
-      {result.registeredUrl && <p>Bei Zoho gespeichert (sicher gekürzt): <code className="hook-url">{result.registeredUrl}</code></p>}
+      {result.registeredUrl && <p>Bei Zoho gespeichert: <code className="hook-url">{result.registeredUrl}</code></p>}
       {result.expiresAt && <p>Bei Zoho gültig bis: {new Date(result.expiresAt).toLocaleString('de-DE')}</p>}
       {result.events && <p>Erkannte Ereignisse: {result.events.join(', ') || 'Keine erwarteten Ereignisse'}</p>}
       <p><strong>Feldfilter:</strong> {result.filters?.message ?? 'Nicht geprüft – erweiterte Backend-Diagnose erforderlich.'}</p>
@@ -79,5 +88,6 @@ export function ZohoHookCheck({ authorizedFetch, modules }: {
         „CRM-Hooks erneuern“ baut die Modul-Hooks neu auf. Nur geplante Wartungsläufe lassen gültige Hooks
         außerhalb der 36-Stunden-Frist unverändert.</p>
     </div>}
+    {result?.postman && <ZohoHookPostman data={result.postman} onClose={() => setResult(null)} />}
   </section>
 }

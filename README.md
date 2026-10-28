@@ -122,6 +122,16 @@ Die Shared-Library liest den Tenant aus dem Browserpfad. `appsettings.Deployment
 definiert `Frontend.Port=3003` ohne Pfadzusatz (Root `/`) für beide Targets; den Host liefert
 das Plattform-Target. Remote/dev läuft über den eigenen Aufruf
 `deploy-all.ps1 -Target ax42-1 -Environment dev` in diesem Sales-Ordner.
+Für den direkten lokalen Remote-Rollout mit einmaliger sudo-Eingabe:
+
+```powershell
+.\deploy-remote.ps1 -Preview
+.\deploy-remote.ps1
+```
+
+Der Starter baut und deployt ausschließlich Sales auf `ax42-1/dev` und prüft
+anschließend den öffentlichen HTTPS-Einstieg. Das Passwort wird nur im lokalen
+PowerShell-Prozess gehalten; Plattform und Runtime-Agent werden nicht ausgerollt.
 Die Plattform vorher separat deployen. Der App-Origin wird über das Manifest
 registriert, nicht als zweite Liste im Plattformskript gepflegt. Der Aufruf
 prüft die installierte Fähigkeit `ApplicationIngress__Contract=registration-v1`;

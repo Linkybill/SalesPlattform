@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text.Json.Serialization;
 using IdentityPlatform.Shared.Database;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
@@ -12,7 +13,14 @@ public sealed record ZohoHookVerification(DateTimeOffset CheckedAt, string Modul
     DateTimeOffset? ExpiresAt = null, IReadOnlyList<string>? Events = null,
     ZohoNotificationFilters? Filters = null, ZohoHookCheckResult? TokenCheck = null,
     ZohoHookCheckResult? LocalChannelCheck = null, DateTimeOffset? LocalExpiresAt = null,
-    bool? NotifyOnRelatedAction = null);
+    bool? NotifyOnRelatedAction = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ZohoHookPostmanData? Postman = null);
+
+public sealed record ZohoHookPostmanData(string Url, string Module, string ChannelId, string Token,
+    DateTimeOffset ExpiresAt)
+{
+    public override string ToString() => "Zoho Postman data (private)";
+}
 
 public sealed record ZohoHookCheckResult(string Status, string Message);
 
@@ -23,7 +31,8 @@ public sealed class ZohoHookVerificationService(
     IHttpContextAccessor httpContextAccessor,
     ILogger<ZohoHookVerificationService> logger)
 {
-    public async Task<ZohoHookVerification> CheckAsync(string module, CancellationToken cancellationToken)
+    public async Task<ZohoHookVerification> CheckAsync(string module, CancellationToken cancellationToken,
+        bool includePostman = false)
     {
         if (!ZohoCrmHookUpdateService.RelevantModules.Contains(module, StringComparer.Ordinal))
             throw new ArgumentException("Unbekanntes Zoho-Modul.");
@@ -50,7 +59,7 @@ public sealed class ZohoHookVerificationService(
                 return new(now, module, "not-registered", "Lokal kein Channel vorhanden. Zuerst CRM-Hooks erneuern starten.", expected);
             if (channels.Length != 1)
                 return new(now, module, "ambiguous", "Mehrere lokale Channels gefunden; keine eindeutige Prüfung möglich.", expected);
-            var remote = await crm.ReadNotificationsAsync(channels[0], module, timeout.Token);
+            var remote = await crm.ReadNotificationsAsync(channels[0], module, timeout.Token, includePostman);
             // Re-read after the provider call: a concurrent renewal must not verify
             // an old channel against stale local state. Never return this entity.
             await using var currentSession = await dbFactory.OpenReadOnlyAsync(timeout.Token);
@@ -63,8 +72,9 @@ public sealed class ZohoHookVerificationService(
                     ChannelId = x.ChannelId, Status = x.Status, ExpiresAt = x.ExpiresAt,
                     VerificationTokenHash = x.VerificationTokenHash
                 }).Take(2).ToArrayAsync(timeout.Token);
-            return Evaluate(module, channels[0], expected, remote, DateTimeOffset.UtcNow,
+            var verification = Evaluate(module, channels[0], expected, remote, DateTimeOffset.UtcNow,
                 current.Length == 1 ? current[0] : null);
+            return includePostman ? IncludePostmanData(verification, channels[0], remote) : verification;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -76,6 +86,21 @@ public sealed class ZohoHookVerificationService(
             logger.LogWarning("Zoho registration verification failed ({ExceptionType}).", exception.GetType().Name);
             return SafeFailure(module, exception, now);
         }
+    }
+
+    internal static ZohoHookVerification IncludePostmanData(ZohoHookVerification verification,
+        string channelId, IReadOnlyList<ZohoNotificationSnapshot> entries)
+    {
+        if (verification.Status != "verified" || verification.TokenCheck?.Status != "match"
+            || verification.LocalChannelCheck?.Status != "ready" || verification.ExpectedUrl is null
+            || verification.ExpiresAt is null || verification.LocalExpiresAt is null)
+            return verification;
+        var matches = entries.Where(x => x.ChannelId == channelId && x.Module == verification.Module).ToArray();
+        if (matches.Length != 1 || matches[0].VerificationToken is not { Length: > 0 } token)
+            return verification;
+        var expiry = verification.ExpiresAt.Value < verification.LocalExpiresAt.Value
+            ? verification.ExpiresAt.Value : verification.LocalExpiresAt.Value;
+        return verification with { Postman = new(verification.ExpectedUrl, verification.Module, channelId, token, expiry) };
     }
 
     internal static ZohoHookVerification SafeFailure(string module, Exception exception, DateTimeOffset now)
@@ -150,8 +175,15 @@ public sealed class ZohoHookVerificationService(
     {
         if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme is not ("https" or "http")) return null;
         // Do not expose userinfo, fragments, arbitrary paths or secret query parameters.
-        var path = uri.AbsolutePath.EndsWith("/api/integrations/zoho/webhook", StringComparison.Ordinal)
-            ? "/api/integrations/zoho/webhook" : "/[abweichender Pfad ausgeblendet]";
+        const string routerPrefix = "/apps/sales-plattform";
+        const string webhookPath = ZohoCrmHookUpdateService.WebhookPath;
+        var localPath = uri.AbsolutePath.StartsWith(routerPrefix + "/", StringComparison.Ordinal)
+            ? uri.AbsolutePath[routerPrefix.Length..] : uri.AbsolutePath;
+        var knownPath = localPath == webhookPath
+            || (localPath.EndsWith(webhookPath, StringComparison.Ordinal)
+                && Guid.TryParseExact(localPath[1..^webhookPath.Length], "D", out var pathTenant)
+                && pathTenant != Guid.Empty);
+        var path = knownPath ? uri.AbsolutePath : "/[abweichender Pfad ausgeblendet]";
         var query = QueryHelpers.ParseQuery(uri.Query);
         var tenant = query.TryGetValue("tenant_id", out var ids) && ids.Count == 1 && Guid.TryParse(ids[0], out var id)
             ? $"?tenant_id={id:D}" : string.Empty;

@@ -35,6 +35,7 @@ public sealed class CrmHookUpdateJob(
         var details = JsonSerializer.SerializeToElement(new
         {
             phase = "crm-hook-update",
+            apiRequests = results.SelectMany(result => result.ApiRequests).ToArray(),
             providers = results,
             warnings
         });

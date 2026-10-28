@@ -1,5 +1,338 @@
 # Sales: Deployment- und Betriebsstand
 
+## Sales entscheidet über sichtbaren Tenant-Query (28.10.2026)
+
+Sales gibt `tenant_id` in `CentralLogging:VisibleQueryParameters` und an der
+Frontend-App-Shell frei. Dies ist eine Sales-Entscheidung für seine Logs, keine
+Zoho-Ausnahme in der Plattform. Neue allgemeine Pakete Shared 0.1.83 / React
+0.1.64 übertragen die Regel bis zur zentralen Speicherung. SDK-Antwortbereinigung
+verwendet dieselbe App-Konfiguration. Andere Querywerte bleiben maskiert;
+bekannte Geheimnisparameter lassen sich nicht freigeben. Beide Pakete lokal
+in GitHub Packages veröffentlicht und aus der Registry eingebunden. Backend-
+Releasebuild, Frontend-Typprüfung/-Build und 412 Webhook-Checks bestanden.
+Die Prüfung umfasst die App-Policy vor der zentralen Antwortprotokollierung.
+Noch kein Serverrollout; auch die Plattform muss die neue allgemeine
+Event-Freigabeliste unterstützen, sonst maskiert ihr alter Ingest die URL erneut.
+
+## Allgemeine HTTP-Logs und SDK-Start/Antwort (28.10.2026)
+
+Paketupdate auf Shared 0.1.82 / React 0.1.63 aus lokal veröffentlichten und in
+den Registries bestätigten Paketen abgeschlossen. Zoho-Registrierung erzeugt Start mit Request und Antwort mit Ergebnis
+als getrennte zentrale Einträge, verbunden durch Span-/Aufruf-ID. Beide enthalten
+Zeitstempel, Modul und Channel; Antwort zusätzlich Dauer/HTTP-Status. Zentrale
+Erfassung unabhängig vom manuellen Joblogger. Geplante Registrierungen erhalten
+damit dieselbe Diagnose. Neue Plattformpakete liefern allgemeine HTTP-Erfassung
+und sprechende Titel einschließlich sichtbarer Zeit/Richtung im Frontend.
+Native Releasebuilds für Backend und Frontend, TypeScript und 411 Webhook-
+Prüfungen erfolgreich. Lockfile verweist auf GitHub Packages, kein lokaler
+Tarball. Bestehende SDK-Kompatibilitäts- und Bundlegrößenwarnungen bleiben.
+Noch kein Serverrollout; neue Logs erst nach Deployment und neuem Aufruf.
+
+## Abgelösten Registrierungsweg entfernt (28.10.2026, lokal)
+
+Auf Benutzerkorrektur den bisherigen JSON-Versandbuilder, `StringContent`,
+den Registrierungsaufruf über `SendAsync` und dessen SDK-Sonderparameter
+entfernt. Registrierung baut direkt SDK-Objekte und verarbeitet die SDK-
+Antwort; kein Rückumbau in eine künstliche HTTP-Antwort. Logging und
+Verbrauchserfassung liegen jetzt am SDK-Aufruf. Andere noch nicht umgestellte
+CRM-Aufrufe behalten den HTTP-Sender. Jeweils 411 Checks unter nativem Windows
+und im Linux-.NET-10-Container bestanden, einschließlich realem SDK-Aufruf an
+lokalen Testempfänger. NU1701 bleibt sichtbar. Kein Serverrollout.
+
+## Offizielles Zoho-SDK eingebunden (28.10.2026, lokal geprüft)
+
+NuGet `ZOHOCRMSDK-8.0` 4.0.0 und explizites Newtonsoft.Json 13.0.4 eingebunden.
+Callback-Registrierung sendet jetzt mit dem offiziellen
+`NotificationsOperations.EnableNotifications` über `ZohoNotificationSdk`.
+Bestehende Tokenverwaltung, Tenant-Zuordnung, Bestätigungsprüfung und
+redigierte Austauschprotokolle bleiben erhalten; übrige API-Aufrufe sind
+noch nicht auf das SDK umgestellt. Beim Restore einen vorhandenen Tippfehler
+`Ve` statt `Version` an Npgsql auf den bisherigen Pin 10.0.3 korrigiert.
+
+Backendbuild erfolgreich. 405 Webhook-Prüfungen unter nativem Windows sowie
+im Linux-Container `mcr.microsoft.com/dotnet/aspnet:10.0` bestanden. Container
+ohne externes Netzwerk und mit schreibgeschütztem Testverzeichnis: echte
+SDK-HTTP-Aufrufe ausschließlich an einen lokalen synthetischen Empfänger.
+Geprüft: Wire-JSON einschließlich Ablaufdatum und Tenant-Query, konkurrierende
+Tokenzuordnung, Antwort-/Verbrauchsheader, HTTP 429 sowie Abbruch wartender
+Aufrufe. Zusätzlich alle 12 Webhook-Deploymentverträge bestanden.
+
+Erster Test deckte unterschiedliche transitive Newtonsoft-Versionen auf;
+expliziter Pin behebt die MissingMethodException. NU1701 bleibt sichtbar,
+weil Zoho das Paket für .NET Framework 4.6.1 ausliefert. Die Tests belegen
+den verwendeten Registrierungspfad unter .NET 10, nicht das gesamte SDK.
+Keine Live-CRM-Aufrufe, keine Registrierung geändert, noch kein Serverrollout.
+
+## Request und Response in einem Logeintrag (22.10.2026, lokal)
+
+Die jüngste Korrektur ersetzt die getrennten Diagnoseeinträge durch einen
+Eintrag je `POST /crm/v8/actions/watch`: API-Pfad, Status, Modul und Channel-ID
+in der sichtbaren Zeile, `request` und `response` mit redigierten Daten in
+denselben Details. Zentrales Log und Job-Protokoll erhalten dasselbe Paar.
+Transportfehler zeigen den gesendeten Request und `response.received = false`.
+Die zusätzliche abschließende Aktionslog-Sammlung entfällt;
+`apiRequests` in der Gesamtzusammenfassung bleibt erhalten. Die bestehenden
+zentralen Maskierungen und Größenlimits gelten weiterhin. Sales-Backend-Rollout
+erforderlich; noch kein Build oder Rollout dieser Korrektur nachgewiesen.
+
+## Zoho-Response-Body im Job-Protokoll (22.10.2026, lokal)
+
+Der bestehende Eintrag `Antwort: POST /crm/v8/actions/watch` enthielt bisher
+nur den HTTP-Status. Beim manuellen Hook-Neuaufbau enthält sein aufklappbares
+Detail künftig den redigierten gesendeten Request, den HTTP-Status und den
+redigierten JSON-Antwortbody von Zoho. Verschachtelte Token-/Secret-Felder
+werden entfernt; Nicht-JSON und Antworten über 32 KiB werden nicht als
+Rohtext gespeichert. Die Gesamtzusammenfassung des Joblaufs zeigt die
+Request-/Antwortpaare direkt unter `apiRequests`; die Aktionsübersicht im
+Job-Protokoll enthält dieselben Angaben. Die zentralen Pfad-Einträge zeigen
+Request und Response nach der zusätzlichen zentralen Maskierung als mehrzeiliges
+JSON; URL-Querywerte werden dort verdeckt und Meldungen auf 4096 Zeichen
+begrenzt. Die vollständigen redigierten Daten stehen in den Jobdetails.
+Der bereits gelaufene Request ist damit nicht rückwirkend
+ergänzbar. Ein Sales-Backend-Rollout ist erforderlich; noch kein Build oder
+Rollout nachgewiesen.
+
+## Ausgehende HTTP-Aufrufe für zentrale Übersicht (22.10.2026, lokal)
+
+`IdentityPlatform.Dependency` steht im Sales-Backend wieder auf `Information`.
+Dadurch werden die vorhandenen strukturierten Starts ausgehender HTTP-Aufrufe,
+einschließlich Zoho CRM, an die zentrale Plattform übertragen. Die
+Requestübersicht trennt eingehende und ausgehende Pfade; für
+`POST /crm/v8/actions/watch` enthält das Job-Protokoll weiterhin den
+redigierten konkreten JSON-Body. Sales- und Plattform-Rollout für die neue
+Übersicht sind noch nicht nachgewiesen.
+
+## Zentrale Logflut aus Sales-Backend begrenzen (21.10.2026, lokal)
+
+`backend/appsettings.json` enthielt bisher keine `Logging:LogLevel`-Regeln. Das
+Sales-Backend exportierte deshalb auch erfolgreiche ASP.NET-, HttpClient- und
+Plattform-Request-/Dependency-Schritte auf Info-Stufe in die zentralen Logs.
+Lokal auf `Warning` gefiltert: `Microsoft`, `System.Net.Http.HttpClient`
+und die automatische Info-Spiegelung des
+`PlatformJobWorker`. `IdentityPlatform.Request` bleibt auf Info-Stufe, damit
+die zentrale HTTP-Requestübersicht die eingehenden Sales-Aufrufe zählen kann.
+`IdentityPlatform.Dependency` wird seit der Ergänzung vom 22.10. wieder auf
+Info-Stufe exportiert, damit auch ausgehende Aufrufe erscheinen.
+Warnungen/Fehler sowie eigene Sales-Infoeinträge, insbesondere
+`POST /crm/v8/actions/watch`, bleiben sichtbar;
+die Job-Historie behält sämtliche Ereignisse und Details. Die Änderung betrifft
+nur das Sales-Backend. Logs anderer Apps in der Ansicht „Alle Apps“ bleiben von
+deren eigener Konfiguration abhängig. Noch kein Build oder Rollout nachgewiesen.
+
+## Zoho-Subscription-Request-Log (21.10.2026, lokal)
+
+Der Benutzer zeigte einen manuellen Lauf vom 21.10. um 23:07 Uhr mit 15
+erneuerten Hooks, einer nicht bestätigten Users-Neuregistrierung und fünf
+Warnungen. Die anschließende Suche in den zentralen Logs nach
+`Zoho subscription request` blieb leer. Ursache im Quellcode nachvollzogen:
+Die erste Implementierung schrieb den JSON-Body einschließlich des redigierten
+Feldnamens `token` in eine einzeilige `ILogger`-Meldung. Der zentrale
+`PlatformLogSanitizer` ersetzt eine solche Zeile vollständig durch
+`[redacted credentials]`; dadurch verschwand auch der Suchmarker. Aus diesem
+zentralen Log lässt sich der Body dieses Laufs nicht zurückholen.
+
+Lokal korrigiert: Bei manuellen Hook-Neuregistrierungen schreibt der Adapter
+unmittelbar vor dem Versand die konkrete Zoho-API-URL und den JSON-Body mit
+echten Callback-, Channel-, Ablauf- und Event-Werten in die strukturierten
+Details des tenantgeschützten Job-Protokolls. Das `token`-Feld ist dort
+`[REDACTED]`, der gesendete Request unverändert. Ein zweiter Job-Eintrag meldet
+den HTTP-Status und enthält seit der Ergänzung vom 22.10. auch den redigierten
+Zoho-Antwortbody. Die sichtbaren Job-Meldungen und die zentralen Logs beginnen
+mit `POST /crm/v8/actions/watch`; danach folgen Modul, Channel-ID und API-Ziel
+beziehungsweise der Response-Status. Callback, Tenant-Query, Ablaufzeit, Events
+und Optionen stehen im aufklappbaren redigierten JSON-Body. Geplante Läufe
+bleiben ohne diese Zusatzprotokollierung. Eine abschließende Übersicht mit dem
+Schritt `Aktion: POST /crm/v8/actions/watch` listet alle begonnenen Requests mit
+Modul, Suchzeile und redigiertem JSON-Body. Da das
+Plattform-Jobprotokoll Warnungen anheftet und sonst neueste Einträge zuerst zeigt,
+erscheint die Übersicht nahe am Anfang; Warnungen und der Abschlussstatus können
+davor stehen.
+Kein Build oder Rollout der Korrektur nachgewiesen;
+Windows-PowerShell konnte aus dieser Sitzung wegen `UtilBindVsockAnyPort` nicht
+gestartet werden. Nach geprüfter Bereitstellung ist für einen neuen Mitschnitt
+ein weiterer manueller Lauf erforderlich.
+
+## Queue im Diagnosemodus (19.10.2026, lokal)
+
+Auf Benutzerauftrag leitet der aktive Diagnosemodus verarbeitbare Events ohne
+Channel-/Tokenprüfung in die normale Queue. Antwort enthält Ereignis-ID und
+`authenticated: false`; neue Events erhalten `queued: true`, identische
+Wiederholungen `queued: false`. Leere JSON-Probes werden jetzt mit HTTP 400
+abgelehnt. Tenantprüfung, Dublettenerkennung und tokenfreie Speicherung bleiben.
+Manifesttext und Regressionen angepasst. Kein Schemawechsel. Dieser Stand
+erfordert einen Sales-Backend-Rollout; noch kein Rolloutnachweis für die Änderung.
+Native Windows-Abnahme: 339 Webhook-Prüfungen und 12 Deploymentverträge bestanden.
+Neue Tests verwenden EF-InMemory mit Plattform-Tenantkontext und prüfen echte
+Queue-Speicherung, Tenant-Isolation, Dubletten, fehlende/falsche Tokens,
+Worker-Payload-Lesbarkeit und Rückkehr zur normalen Validierung. Keine Live-CRM-
+Aufrufe. Logs lokal ignoriert unter `backend/obj/diagnostic-queue-*.log`.
+
+## Öffentlicher Diagnosemodus nachgewiesen (17.10.2026, 10:34 CEST)
+
+Nativer Windows-HTTP-Test mit regulärer TLS-Prüfung: POST `{}` an den bekannten
+Query-Callback des Testmandanten liefert um 10:34:13 CEST HTTP 202 mit
+`status: diagnostic, queued: false, authenticated: false`. Damit sind der neue
+Diagnosezweig und seine Aktivierung an diesem öffentlichen Einstieg nachgewiesen.
+Dieser Request stammt ausdrücklich vom lokalen Diagnosetest, nicht von Zoho.
+Der Rolloutstarter meldet Abschluss am 17.10.2026 um 02:57:34 CEST; die darin
+enthaltene Kubernetes-Verbindungsfehlermeldung ist kein Gegenbeleg zum jetzt
+beobachteten Diagnoseverhalten. Keine Behauptung zum Zustand aller Replikate.
+Aktuelle Serverlogabfrage gestartet (PID 1644), wartet auf interaktive sudo-Eingabe.
+Noch kein Nachweis für Eingang oder Ausbleiben eines echten Zoho-Callbacks.
+Artefakt: `backend/obj/zoho-diagnostics/probe-open-webhook-result.json` (ignoriert).
+
+## Webhook-Diagnose ohne Zeitlimit (17.10.2026)
+
+Tenant-AppSetting `zoho.webhookDiagnostic` ergänzt; Standard aus. Bei Aktivierung
+HTTP 202 ohne Channel-/Tokenprüfung, ohne Queue/Import, mit sicherem Eingangslog.
+Tenant-/Routerprüfung unverändert. Kein Ablauf; Ausschalten oder Backend-Rollback
+beendet den Test. Native Windows-Prüfungen: 319 Webhook-Checks und 12
+Deploymentverträge bestanden. Diagnose-Logfilter um den neuen Eingang erweitert.
+Sales-Rolloutstarter `backend/obj/zoho-diagnostics/start-diagnostic-remote.ps1`;
+Status/Transcript unter `deploy-diagnostic-remote-status.json` / `.log` im selben
+ignorierten Ordner. Sales-Rollout am 17.10.2026 um 01:46:57 CEST gestartet
+(PID 40108, Status sales-running); PowerShell-Fenster in den Vordergrund
+gebracht. Letzter Stand: VPN-Schlüsselabgleich mit interaktiver sudo-Eingabe.
+Rolloutabschluss und Aktivierung noch nicht bestätigt.
+
+## Rückumstellung auf Query – 17.10.2026, Sales-Rollout abgeschlossen
+
+Auf jüngsten Benutzerauftrag erzeugt Sales wieder
+`/api/integrations/zoho/webhook?tenant_id=<Mandant>`. Registrierung, Übersicht,
+Prüfung und Postman-Export verwenden gemeinsam diese Adresse. Manifest-Hilfe
+angepasst; native 308 Webhook-Prüfungen bestanden, einschließlich Erneuerung
+noch gültiger Pfad-Registrierungen auf Query. Router unterstützt bereits beide
+Formen und wird nicht erneut ausgerollt.
+
+Lokaler Remote-Starter `backend/obj/zoho-diagnostics/deploy-query-remote.ps1`
+für ausschließlich Sales auf ax42-1/dev erfolgreich abgeschlossen am
+17.10.2026 um 01:27:58 CEST (`status: succeeded`, Deploy-All complete).
+Status/Transcript: `deploy-query-remote-status.json` / `deploy-query-remote.log`
+im selben ignorierten Verzeichnis. Jetzt Hooks aktualisieren und neue
+Postman-Testdaten laden. Eine manuelle Zoho-Neuregistrierung wird durch den
+Starter nicht ausgelöst; geplante Wartung berücksichtigt URL-Abweichungen.
+Die aktuelle Zoho-Registrierung nach diesem Rollout ist noch nicht abgefragt.
+
+Benutzer bestätigt ausdrücklich: Eingang 01:17:04 CEST war Postman. Auch die
+erneute Logabfrage bis 01:22:32 CEST enthielt keinen passenden Eingang zum
+genannten Versuch um 01:21. Keine echte Zoho-Zustellung nachgewiesen.
+
+## Webhook-Serverdiagnose – 17.10.2026, 01:20 CEST
+
+Nach weiterhin gemeldeten fehlenden Zoho-Zustellungen wurden per SSH lesend
+Pod-Status und gefilterte Logs geprüft. Sales-Backend und Router bereit, keine
+Containerneustarts. Der Runtime-Backend-Pod startete um 01:10:49 CEST; der
+Bootstrap-Pod lief bereits seit 01:09:40 CEST. Das belegt unterschiedliche
+Bereitschaftszeitpunkte, nicht die genaue Ursache der früheren Zusatzcheck-Antworten.
+
+Backend-Log: 01:15:48 CEST Subscription-Verifikation abgewiesen; 01:17:04 CEST
+Calls/edit mit einem Datensatz angenommen und eingereiht (Event-ID
+`207d0162-a8d8-4b6f-9435-c5fc5a2b5181`). Die Herkunft Postman/Zoho ist aus
+diesen Zeilen nicht bestimmbar und wurde beim Benutzer zur zeitlichen Zuordnung
+angefragt. Keine weiteren passenden Webhook-Zeilen in den abgefragten Router-/
+Traefik-Logs; ohne nachgewiesenes Zugriffslogging ist dies kein Beleg für
+ausgebliebene Zoho-Verbindungsversuche.
+
+Öffentliche TLS-Prüfung um 01:18:36 CEST: Leaf von Let's Encrypt YE2,
+Gültigkeit bis 19.10.2026 03:25:25 UTC, vollständige Windows-Vertrauenskette
+bis ISRG Root X1. Kein privates Entwicklungszertifikat am geprüften öffentlichen
+Einstieg. Das belegt nicht die TLS-Validierung durch Zoho selbst.
+Diagnoseskripte und gefilterte Ergebnisse liegen ausschließlich im ignorierten
+Ordner `backend/obj/zoho-diagnostics`; keine weiteren Registrierungsänderungen.
+
+## Tenant-Pfad ausgerollt, externe Nachprüfung erfolgreich – 17.10.2026
+
+Plattform- und Sales-Deployment abgeschlossen; Sales laut Operatorausgabe
+Helm-Revision 28 vom 17.10.2026, 01:09:37 CEST. Der neue Tenant-Pfad bestand
+bereits die Zwischenprüfung nach dem Plattformlauf. Nach Sales gab der
+Zusatzcheck nach zwölf Versuchen ohne protokollierte Einzelantworten auf;
+seine Meldung „Rollout gestoppt“ war keine Rücknahme des erfolgreichen Rollouts.
+Die damalige konkrete HTTP-Antwort und Fehlerursache sind nicht belegt.
+
+Erneute native externe Prüfung am 17.10.2026 um 01:11:55 CEST mit regulärer
+TLS-Prüfung: neuer Tenant-Pfad und alter Query-Callback liefern auf `{}` jeweils
+HTTP 400 mit der erwarteten Sales-Validierung für fehlendes Modul/Channel/Token.
+Frontend HTTP 200. Damit ist die öffentliche Weiterleitung zum Empfänger
+bestätigt; kein Nachweis eines authentifizierten Zoho-Callbacks oder Imports.
+Kein erneutes Deployment erforderlich. Nächster Schritt: Hooks aktualisieren,
+Calls-Registrierung auf neue Pfad-URL prüfen, echte Änderung in Zoho speichern.
+
+Der lokale Zusatzlauncher protokolliert künftig Statuscodes, erlaubt mehr
+Anlaufzeit und unterscheidet `deployed-verification-pending` von einem fehlgeschlagenen
+Deployment. Diagnoseartefakte liegen ignoriert unter `backend/obj/zoho-diagnostics`.
+
+## Remote-Rollout des Tenant-Pfads gestartet – 17.10.2026, 01:00 CEST
+
+Auf Benutzerauftrag lokales PowerShell-Fenster für ax42-1/dev gestartet
+(PID 42764, Titel „Zoho Tenant-Pfad: Plattform dann Sales - ax42-1“).
+Zunächst Plattform-`deploy-all.ps1 -PlatformOnly`, danach Prüfung des neuen
+öffentlichen Pfads mit absichtlich unvollständigem Body, anschließend Sales-
+`deploy-all.ps1`. Sales startet nur nach erfolgreicher Plattformphase und
+Routingprüfung. Native sudo-Eingaben erfolgen im sichtbaren Fenster.
+Zum Startnachweis Status `platform-running`, SSH-Vorprüfung läuft; noch kein
+Abschlussnachweis. Launcher, Status und Transcript liegen ignoriert unter
+`backend/obj/zoho-diagnostics/deploy-tenant-path-remote*`.
+Keine manuelle Zoho-Neuregistrierung durch den Launcher.
+
+## Tenant im Callback-Pfad – 17.10.2026, lokal geprüft
+
+Sales erzeugt die öffentliche Callback-URL dynamisch mit Tenant im Pfad:
+`https://<Host>/<tenantId>/api/integrations/zoho/webhook`, am zentralen Router
+entsprechend `/apps/sales-plattform/<tenantId>/api/integrations/zoho/webhook`.
+Basisadresse im Tenant-AppSetting bleibt ohne Tenant. Registrierung, Übersicht,
+Soll-Abgleich und Postman-Export verwenden denselben URL-Builder. Die Diagnose
+zeigt den erlaubten Pfad vollständig; die irreführende pauschale Beschriftung
+„sicher gekürzt“ ist entfernt, Geheimnisse bleiben ausgeblendet.
+
+Der Application Router im benachbarten Plattform-Repository ergänzt für diese
+Pfadform intern den bisherigen `tenant_id`-Query. Kein Redirect; POST-Body,
+Manifestfreigabe, Tenant-/App-Zuordnung, Trust und Subscription-Prüfung bleiben
+erhalten. Alte Query-Callbacks funktionieren weiterhin. Kein Paketupdate und
+keine Datenbankmigration.
+
+Nativ unter Windows bestanden: 308 synthetische Sales-Webhook-Prüfungen,
+125 Plattform-Router-/Webhook-Tests, TypeScript, Vite-Produktionsbuild und elf
+Webhook-Vertragstests. Tests prüfen dynamische Tenant-URLs, beide öffentlichen
+Einstiege, Body-/Query-Weitergabe, alte Query-Callbacks, fehlende Zuordnung,
+Tenant-Konflikte und die erzwungene Erneuerung alter URL-Registrierungen.
+Zwei anfänglich falsche Testaufbauten verwendeten den App-Port für den zentralen
+Router-Pfad; nach Korrektur des Fixtures alle Tests erfolgreich. Bestehende
+Plattform-XML-Dokumentationswarnungen und Vite-Chunkgrößenwarnung bleiben.
+
+Noch nicht ausgerollt und keine Zoho-Registrierung verändert. Reihenfolge:
+zuerst aktualisierten Plattform-Router separat bereitstellen, danach Sales,
+anschließend „Hooks aktualisieren“ bzw. „CRM-Hooks erneuern“. Auch geplante
+Wartung ersetzt alte URLs nach dem Sales-Rollout. Eine neue echte Calls-Änderung
+muss danach die Zustellung belegen; ein Queryverlust durch Zoho ist nicht bewiesen.
+
+## Postman-Testansicht für Webhooks – 16.10.2026
+
+Implementiert und am 16.10.2026 auf ax42-1/dev ausgerollt. Unter Import → Hooks und Ereignisse
+lädt „Postman-Testdaten laden“ die tatsächlich bei Zoho registrierten Werte über
+die vorhandene Backend-Verbindung. Tenant-Admin-Prüfung, vollständiger Abgleich
+von URL/Channel/Token/Ablauf, separate nicht cachebare Antwort. Die UI bietet
+Callback-URL, Channel und Webhook-Token sowie nach Eingabe einer Zoho-Datensatz-ID
+JSON/cURL zum Kopieren. OAuth-Zugang bleibt im Backend; kein Testversand und
+keine Neuregistrierung durch diese Aktion. Details/Autorisierung siehe 02/05/08.
+
+Native Windows-Prüfungen: Backend-/Test-Releasebuild ohne Warnungen/Fehler,
+300 synthetische Webhook-Prüfungen und elf Webhook-Vertragstests bestanden.
+TypeScript und Vite-Produktionsbuild bestanden; bekannter Hinweis auf großen
+Frontend-Chunk. Native Chrome-Abnahme mit synthetischen Daten bestätigt echte
+Testwerte im generierten Body, Kopieren, cURL-Quoting, ungültige Datensatz-IDs,
+Schließen/Modulwechsel, Fehlerzustände und bestehende Hook-/Theme-/Usage-Ansichten.
+Der erste Testlauf hatte noch einen veralteten Restore auf Shared 0.1.77;
+nach Restore auf die bereits referenzierte 0.1.79 bestanden Build und Tests.
+Keine Änderung der Paketversion und kein Zugriff auf produktive Tokenwerte.
+
+Der Benutzer beauftragte anschließend das lokale Remote-Deployment. Nach Ende
+des blockierenden Board-Rollouts wurde ausschließlich Sales über deploy-all.ps1
+ausgerollt; Skripterfolg am 16.10.2026 um 21:41:58 CEST. Öffentlicher Einstieg
+um 21:45 CEST HTTP 200; tatsächlich ausgeliefertes Bundle index-b6jEspGf.js
+enthält „Postman-Testdaten laden“, „Channel-ID kopieren“ und /hooks/postman.
+Authentifizierte Tokenausgabe bleibt der Benutzerabnahme vorbehalten.
+Kein Nachweis einer behobenen historischen Zoho-403-Zustellung aus diesen Tests.
+
 ## Shared 0.1.79 vollstaendig integriert – 16.10.2026
 
 Backend auf das lokal gebaute und nach GitHub Packages veroeffentlichte Shared

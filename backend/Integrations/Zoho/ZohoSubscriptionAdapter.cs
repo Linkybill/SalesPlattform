@@ -75,6 +75,15 @@ public sealed class ZohoCrmHookUpdateService(
             context.RunId,
             context.RequestedBy ?? "system:platform-job",
             CrmApiUsageOrigins.Job);
+        List<(string Module, string Summary, JsonElement Request, JsonElement? Response)> requests = [];
+        JsonElement[] RequestDiagnostics() => requests.Select(request =>
+            JsonSerializer.SerializeToElement(new
+            {
+                module = request.Module,
+                summary = request.Summary,
+                request = request.Request,
+                response = request.Response
+            })).ToArray();
         try
         {
             var configurationResult = await configuration.ResolveCurrentAsync(cancellationToken);
@@ -214,6 +223,20 @@ public sealed class ZohoCrmHookUpdateService(
                             requestedChannelId,
                             module,
                             target.UseAllOperations,
+                            forceRebuild ? context.Logger : null,
+                            forceRebuild
+                                ? (Action<string, JsonElement>)((summary, details) => requests.Add((module, summary, details, null)))
+                                : null,
+                            forceRebuild
+                                ? (Action<string, JsonElement>)((_, details) =>
+                                {
+                                    var index = requests.FindLastIndex(item => item.Module == module && item.Response is null);
+                                    if (index < 0) return;
+                                    var item = requests[index];
+                                    requests[index] = (item.Module, item.Summary, item.Request,
+                                        details.GetProperty("response").Clone());
+                                })
+                                : null,
                             ct),
                         async (registration, ct) =>
                         {
@@ -292,7 +315,10 @@ public sealed class ZohoCrmHookUpdateService(
                 eventResult.Queued,
                 eventResult.Processed,
                 eventResult.Failed,
-                warnings);
+                warnings)
+            {
+                ApiRequests = RequestDiagnostics()
+            };
         }
         catch (InvalidOperationException exception) when (
             exception.Message.Contains("nicht als CRM-Integration ausgewählt", StringComparison.OrdinalIgnoreCase))
@@ -589,6 +615,8 @@ public sealed class ZohoCrmHookUpdateService(
             && string.Equals(subscription.Status, ActiveStatus, StringComparison.OrdinalIgnoreCase)
             && HasExpectedEvents(subscription.EventsJson, expectedEvents);
 
+    internal const string WebhookPath = "/api/integrations/zoho/webhook";
+
     internal static bool TryValidateWebhookUrl(string? webhookUrl, out Uri uri, out string error)
     {
         if (!Uri.TryCreate(webhookUrl, UriKind.Absolute, out uri!)
@@ -598,9 +626,9 @@ public sealed class ZohoCrmHookUpdateService(
             || !string.IsNullOrEmpty(uri.UserInfo)
             || !string.IsNullOrEmpty(uri.Query)
             || !string.IsNullOrEmpty(uri.Fragment)
-            || !uri.AbsolutePath.EndsWith("/api/integrations/zoho/webhook", StringComparison.Ordinal))
+            || !(uri.AbsolutePath == WebhookPath || uri.AbsolutePath == "/apps/sales-plattform" + WebhookPath))
         {
-            error = "In den Sales-AppSettings unter Zoho Webhook-URL (zoho.webhookUrl) eine öffentliche HTTP(S)-URL zum /api/integrations/zoho/webhook ohne Zugangsdaten, Query oder Fragment eintragen.";
+            error = "In den Sales-AppSettings unter Zoho Webhook-URL (zoho.webhookUrl) eine öffentliche HTTP(S)-Basisadresse mit /api/integrations/zoho/webhook (am zentralen Router /apps/sales-plattform/api/integrations/zoho/webhook) ohne Tenant, Zugangsdaten, Query oder Fragment eintragen. Der Queryparameter tenant_id wird automatisch ergänzt.";
             uri = null!;
             return false;
         }
@@ -696,6 +724,7 @@ public sealed class ZohoCrmHookUpdateService(
 
 public sealed class ZohoWebhookReceiver(
     PlatformTenantDbContextFactory<SalesPlattformDbContext> dbFactory,
+    ZohoWebhookDiagnosticService diagnostics,
     ILogger<ZohoWebhookReceiver> logger)
 {
     internal static bool HasValidSubscriptionToken(IntegrationSubscription? subscription, string token, DateTimeOffset now)
@@ -716,7 +745,17 @@ public sealed class ZohoWebhookReceiver(
         JsonElement payload,
         CancellationToken cancellationToken = default)
     {
-        var parsed = ZohoWebhookPayload.Parse(payload.GetRawText());
+        var diagnostic = await diagnostics.IsEnabledAsync(cancellationToken);
+        await using var session = await dbFactory.OpenAsync(cancellationToken);
+        return await ReceiveCoreAsync(session.Context, payload, diagnostic, cancellationToken);
+    }
+
+    internal async Task<ZohoWebhookReceipt> ReceiveCoreAsync(
+        SalesPlattformDbContext db, JsonElement payload, bool diagnostic, CancellationToken cancellationToken)
+    {
+        var parsed = diagnostic
+            ? ZohoWebhookPayload.ParseDiagnostic(payload.GetRawText())
+            : ZohoWebhookPayload.Parse(payload.GetRawText());
         if (parsed.Module.Equals("Contacts", StringComparison.OrdinalIgnoreCase))
         {
             // Contacts/Ansprechpartner are deliberately outside the SalesPlattform
@@ -726,18 +765,23 @@ public sealed class ZohoWebhookReceiver(
                 "Zoho-Webhook für Contacts wird nicht verarbeitet; Kontakte sind in der SalesPlattform deaktiviert.");
         }
 
-        await using var session = await dbFactory.OpenAsync(cancellationToken);
-        var db = session.Context;
-        var subscription = await db.IntegrationSubscriptions
-            .SingleOrDefaultAsync(item => item.ProviderKey == CrmProviders.Zoho
-                && item.ConnectionKey == "default"
-                && item.ChannelId == parsed.ChannelId
-                && item.Module == parsed.Module
-                && item.Status == "active", cancellationToken);
-        if (!HasValidSubscriptionToken(subscription, parsed.Token, DateTimeOffset.UtcNow))
+        if (!diagnostic)
         {
-            logger.LogWarning("Rejected Zoho webhook: subscription verification failed.");
-            throw new UnauthorizedAccessException("Zoho-Webhook konnte nicht verifiziert werden.");
+            var subscription = await db.IntegrationSubscriptions
+                .SingleOrDefaultAsync(item => item.ProviderKey == CrmProviders.Zoho
+                    && item.ConnectionKey == "default"
+                    && item.ChannelId == parsed.ChannelId
+                    && item.Module == parsed.Module
+                    && item.Status == "active", cancellationToken);
+            if (!HasValidSubscriptionToken(subscription, parsed.Token, DateTimeOffset.UtcNow))
+            {
+                logger.LogWarning("Rejected Zoho webhook: subscription verification failed.");
+                throw new UnauthorizedAccessException("Zoho-Webhook konnte nicht verifiziert werden.");
+            }
+        }
+        else
+        {
+            logger.LogWarning("Zoho webhook diagnostic received: subscription verification skipped; submitting to queue.");
         }
 
         var externalEventId = Convert.ToHexString(SHA256.HashData(
@@ -749,7 +793,7 @@ public sealed class ZohoWebhookReceiver(
         if (existing is not null)
         {
             logger.LogInformation("Zoho webhook duplicate ignored: EventId {EventId}, Status {Status}.", existing.Id, existing.Status);
-            return new ZohoWebhookReceipt(existing.Id, false, existing.Status);
+            return new ZohoWebhookReceipt(existing.Id, false, existing.Status, Authenticated: !diagnostic);
         }
 
         var webhookEvent = new IntegrationWebhookEvent
@@ -768,11 +812,11 @@ public sealed class ZohoWebhookReceiver(
         await db.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Zoho webhook queued: EventId {EventId}, Module {Module}, Operation {Operation}, Records {Records}.",
             webhookEvent.Id, parsed.Module, parsed.Operation, parsed.RecordIds.Count);
-        return new ZohoWebhookReceipt(webhookEvent.Id, true, webhookEvent.Status);
+        return new ZohoWebhookReceipt(webhookEvent.Id, true, webhookEvent.Status, Authenticated: !diagnostic);
     }
 }
 
-public sealed record ZohoWebhookReceipt(Guid EventId, bool Queued, string Status);
+public sealed record ZohoWebhookReceipt(Guid EventId, bool Queued, string Status, bool Authenticated);
 
 internal sealed record ZohoWebhookPayload(
     string Module,
@@ -782,8 +826,9 @@ internal sealed record ZohoWebhookPayload(
     IReadOnlyCollection<string> RecordIds,
     string PayloadJson)
 {
-    // Verification is mandatory at the HTTP boundary, but secrets are not needed by the durable queue.
+    // Normal callbacks require channel/token; tenant-enabled diagnostics only require event data.
     public static ZohoWebhookPayload Parse(string payloadJson) => ParseCore(payloadJson, requireToken: true);
+    public static ZohoWebhookPayload ParseDiagnostic(string payloadJson) => ParseCore(payloadJson, requireToken: false);
     public static ZohoWebhookPayload ParseStored(string payloadJson) => ParseCore(payloadJson, requireToken: false);
     public string ToStoredJson() => JsonSerializer.Serialize(new
     {
@@ -798,7 +843,7 @@ internal sealed record ZohoWebhookPayload(
         var channelId = ReadString(root, "channel_id");
         var token = ReadString(root, "token");
         if (string.IsNullOrWhiteSpace(module)
-            || string.IsNullOrWhiteSpace(channelId)
+            || (requireToken && string.IsNullOrWhiteSpace(channelId))
             || (requireToken && string.IsNullOrWhiteSpace(token)))
         {
             throw new InvalidOperationException("Zoho-Webhook enthält kein Modul, keine Channel-ID oder keinen Verification-Token.");
@@ -826,7 +871,7 @@ internal sealed record ZohoWebhookPayload(
         return new ZohoWebhookPayload(
             module,
             operation,
-            channelId,
+            channelId ?? string.Empty,
             token ?? string.Empty,
             recordIds,
             payloadJson);

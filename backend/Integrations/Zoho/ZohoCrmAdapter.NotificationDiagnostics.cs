@@ -9,13 +9,16 @@ internal sealed record ZohoNotificationSnapshot(string ChannelId, string Module,
     string? NotifyUrl, DateTimeOffset? ExpiresAt, IReadOnlyList<string> Events,
     [property: JsonIgnore] string? TokenHash, ZohoNotificationFilters Filters, bool? NotifyOnRelatedAction)
 {
+    [JsonIgnore]
+    public string? VerificationToken { get; init; }
+
     public override string ToString() => "Zoho notification snapshot (private)";
 }
 
 public sealed partial class ZohoCrmAdapter
 {
     internal async Task<IReadOnlyList<ZohoNotificationSnapshot>> ReadNotificationsAsync(
-        string channelId, string module, CancellationToken cancellationToken)
+        string channelId, string module, CancellationToken cancellationToken, bool includeVerificationToken = false)
     {
         if (string.IsNullOrEmpty(channelId) || !channelId.All(char.IsAsciiDigit))
             throw new InvalidOperationException("Invalid stored notification channel.");
@@ -28,7 +31,9 @@ public sealed partial class ZohoCrmAdapter
                 cancellationToken);
             if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return entries;
             using var document = await ParseDocumentAsync(response, cancellationToken);
-            entries.AddRange(ParseNotificationSnapshots(document.RootElement));
+            entries.AddRange(includeVerificationToken
+                ? ParseNotificationTestSnapshots(document.RootElement)
+                : ParseNotificationSnapshots(document.RootElement));
             if (!document.RootElement.TryGetProperty("info", out var info)
                 || !info.TryGetProperty("more_records", out var more) || more.ValueKind == JsonValueKind.False)
                 return entries;
@@ -55,7 +60,15 @@ public sealed partial class ZohoCrmAdapter
     }
 
     private static string? ReadNotificationTokenHash(JsonElement item)
+        => ReadNotificationToken(item) is { } value ? ZohoCrmHookUpdateService.HashToken(value) : null;
+
+    private static string? ReadNotificationToken(JsonElement item)
         => item.TryGetProperty("token", out var token) && token.ValueKind == JsonValueKind.String
             && token.GetString() is { Length: > 0 and <= 50 } value
-                ? ZohoCrmHookUpdateService.HashToken(value) : null;
+                ? value : null;
+
+    // Only the explicit tenant-admin Postman action retains the verification token.
+    internal static IReadOnlyList<ZohoNotificationSnapshot> ParseNotificationTestSnapshots(JsonElement root)
+        => ParseNotificationSnapshots(root).Zip(root.GetProperty("watch").EnumerateArray(),
+            (snapshot, item) => snapshot with { VerificationToken = ReadNotificationToken(item) }).ToArray();
 }
