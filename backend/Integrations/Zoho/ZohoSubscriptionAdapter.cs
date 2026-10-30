@@ -185,7 +185,51 @@ public sealed class ZohoCrmHookUpdateService(
                 : "Geplante Wartung: gültige Hooks außerhalb der Erneuerungsfrist bleiben bestehen.",
                 "CRM-Hooks", cancellationToken: cancellationToken);
 
+            // Finish all DELETEs before the first POST, including across modules.
+            var preparedTargets = new List<ZohoHookTarget>();
             foreach (var target in hookTargets)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    await using var preparationSession = await dbFactory.OpenAsync(cancellationToken);
+                    var preparationDb = preparationSession.Context;
+                    var subscription = await preparationDb.IntegrationSubscriptions.SingleOrDefaultAsync(
+                        item => item.ProviderKey == ProviderKey && item.ConnectionKey == ConnectionKey
+                            && item.Module == target.Module, cancellationToken);
+                    var notifyUrl = BuildTenantWebhookUrl(webhookBaseUrl, context.TenantId);
+                    if (!forceRebuild && CanKeepSubscription(subscription, notifyUrl,
+                            Operations(target.Module, target.UseAllOperations), now))
+                    {
+                        subscription!.LastCheckedAt = now;
+                        await preparationDb.SaveChangesAsync(cancellationToken);
+                        unchanged++;
+                        continue;
+                    }
+
+                    // A previous failed registration may already have a confirmed DELETE.
+                    if (subscription is not null && subscription.Status != "disabled")
+                    {
+                        await crm.DisableNotificationsAsync(subscription.ChannelId, cancellationToken);
+                        subscription.Status = "disabled";
+                        subscription.LastCheckedAt = DateTimeOffset.UtcNow;
+                        subscription.Error = "Alter Channel deaktiviert; Neuregistrierung steht aus.";
+                        await preparationDb.SaveChangesAsync(cancellationToken);
+                    }
+                    preparedTargets.Add(target);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                catch (Exception exception)
+                {
+                    var message = $"Zoho-Hook '{target.Module}': Deaktivierung oder lokales Speichern nicht bestätigt; keine Neuregistrierung für dieses Modul.";
+                    warnings.Add(message);
+                    await context.Logger.WarningAsync(message, "CRM-Hooks",
+                        JsonSerializer.SerializeToElement(new { module = target.Module,
+                            stage = "disable", errorType = exception.GetType().Name }), cancellationToken);
+                }
+            }
+
+            foreach (var target in preparedTargets)
             {
                 var module = target.Module;
                 cancellationToken.ThrowIfCancellationRequested();
@@ -200,14 +244,6 @@ public sealed class ZohoCrmHookUpdateService(
                             && item.Module == module, cancellationToken);
                     var notifyUrl = BuildTenantWebhookUrl(webhookBaseUrl, context.TenantId);
                     var expectedOperations = Operations(module, target.UseAllOperations);
-                    if (!forceRebuild && CanKeepSubscription(subscription, notifyUrl, expectedOperations, now))
-                    {
-                        subscription!.LastCheckedAt = now;
-                        await moduleDb.SaveChangesAsync(cancellationToken);
-                        unchanged++;
-                        continue;
-                    }
-
                     var oldChannelId = subscription?.ChannelId;
                     var token = CreateVerificationToken();
                     string requestedChannelId;
@@ -265,7 +301,7 @@ public sealed class ZohoCrmHookUpdateService(
                             subscription.LastRenewedAt = subscription.LastCheckedAt;
                             subscription.Error = null;
                             await moduleDb.SaveChangesAsync(ct);
-                        }, crm.DisableNotificationsAsync, cancellationToken);
+                        }, cancellationToken);
                     if (outcome.Installed)
                     {
                         if (wasMissing) created++; else renewed++;
@@ -274,8 +310,7 @@ public sealed class ZohoCrmHookUpdateService(
                             {
                                 module, channelId = requestedChannelId, expiresAt = subscription!.ExpiresAt,
                                 operations = expectedOperations,
-                                generatedSignalOnly = target.UseAllOperations,
-                                cleanupConfirmed = outcome.Warning is null
+                                generatedSignalOnly = target.UseAllOperations
                             }), cancellationToken);
                     }
                     if (outcome.Warning is not null)
@@ -792,6 +827,18 @@ public sealed class ZohoWebhookReceiver(
                 && item.ExternalEventId == externalEventId, cancellationToken);
         if (existing is not null)
         {
+            if (diagnostic && existing.Status == "failed")
+            {
+                existing.Status = "queued";
+                existing.AttemptCount = 0;
+                existing.Error = null;
+                existing.ProcessedAt = null;
+                existing.ReceivedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync(cancellationToken);
+                logger.LogInformation("Zoho diagnostic webhook requeued: EventId {EventId}, Module {Module}, Operation {Operation}.",
+                    existing.Id, parsed.Module, parsed.Operation);
+                return new ZohoWebhookReceipt(existing.Id, true, existing.Status, Authenticated: false);
+            }
             logger.LogInformation("Zoho webhook duplicate ignored: EventId {EventId}, Status {Status}.", existing.Id, existing.Status);
             return new ZohoWebhookReceipt(existing.Id, false, existing.Status, Authenticated: !diagnostic);
         }

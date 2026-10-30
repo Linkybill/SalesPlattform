@@ -1,5 +1,73 @@
 # Sales: Deployment- und Betriebsstand
 
+## Callback-Portkonflikt korrigiert (28.10.2026)
+
+Der Server besitzt bereits den K3s-Traefik mit LoadBalancer-Ports 80/443.
+Die zusätzliche hostPort-443-Bindung blockierte den Plattform-Traefik beim
+Scheduling. Plattformchart korrigiert: exakte Webhook-IngressRoute am bestehenden
+K3s-websecure-Einstieg, verifiziertes internes HTTPS zum Application Router.
+Keine zweite Bindung von 443, kein zusätzlicher 8445-Listener. Sales-URL und
+Tenant-AppSetting bleiben wie unten beschrieben. 27 Deploymenttests bestanden.
+Gezielte Live-Reparatur erfolgreich: Traefik-Rollout abgeschlossen, öffentlicher
+POST auf 443 ohne Tenant erreicht den Router und liefert dessen erwartete
+HTTP-400-Antwort. Keine Änderung von Tenant-AppSettings/Zoho-Registrierungen
+und kein Nachweis einer echten Zoho-Zustellung.
+
+## Tenant aus Notification-Body unterstützt (28.10.2026, lokal)
+
+Application Router liest neben dem Query nun `query_params.tenant_id` aus dem
+JSON-Body. Body-only wird intern auf den bestehenden Sales-Query-/Headervertrag
+normalisiert, ohne Body-Änderung. Ungültige, doppelte oder widersprüchliche Angaben
+werden abgewiesen. JSON-Prüflimit 1 MiB. Keine Änderung an Sales-Receiver,
+Channel-/Tokenprüfung oder Registrierung; diese sendet weiterhin den Query.
+108 Plattform-Router-Endpunkttests bestanden, einschließlich Body-Erhalt und
+Body-only ohne Content-Length. Plattform-Router muss ausgerollt werden.
+Noch keine Live-Zustellung geprüft.
+
+## Zusätzlicher Webhook-Einstieg 443 (28.10.2026, lokal vorbereitet)
+
+Konfiguration und Helm-Route liegen im IdentityPlattform-Repository:
+`appsettings.Deployment.json` → ax42-1/dev/PublicCallbacks/sales-zoho.
+Öffentlich HTTPS 443 → Traefik intern 8445 → Application Router → Sales-Backend.
+Exakter Webhook-Pfad; vorhandenes TLS-Secret, unveränderte Tenant-/Manifestprüfung.
+Sales-Frontend und OAuth bleiben auf 3003. Kein Sales-Build für diese Route nötig.
+
+Ausrollen aus einer interaktiven PowerShell 7 im Plattformverzeichnis:
+
+```powershell
+Set-Location C:\git\IdentityPlattform
+.\deploy-all.ps1 -Target ax42-1 -Environment dev -PlatformOnly -SshConfig "$env:LOCALAPPDATA\IdentityPlatform\deploy-admin.sshconfig"
+```
+
+Danach im betroffenen Sales-Mandanten `zoho.webhookUrl` auf
+`https://176.9.57.203/api/integrations/zoho/webhook` setzen (ohne Tenant-Query)
+und „Hooks aktualisieren“ ausführen. Echte Zoho-Zustellung separat prüfen.
+SSH-Zugang geprüft, sudo verlangt interaktive Passworteingabe; noch kein Rollout,
+kein Tenant-Setting verändert und keine Live-Hook-Erneuerung ausgeführt.
+
+## Diagnose-Event nach Fehler erneut einreihen (28.10.2026, lokal)
+
+Failed-Dubletten im Diagnosemodus werden mit gleicher Ereignis-ID erneut
+eingereiht; Retry-Zähler, Fehler und Verarbeitungszeit zurückgesetzt.
+403 native Webhook-Checks und 13 Node-Vertragsprüfungen bestanden, einschließlich
+persistierter Wiederaufnahme nach ausgeschöpften Versuchen und Schutz laufender
+Events. Bekannte SDK-Warnung NU1701 bleibt. Keine Live-CRM-Aufrufe und kein Rollout;
+der konkrete Fehler des im Screenshot gezeigten Events ist nicht verifiziert.
+
+## DELETE-Phase vor POST (28.10.2026, lokal)
+
+Hook-Job deaktiviert zuerst die zu ersetzenden alten Channels aller Module.
+Danach erst Registrierung und lokale Speicherung; keine DELETEs nach POST.
+Bestätigte Deaktivierung wird als disabled gespeichert. Fehler bei Deaktivierung
+oder deren Speicherung verhindern den POST dieses Moduls. Bei späterem
+Registrierungsfehler bleibt der alte Channel deaktiviert; Zustelllücke möglich.
+Benutzer grenzt den Auftrag auf die Reihenfolge ein; zusätzliche Änderungen
+an Channel-Logfreigabe und Log-Scope zurückgenommen.
+
+Native Release-Ausführung mit 399 Webhook-Checks und 13 Node-Vertragsprüfungen
+sowie Frontend-Typprüfung erfolgreich. SDK-Warnung NU1701 bleibt bestehen.
+Kein Deployment und keine Live-Registrierung ausgeführt.
+
 ## Sales entscheidet über sichtbaren Tenant-Query (28.10.2026)
 
 Sales gibt `tenant_id` in `CentralLogging:VisibleQueryParameters` und an der

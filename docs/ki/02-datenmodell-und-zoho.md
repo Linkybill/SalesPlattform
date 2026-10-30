@@ -1,5 +1,16 @@
 # Datenmodell, Zoho und Synchronisation
 
+## Diagnose-Wiederholung nach Importfehler (28.10.2026, lokal)
+
+Korrektur zur Dublettenregel vom 19.10.: Ein identischer Diagnose-Aufruf für
+ein failed-Event setzt dieses auf queued, AttemptCount=0, Error/ProcessedAt=null
+und aktualisiert ReceivedAt. Antwort queued=true, authenticated=false mit
+bestehender Ereignis-ID. Wartende, laufende und verarbeitete Dubletten werden
+nicht erneut eingereiht. Token-/Channelprüfung bleibt im Diagnosemodus aus.
+Der Hook enthält nur Modul/Operation/IDs; fachliche Anrufdaten lädt der Hook-Job
+bei Zoho. Ohne abrufbaren Datensatz entsteht kein Call in der fachlichen Ansicht.
+Der konkrete Live-Importfehler des gemeldeten Events wurde nicht ausgelesen.
+
 ## Watch-Registrierung mit offiziellem SDK (28.10.2026, lokal)
 
 Nach Benutzerkorrektur ist der ersetzte Registrierungsweg entfernt:
@@ -304,15 +315,21 @@ Die UI bestätigt nur die Annahme des Laufs, nicht dessen Erfolg. Bei 409 einen
 blockierenden Job prüfen; bei unklarer Netzwerkantwort vor erneutem Start die
 Jobliste prüfen. Kein automatisches Wiederholen des POST.
 
-Je Modul: neuen Channel registrieren; bestätigte Channel-ID, Modul und Ablauf
-prüfen; Zuordnung/Token-Hash lokal speichern; erst danach alten Channel löschen.
-Auch die Löschbestätigung wird geprüft (nicht nur HTTP-Erfolg). Eigener DB-Kontext
-je Modul verhindert versehentliches Nachspeichern fehlgeschlagener Änderungen.
-Ein Modulfehler lässt weitere Module weiterlaufen; der Lauf erhält Warnungen.
-Eine fehlgeschlagene Registrierung markiert den bisherigen Channel nicht als
-fehlgeschlagen. Bei unbestätigtem Commit wird keiner der beiden Channels gelöscht.
-Fehler beim Deaktivieren lassen die neue Zuordnung bestehen. Das Jobprotokoll
-enthält Phase und Channel-IDs, aber keine Tokens oder rohen Providerfehler.
+Korrektur vom 28.10.2026: Der Job schließt zuerst die DELETE-Phase für alle
+zu ersetzenden Module ab. Erst anschließend registriert er neue Channels,
+prüft Channel-ID, Modul und Ablauf und speichert Zuordnung/Token-Hash.
+Auch die Löschbestätigung wird geprüft (nicht nur HTTP-Erfolg). Bestätigt
+entfernte Channels werden lokal als disabled gespeichert. Bereits als disabled
+gespeicherte Channels benötigen beim Wiederholen kein zweites DELETE.
+Fehler beim Löschen oder Speichern der Deaktivierung sperren das betroffene
+Modul für die Registrierungsphase. Andere Module laufen weiter; Warnungen
+erscheinen im Jobprotokoll. Geplante Läufe behalten weiterhin gültige Hooks.
+Eigene DB-Kontexte je Modul/Phase verhindern versehentliches Nachspeichern
+fehlgeschlagener Änderungen. Kein DELETE nach POST, auch nicht bei unklarem
+Commit. Ein Registrierungsfehler reaktiviert den alten Channel nicht.
+Das Jobprotokoll enthält Phase und Channel-IDs, aber keine Tokens oder rohen
+Providerfehler. Zwischen Deaktivierung und Neuregistrierung besteht eine
+Zustelllücke; der Wechsel über Zoho und lokale Datenbank ist nicht atomar.
 Manueller Start ohne aktive Zoho-Verbindung, bei deaktivierten Hooks oder ohne
 verfügbare Module meldet einen nicht ausgeführten Neuaufbau als Warnung.
 

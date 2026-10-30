@@ -49,6 +49,26 @@ internal static class DiagnosticQueueChecks
         var duplicate = await Receive(payload);
         check(!duplicate.Queued && !duplicate.Authenticated && duplicate.EventId == row.Id
             && await db.IntegrationWebhookEvents.CountAsync() == 1, "Diagnostic retries must not create duplicate rows.");
+        row.Status = "failed";
+        row.AttemptCount = 5;
+        row.Error = "Synthetic import failure";
+        row.ProcessedAt = DateTimeOffset.UtcNow.AddHours(-1);
+        row.ReceivedAt = DateTimeOffset.UtcNow.AddHours(-2);
+        await db.SaveChangesAsync();
+        var retried = await Receive(payload);
+        check(retried is { Queued: true, Status: "queued", Authenticated: false }
+            && retried.EventId == row.Id, "Failed diagnostic duplicates must be requeued with the same event ID.");
+        await db.Entry(row).ReloadAsync();
+        check(row.Status == "queued" && row.AttemptCount == 0 && row.Error is null && row.ProcessedAt is null
+            && row.ReceivedAt > DateTimeOffset.UtcNow.AddMinutes(-1),
+            "Diagnostic retry must persist a fresh retry budget and clear the previous failure.");
+        check(await db.IntegrationWebhookEvents.CountAsync() == 1,
+            "Requeue must update the existing event, not create a second row.");
+        row.Status = "processing";
+        row.AttemptCount = 1;
+        await db.SaveChangesAsync();
+        check(await Receive(payload) is { Queued: false, Status: "processing" } && row.AttemptCount == 1,
+            "A duplicate must not reset an in-flight import.");
         row.Status = "processed";
         await db.SaveChangesAsync();
         check((await Receive(payload)).Status == "processed", "Duplicates must report the existing processing status.");

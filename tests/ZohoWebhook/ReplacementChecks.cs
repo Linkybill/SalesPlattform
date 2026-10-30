@@ -50,15 +50,14 @@ internal static class ReplacementChecks
         var replacement = Method(typeof(ZohoCrmAdapter).Assembly.GetType("SalesPlattform.Backend.Integrations.Zoho.ZohoHookReplacement")!, "ExecuteAsync");
         Task<ZohoHookReplacementResult> Replace(string? old,
             Func<CancellationToken, Task<ZohoNotificationRegistration>> register,
-            Func<ZohoNotificationRegistration, CancellationToken, Task> persist,
-            Func<string, CancellationToken, Task> cleanup, CancellationToken ct = default)
-            => (Task<ZohoHookReplacementResult>)replacement.Invoke(null, [old, register, persist, cleanup, ct])!;
+            Func<ZohoNotificationRegistration, CancellationToken, Task> persist, CancellationToken ct = default)
+            => (Task<ZohoHookReplacementResult>)replacement.Invoke(null, [old, register, persist, ct])!;
 
-        foreach (var fault in new[] { "none", "register", "persist", "cleanup", "register-timeout", "persist-ambiguous" })
+        foreach (var fault in new[] { "none", "register", "persist", "register-timeout", "persist-ambiguous" })
         {
             var calls = new List<string>();
             var localChannel = "111";
-            var oldDisabled = false;
+            var localStatus = "disabled"; // The job's DELETE phase has already completed.
             var result = await Replace("111", ct =>
             {
                 calls.Add("register");
@@ -70,56 +69,47 @@ internal static class ReplacementChecks
                 calls.Add("persist");
                 if (fault == "persist") throw new InvalidOperationException("private-secret-token");
                 localChannel = registration.ChannelId;
+                localStatus = "active";
                 if (fault == "persist-ambiguous") throw new InvalidOperationException("commit response lost private-secret-token");
                 return Task.CompletedTask;
-            }, (old, ct) =>
-            {
-                calls.Add("cleanup");
-                check(localChannel == "222" && old == "111", "Only delete old channel after new local assignment.");
-                if (fault == "cleanup") throw new InvalidOperationException("HTTP 429 private-secret-token");
-                oldDisabled = true;
-                return Task.CompletedTask;
             });
-            check(result.Installed == (fault is "none" or "cleanup"), "Report installed only after confirmed save.");
-            check(oldDisabled == (fault == "none"), "Failures before cleanup must not delete old channel.");
+            check(result.Installed == (fault == "none"), "Report installed only after confirmed save.");
             check((result.Warning is null) == (fault == "none"), "Partial failures must surface as warnings.");
             check(!JsonSerializer.Serialize(result).Contains("private-secret-token"), "Replacement errors must not leak secrets.");
             if (fault is "register" or "persist" or "register-timeout")
-                check(localChannel == "111", "Old local channel remains valid after pre-commit failure.");
-            if (fault is "none" or "cleanup")
-                check(calls.SequenceEqual(new[] { "register", "persist", "cleanup" }), "Correct replace order.");
+                check(localChannel == "111" && localStatus == "disabled", "Failed replacement must not reactivate the disabled channel.");
+            check(calls.SequenceEqual(fault is "register" or "register-timeout"
+                    ? new[] { "register" } : new[] { "register", "persist" }),
+                "Registration phase only registers and persists, with no trailing DELETE.");
             if (fault == "persist-ambiguous")
-                check(localChannel == "222" && !oldDisabled && result.Stage == "persist", "Uncertain commit: delete neither channel.");
+                check(localChannel == "222" && result.Stage == "persist", "Uncertain commit must report persistence failure.");
         }
 
-        var noOldCleanup = false;
         var newResult = await Replace(null, _ => Task.FromResult(new ZohoNotificationRegistration("222", now.AddDays(1))),
-            (_, _) => Task.CompletedTask, (_, _) => { noOldCleanup = true; return Task.CompletedTask; });
-        check(newResult.Installed && !noOldCleanup, "First registration must not issue a delete.");
+            (_, _) => Task.CompletedTask);
+        check(newResult.Installed, "First registration succeeds without a deletion phase.");
         var savedBadResponse = false;
         var badResult = await Replace("111", _ => Task.FromResult(new ZohoNotificationRegistration("111", now.AddDays(1))),
-            (_, _) => { savedBadResponse = true; return Task.CompletedTask; }, (_, _) => Task.CompletedTask);
-        check(!badResult.Installed && !savedBadResponse, "Do not reuse or delete the old channel as a new channel.");
+            (_, _) => { savedBadResponse = true; return Task.CompletedTask; });
+        check(!badResult.Installed && !savedBadResponse, "Do not reuse the old channel as a new channel.");
 
-        foreach (var cancelAt in new[] { "before", "after-register", "after-persist" })
+        foreach (var cancelAt in new[] { "before", "after-register" })
         {
             using var cts = new CancellationTokenSource();
             if (cancelAt == "before") cts.Cancel();
-            var registered = false; var persisted = false; var deleted = false;
+            var registered = false; var persisted = false;
             try
             {
                 await Replace("111", _ =>
                 {
                     registered = true;
-                    if (cancelAt == "after-register") cts.Cancel();
+                    cts.Cancel();
                     return Task.FromResult(new ZohoNotificationRegistration("222", now.AddDays(1)));
-                }, (_, _) => { persisted = true; cts.Cancel(); return Task.CompletedTask; },
-                    (_, _) => { deleted = true; return Task.CompletedTask; }, cts.Token);
+                }, (_, _) => { persisted = true; return Task.CompletedTask; }, cts.Token);
                 throw new Exception("Cancellation swallowed.");
             }
             catch (OperationCanceledException) { check(true, "Caller cancellation propagated."); }
-            check(!deleted, "Cancellation must not trigger unrequested cleanup.");
-            check(registered == (cancelAt != "before") && persisted == (cancelAt == "after-persist"), "Cancellation preserves stage boundaries.");
+            check(registered == (cancelAt != "before") && !persisted, "Cancellation preserves stage boundaries.");
         }
     }
 }

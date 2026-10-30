@@ -1,5 +1,20 @@
 # Projektkontext
 
+## Diagnose-Hook nach Fehler erneut einreihen (28.10.2026, lokal)
+
+Erneut gesendete fehlgeschlagene Diagnose-Events werden wieder auf queued
+gesetzt, statt mit queued=false/status=failed am Dublettenpfad zu enden.
+Gleiche Ereignis-ID; Versuche und Fehler werden zurückgesetzt. Die Verarbeitung
+lädt den Datensatz weiterhin über seine echte Zoho-ID. Kein Live-Rollout.
+
+## Watch-Reihenfolge korrigiert (28.10.2026, lokal)
+
+Auf Benutzerauftrag zuerst alle erforderlichen alten Channels deaktivieren,
+erst danach neue registrieren. Kein DELETE nach POST. Deaktivierungen werden
+lokal gespeichert; Fehler sperren das betroffene Modul für die Neuregistrierung.
+Die bisherige Reihenfolge „neu speichern, dann alt deaktivieren“ ist ersetzt.
+Details in Datenmodell/Entscheidungen, Prüfstand im Betriebsstand.
+
 ## Übergabe für Git-Veröffentlichung (28.10.2026)
 
 Benutzerauftrag: gesamten aktuellen Quellstand einschließlich Kontexten committen

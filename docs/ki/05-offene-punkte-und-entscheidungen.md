@@ -1,5 +1,41 @@
 # Offene Punkte, Entscheidungen und Status
 
+## Zoho-Einstieg auf Port 443 (28.10.2026)
+
+Benutzer beauftragt zusätzlichen HTTPS-Einstieg ohne Domain, vorerst mit
+selbstsigniertem Zertifikat. Sales bleibt auf 3003. Plattformprofil ax42-1/dev
+führt ausschließlich `/api/integrations/zoho/webhook` über Port 443 zum
+bestehenden Application Router. Das Tenant-AppSetting `zoho.webhookUrl` muss
+nach dem Rollout auf `https://176.9.57.203/api/integrations/zoho/webhook`
+gesetzt und die Hooks müssen erneuert werden. Kein globaler URL-Override.
+Auf nachfolgenden Benutzerauftrag akzeptiert der Router auch
+`query_params.tenant_id` im JSON-Body und ergänzt bei fehlendem Query intern
+`tenant_id`. Beide Quellen müssen bei gemeinsamem Auftreten übereinstimmen.
+Der Body bleibt unverändert; Sales prüft weiterhin den Query gegen den vom
+authentifizierten Router gelieferten Tenant-Header. Router-Rollout erforderlich.
+Die Workflow-Webhook-Portdokumentation belegt keine entsprechende Einschränkung
+der verwendeten Notifications API. Self-Signed kann die Zustellung weiter verhindern.
+
+## Fehlgeschlagenen Diagnose-Hook erneut einreihen (28.10.2026, lokal)
+
+Benutzer meldet HTTP 202 mit queued=false/status=failed bei erneutem Postman-
+Aufruf. Ursache im Empfänger: Dublettenerkennung gibt den alten Fehlerstatus
+zurück. Ein erneuter Diagnose-Aufruf setzt ein fehlgeschlagenes Event auf queued,
+setzt Versuche/Fehler/Verarbeitungszeit zurück und bestätigt queued=true.
+Gleiche Ereignis-ID, keine zusätzliche Zeile. Wartende/laufende/erfolgreich
+verarbeitete Dubletten bleiben unverändert. Die Annahme eines Hooks ersetzt
+keinen Zoho-Datensatz: Calls werden im Job über die mitgelieferte ID geladen.
+
+## Watch-DELETEs vor allen Registrierungen (28.10.2026)
+
+Benutzerkorrektur ersetzt die bisherige Reihenfolge: zuerst alle zu ersetzenden
+alten Channels deaktivieren, anschließend neue Channels registrieren und speichern.
+DELETE bleibt auf die jeweilige alte Channel-ID begrenzt. Bei unbestätigter
+Deaktivierung wird das Modul nicht neu registriert. Bestätigt deaktivierte
+Subscriptions werden lokal als disabled gespeichert; ein späterer POST-Fehler
+darf sie nicht als aktiv anzeigen. Zwischen Löschen und Neuregistrieren besteht
+eine Zustelllücke. Kein nachträgliches DELETE als Cleanup oder Rollback.
+
 ## Start und Antwort allgemein getrennt protokollieren (28.10.2026)
 
 Neuer Benutzerauftrag ersetzt die Ein-Eintrag-Entscheidung vom 22.10.:
