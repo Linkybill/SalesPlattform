@@ -1,5 +1,25 @@
 # Sales: Deployment- und Betriebsstand
 
+## Sales-CI vorlaeufig gesperrt (30.10.2026)
+
+Auf ausdrueckliche Benutzerentscheidung sind automatische Sales-Rollouts bis
+zur Namespace-/Runtime-Credential-Trennung gesperrt. GitHub-Workflow release.yml
+live auf disabled_manually gesetzt; keine aktiven Runs vorhanden. Der normale
+CI-Build-/Testworkflow bleibt aktiv. Zusaetzliche Quellcode-Sperre erlaubt im
+Release-Validator nur access_only; keine automatische Wiederaktivierung.
+
+Serverseitige Einschraenkung durch erfolgreiche Betreiber-Terminalausgabe am
+30.10.2026 bestaetigt: 118 serverseitige Checks und anschliessend 118 Checks
+mit echter Sales-CI-Identitaet, 0 Abweichungen. Cluster/Namespace/Datenbank-Pins
+stimmen. Erfolgreich angewendeter Operatoraufruf:
+`C:\git\IdentityPlattform\deploy\restrict-sales-ci.ps1 -Apply`.
+Er begrenzt drei vorhandene CI-Rollen auf Identitaetspruefungen und entfernt
+zusaetzlich die ausdruecklich freigegebene Sales-User-Zuordnung im
+BoardAutomation-Binding. RBAC-Sicherung auf dem Server:
+/var/lib/identity-platform-ci/sales-ci-mi9a3pxh.
+Laufende App, lokale Operator-Deployments, Runtime-Secrets und Daten bleiben erhalten.
+Details: IdentityPlattform/docs/security-review-2026-10-29.md.
+
 ## Callback-Portkonflikt korrigiert (28.10.2026)
 
 Der Server besitzt bereits den K3s-Traefik mit LoadBalancer-Ports 80/443.

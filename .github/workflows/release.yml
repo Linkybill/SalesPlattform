@@ -38,7 +38,11 @@ jobs:
         shell: pwsh
         env:
           CONFIRMATION: ${{ inputs.confirmation }}
+          ACCESS_ONLY: ${{ inputs.access_only }}
         run: |
+          if ($env:ACCESS_ONLY -cne 'true') {
+            throw 'Sales CI rollout is suspended pending namespace and runtime-credential isolation. Only access checks are permitted; use the local operator deployment for releases.'
+          }
           if ($env:GITHUB_REF -cne 'refs/heads/main' -or $env:CONFIRMATION -cne "$env:APP_CI_TARGET/dev") {
             throw 'Choose main and confirm the fixed app target.'
           }
