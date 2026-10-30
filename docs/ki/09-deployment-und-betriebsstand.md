@@ -1,5 +1,14 @@
 # Sales: Deployment- und Betriebsstand
 
+## Runtime-Trennung, lokaler Rollout vorbereitet (31.10.2026)
+
+Shared auf veroeffentlichte Version 0.1.85 aktualisiert. Die Plattform liefert
+fuer ax42-1/dev den eigenen Namespace app-sales-plattform und appgebundene
+Runtime-Credentials; Deployment-Passwoerter bleiben davon getrennt.
+Backend-Build bestanden, bekannte Zoho-NU1701-Warnung bleibt. Live-Abnahme steht
+noch aus. Benutzer fordert Abschluss ueber lokale deploy-all-Laeufe; keine
+GitHub Actions wegen Budget. Die bestehende CI-Sperre bleibt erhalten.
+
 ## Sales-CI vorlaeufig gesperrt (30.10.2026)
 
 Auf ausdrueckliche Benutzerentscheidung sind automatische Sales-Rollouts bis
