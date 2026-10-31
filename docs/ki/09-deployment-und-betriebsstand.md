@@ -1,5 +1,18 @@
 # Sales: Deployment- und Betriebsstand
 
+## Dedizierter CI-Zugang live geprueft (31.10.2026)
+
+Runtime laeuft im eigenen Namespace app-sales-plattform mit Shared 0.1.85.
+Der neue CI-Zugang hat eigene SSH-/Kubernetes-Schluessel; Admission begrenzt
+Schreibrechte auf den eigenen Bootstrap und verhindert Host-/Privilegzugriffe.
+24 echte Zertifikats-/RBAC-/Admissionchecks und ein lokaler Helm-3-Rollout ueber
+diesen Zugang bestanden. OCI-Images wurden lokal importiert; kein Actions-Lauf
+und keine Registry-Veroeffentlichung Bestandteil dieser Abnahme.
+Der alte gemeinsame Sales-Zugang bleibt identity-only. Der Release-Validator
+verlangt jetzt die Betreiber-Markierung APP_CI_ISOLATION_VERIFIED=v3 sowie den
+geprueften Tooling-Commit. Branch-Merge und GitHub-Konfiguration sind getrennte
+Schritte; wegen Budget keine Actions starten.
+
 ## Runtime-Trennung, lokaler Rollout vorbereitet (31.10.2026)
 
 Shared auf veroeffentlichte Version 0.1.85 aktualisiert. Die Plattform liefert

@@ -38,10 +38,10 @@ jobs:
         shell: pwsh
         env:
           CONFIRMATION: ${{ inputs.confirmation }}
-          ACCESS_ONLY: ${{ inputs.access_only }}
+          ISOLATED_CI_READY: ${{ vars.APP_CI_ISOLATION_VERIFIED }}
         run: |
-          if ($env:ACCESS_ONLY -cne 'true') {
-            throw 'Sales CI rollout is suspended pending namespace and runtime-credential isolation. Only access checks are permitted; use the local operator deployment for releases.'
+          if ($env:ISOLATED_CI_READY -cne 'v3') {
+            throw 'Complete and verify the dedicated version-3 app CI setup before enabling releases.'
           }
           if ($env:GITHUB_REF -cne 'refs/heads/main' -or $env:CONFIRMATION -cne "$env:APP_CI_TARGET/dev") {
             throw 'Choose main and confirm the fixed app target.'
