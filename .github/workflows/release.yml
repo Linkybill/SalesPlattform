@@ -38,7 +38,11 @@ jobs:
         shell: pwsh
         env:
           CONFIRMATION: ${{ inputs.confirmation }}
+          ISOLATED_CI_READY: ${{ vars.APP_CI_ISOLATION_VERIFIED }}
         run: |
+          if ($env:ISOLATED_CI_READY -cne 'v3') {
+            throw 'Complete and verify the dedicated version-3 app CI setup before enabling releases.'
+          }
           if ($env:GITHUB_REF -cne 'refs/heads/main' -or $env:CONFIRMATION -cne "$env:APP_CI_TARGET/dev") {
             throw 'Choose main and confirm the fixed app target.'
           }

@@ -1,5 +1,47 @@
 # Sales: Deployment- und Betriebsstand
 
+## Dedizierter CI-Zugang live geprueft (31.10.2026)
+
+Runtime laeuft im eigenen Namespace app-sales-plattform mit Shared 0.1.85.
+Der neue CI-Zugang hat eigene SSH-/Kubernetes-Schluessel; Admission begrenzt
+Schreibrechte auf den eigenen Bootstrap und verhindert Host-/Privilegzugriffe.
+24 echte Zertifikats-/RBAC-/Admissionchecks und ein lokaler Helm-3-Rollout ueber
+diesen Zugang bestanden. OCI-Images wurden lokal importiert; kein Actions-Lauf
+und keine Registry-Veroeffentlichung Bestandteil dieser Abnahme.
+Der alte gemeinsame Sales-Zugang bleibt identity-only. Der Release-Validator
+verlangt jetzt die Betreiber-Markierung APP_CI_ISOLATION_VERIFIED=v3 sowie den
+geprueften Tooling-Commit. Branch-Merge und GitHub-Konfiguration sind getrennte
+Schritte; wegen Budget keine Actions starten.
+
+## Runtime-Trennung, lokaler Rollout vorbereitet (31.10.2026)
+
+Shared auf veroeffentlichte Version 0.1.85 aktualisiert. Die Plattform liefert
+fuer ax42-1/dev den eigenen Namespace app-sales-plattform und appgebundene
+Runtime-Credentials; Deployment-Passwoerter bleiben davon getrennt.
+Backend-Build bestanden, bekannte Zoho-NU1701-Warnung bleibt. Live-Abnahme steht
+noch aus. Benutzer fordert Abschluss ueber lokale deploy-all-Laeufe; keine
+GitHub Actions wegen Budget. Die bestehende CI-Sperre bleibt erhalten.
+
+## Sales-CI vorlaeufig gesperrt (30.10.2026)
+
+Auf ausdrueckliche Benutzerentscheidung sind automatische Sales-Rollouts bis
+zur Namespace-/Runtime-Credential-Trennung gesperrt. GitHub-Workflow release.yml
+live auf disabled_manually gesetzt; keine aktiven Runs vorhanden. Der normale
+CI-Build-/Testworkflow bleibt aktiv. Zusaetzliche Quellcode-Sperre erlaubt im
+Release-Validator nur access_only; keine automatische Wiederaktivierung.
+
+Serverseitige Einschraenkung durch erfolgreiche Betreiber-Terminalausgabe am
+30.10.2026 bestaetigt: 118 serverseitige Checks und anschliessend 118 Checks
+mit echter Sales-CI-Identitaet, 0 Abweichungen. Cluster/Namespace/Datenbank-Pins
+stimmen. Erfolgreich angewendeter Operatoraufruf:
+`C:\git\IdentityPlattform\deploy\restrict-sales-ci.ps1 -Apply`.
+Er begrenzt drei vorhandene CI-Rollen auf Identitaetspruefungen und entfernt
+zusaetzlich die ausdruecklich freigegebene Sales-User-Zuordnung im
+BoardAutomation-Binding. RBAC-Sicherung auf dem Server:
+/var/lib/identity-platform-ci/sales-ci-mi9a3pxh.
+Laufende App, lokale Operator-Deployments, Runtime-Secrets und Daten bleiben erhalten.
+Details: IdentityPlattform/docs/security-review-2026-10-29.md.
+
 ## Callback-Portkonflikt korrigiert (28.10.2026)
 
 Der Server besitzt bereits den K3s-Traefik mit LoadBalancer-Ports 80/443.
