@@ -1,5 +1,16 @@
 # Sales: Deployment- und Betriebsstand
 
+## Non-root Runtime (02.11.2026)
+
+Backend und Frontend verwenden UID/GID 1654 im Image. Frontend-PID unter /tmp,
+Cache/Konfigurationsverzeichnis passend berechtigt; HTTPS unveraendert.
+Echter Frontend-Container: UID1654, CapEff0, NoNewPrivs1 und HTTPS200 geprueft.
+Lokaler deploy-all nach ax42-1/dev erfolgreich, Helm Revision 7. Laufende zentrale
+Backend-/Frontend-Instanzen ready und per exec mit UID1654 bestaetigt.
+Plattform fuehrt die automatische Non-root-/DB-Rollentrennung zentral fort;
+deren DB-/Credential-Live-Abnahme ist ein separater Nachweis im Plattformkontext.
+Keine fachliche Aenderung, keine GitHub Actions gestartet.
+
 ## Dedizierter CI-Zugang live geprueft (31.10.2026)
 
 Runtime laeuft im eigenen Namespace app-sales-plattform mit Shared 0.1.85.

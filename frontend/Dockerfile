@@ -27,3 +27,7 @@ FROM nginx:1.27-alpine
 COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/SalesPlattform/SalesPlattform/frontend/dist /usr/share/nginx/html
 EXPOSE 80
+RUN addgroup -g 1654 app && adduser -D -u 1654 -G app app \
+    && sed -i 's@/var/run/nginx.pid@/tmp/nginx.pid@;s@/run/nginx.pid@/tmp/nginx.pid@' /etc/nginx/nginx.conf \
+    && chown -R 1654:1654 /var/cache/nginx /etc/nginx/conf.d
+USER 1654:1654
