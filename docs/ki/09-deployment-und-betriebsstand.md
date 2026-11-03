@@ -1,5 +1,15 @@
 # Sales: Deployment- und Betriebsstand
 
+## CI-Wiederaufnahme (03.11.2026)
+
+Der aktuelle Security-Stand wird wieder durch die volle CI geprueft. Die bereits
+bekannte Framework-Fallbackwarnung NU1701 wird ausschliesslich am Paketverweis
+ZOHOCRMSDK-8.0 4.0.0 unterdrueckt; andere Warnungen bleiben CI-Fehler. Dies ist
+keine Zusage allgemeiner .NET-10-Kompatibilitaet des SDKs. Die bestehenden
+Payload-/Webhook-Regressionen bleiben verpflichtend, ohne Live-CRM-Schreibzugriff.
+Historische Hinweise auf die sichtbare NU1701-Warnung gelten fuer fruehere Builds.
+Kein Deployment durch diesen Auftrag.
+
 ## Non-root Runtime (02.11.2026)
 
 Backend und Frontend verwenden UID/GID 1654 im Image. Frontend-PID unter /tmp,
