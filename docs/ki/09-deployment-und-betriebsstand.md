@@ -1,5 +1,27 @@
 # Sales: Deployment- und Betriebsstand
 
+## Reguläre Paketpins und lokaler Nachweis (04.11.2026)
+
+Backend-Pin und Frontend-Paketdateien sind auf Shared 0.1.95 / React 0.1.69
+aktualisiert. Der vorherige isolierte Lauf mit genau diesen echten Paketen
+bestand Backendbuild, Frontend-Typecheck/Build, 34 Task-, 438 Webhook-,
+625 Report-, 23 Verbrauchs- und 33 Node-Prüfungen sowie 15 native
+PostgreSQL-Fälle. Nachweis: `C:/git/IdentityPlattform/artifacts/lc-1104-f/validation-summary.json`.
+Die Testserver sind gestoppt; ihre Daten bleiben erhalten. Keine Live-CRM-Aufrufe.
+Auch der anschließende Build der Original-App mit regulärem .95-Pin ohne
+Versionsoverride sowie Frontend-Lint/Build und Paketvertrag sind bestanden.
+Manifeste und Locks wurden beim lokalen TGZ-Bezug nicht verändert. Belege:
+`C:/git/IdentityPlattform/artifacts/site-return95/regular-pins`.
+
+Die Pakete sind noch unveröffentlicht. Lokale NuGet-Restores verwenden den
+geprüften Paketfeed; der reguläre Registry-Build benötigt die spätere
+Veröffentlichung. Der npm-Lock bindet die tatsächliche TGZ-SHA512 und lässt
+ausschließlich deren unbekannten `resolved`-Endpunkt aus, entsprechend dem
+[unterstützten npm-Lockformat](https://docs.npmjs.com/cli/v11/using-npm/config/#omit-lockfile-registry-resolved).
+Weder Dateipfad noch fingierte Registry-URL ersetzen die normale Versionsabhängigkeit.
+Push, Actions, Veröffentlichung und gemeinsame Cluster-/Installerabnahme
+bleiben zurückgestellt. Die folgenden Nachweise sind historisch.
+
 ## Folgeintegration: freigegebener Jobkatalog (04.11.2026)
 
 Der aktuelle Arbeitsstand benötigt nun Shared 0.1.92 für den festen

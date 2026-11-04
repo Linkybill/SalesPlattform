@@ -1,5 +1,15 @@
 # Projektkontext
 
+## Reguläre Installationsintegration (04.11.2026)
+
+Die regulären Paketdateien verwenden jetzt Shared 0.1.95 und React 0.1.69.
+Beide echten lokalen Pakete sind im Consumerlauf `lc-1104-f` geprüft; die
+Veröffentlichung bleibt ausdrücklich zurückgestellt. Der npm-Lock enthält
+Version und echte Paketintegrität ohne erfundene Registry-Adresse.
+Prüfzahlen und lokaler Paketweg: `09-deployment-und-betriebsstand.md`.
+Keine Pushes, Actions oder Deployments; die gemeinsame reale Abnahme folgt
+später. Die folgenden Abschnitte dokumentieren frühere Zwischenstände.
+
 ## Aktueller lokaler Reviewstand: Webhook-Übergabe (04.11.2026)
 
 Die kontrollierte Übergabe bestehender Zoho-Channels ist lokal geprüft. Der

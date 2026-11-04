@@ -5,16 +5,25 @@ const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const json = path => JSON.parse(read(path));
 const installed = '../frontend/node_modules/@hammer2fall/identity-platform-react/';
 
-test('Sales uses the published Common theme release, not a local package override', () => {
+test('Sales pins an exact Common package version and integrity', () => {
   const version = json('../frontend/package.json').dependencies['@hammer2fall/identity-platform-react'];
   const lock = json('../frontend/package-lock.json');
   const dependency = lock.packages['node_modules/@hammer2fall/identity-platform-react'];
-  assert.match(version, /^\d+\.\d+\.\d+$/, 'Common must use an exact published release version');
+  assert.match(version, /^\d+\.\d+\.\d+$/, 'Common must use an exact package version');
   assert.equal(dependency.version, version);
   assert.equal(lock.packages[''].dependencies['@hammer2fall/identity-platform-react'], version);
   assert.equal(json(installed + 'package.json').version, version);
-  assert.equal(new URL(dependency.resolved).hostname, 'npm.pkg.github.com');
-  assert.match(dependency.integrity, /^sha512-/);
+  assert.notEqual(dependency.link, true, 'Common must resolve as a package, not a project link');
+  if (dependency.resolved !== undefined) {
+    const resolved = new URL(dependency.resolved);
+    assert.equal(resolved.origin, 'https://npm.pkg.github.com');
+    assert.equal(resolved.username, '');
+    assert.equal(resolved.password, '');
+    assert.equal(resolved.search, '');
+    assert.equal(resolved.hash, '');
+    assert.ok(decodeURIComponent(resolved.pathname).startsWith(`/download/@hammer2fall/identity-platform-react/${version}/`));
+  }
+  assert.match(dependency.integrity, /^sha512-[A-Za-z0-9+/]{86}==$/);
   assert.match(read(installed + 'dist/index.js'), /initializePlatformTheme/);
   assert.match(read(installed + 'dist/UserAuthorisationHeader.js'), /PlatformThemeSelector/);
 });
