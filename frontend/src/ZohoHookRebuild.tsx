@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { deploymentEnvironment } from './deploymentEnvironment'
+import { requestZohoHookRebuild } from './ZohoHookRebuildRequest'
 
-export function ZohoHookRebuild({ platformAuthorizedFetch, applicationKey, tenantId, jobsUrl, disabled }: {
+export function ZohoHookRebuild({ authorizedFetch, platformAuthorizedFetch, applicationKey, tenantId, jobsUrl, disabled }: {
+  authorizedFetch: (url: string, init?: RequestInit) => Promise<Response>
   platformAuthorizedFetch: (url: string, init?: RequestInit) => Promise<Response>
   applicationKey: string; tenantId: string; jobsUrl: string; disabled: boolean
 }) {
@@ -19,11 +22,8 @@ export function ZohoHookRebuild({ platformAuthorizedFetch, applicationKey, tenan
     try {
       // Same tenant-admin authorization, durable queue and concurrency group as /jobs.
       // Never retry a POST automatically: a lost reply may still mean the job was accepted.
-      const response = await platformAuthorizedFetch(
-        `/api/application-context/${encodeURIComponent(applicationKey)}/jobs/crm-subscription-maintenance/runs?tenantId=${encodeURIComponent(tenantId)}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: '{}', signal: controller.signal,
-        })
+      const response = await requestZohoHookRebuild({ authorizedFetch, platformAuthorizedFetch, applicationKey, tenantId,
+        installationId: deploymentEnvironment.VITE_INSTALLATION_ID, signal: controller.signal })
       if (active.current !== controller) return
       if (!response.ok) {
         setError(response.status === 403 ? 'Nur Mandanten-Administratoren dürfen Hooks neu registrieren.'

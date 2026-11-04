@@ -81,7 +81,7 @@ jobs:
           dotnet build tests/Usage/Usage.csproj -c Release --no-restore --warnaserror
           dotnet run --project tests/Usage/Usage.csproj -c Release --no-build --no-restore
       - name: Root URLs and runtime profile
-        run: node --test tests/RootUrls.test.mjs
+        run: node --test tests/RootUrls.test.mjs tests/HookRebuildRequest.test.mjs
       - name: Sales navigation and report UI contracts
         run: node --test tests/ReportNavigation.test.mjs
       - name: Installed common theme integration

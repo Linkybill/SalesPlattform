@@ -1,5 +1,23 @@
 # Vault, App-Settings und Service-Kommunikation
 
+## Installationsmodus mit lokaler Datenhaltung (04.11.2026, in Integration)
+
+Bei gesetzter `IdentityPlatform:Installation` liegen Kundendaten, App-Settings,
+Jobparameter/-ergebnisse und fachliche Joblogs im Kundensystem. Secretwerte
+werden über den lokalen Vault der Installation aufgelöst; kein automatischer
+Rückfall auf den zentralen Vault. Der Browser bezieht Jobdetails über den eigenen
+App-Router. Die Plattform behält Scheduling, Freigaben und technische IDs/Zustände.
+Allgemeine technische Joblogs enthalten in diesem Modus keine fachlichen Meldungen.
+Die unten beschriebenen zentralen Vault-/Diagnosepfade gelten für den bisherigen
+Deploymentmodus. Ausführung und Live-Abnahme des neuen Installationsmodus sind
+gesondert nachzuweisen; maßgeblich ist der Plattform-Implementierungskontext.
+
+Zoho-OAuth-Rücksprünge werden im Installationsmodus aus der geprüften öffentlichen
+App-Origin abgeleitet; keine localhost-Vorgabe für Kundeninstallationen. Die
+CRM-Laufprüfung verwendet den Shared-Statusclient mit Installation und Tenant.
+Ein nicht bestätigbarer Status stoppt die Bereinigung alter Läufe; Zeitablauf
+oder fehlende Erreichbarkeit gelten nicht als Beleg für einen verwaisten Import.
+
 ## Zusätzliche Report-AppSettings (09.10.2026, lokal)
 
 Normale tenantApp-Einstellungen, keine Secrets:

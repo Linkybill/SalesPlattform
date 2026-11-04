@@ -98,8 +98,9 @@ test('hook rebuild uses the central manual job queue with tenant scope and confi
   const source = readFileSync(new URL('../frontend/src/ZohoHookRebuild.tsx', import.meta.url), 'utf8');
   assert.match(source, /window.confirm/);
   assert.match(source, /platformAuthorizedFetch/);
-  assert.match(source, /crm-subscription-maintenance\/runs\?tenantId=/);
-  assert.match(source, /method: 'POST'/);
+  const request = readFileSync(new URL('../frontend/src/ZohoHookRebuildRequest.ts', import.meta.url), 'utf8');
+  assert.match(request, /crm-subscription-maintenance\/runs\?tenantId=/);
+  assert.match(request, /method: 'POST'/);
   assert.match(source, /active.current === controller/);
   assert.match(source, /response.status === 409/);
   const worker = readFileSync(new URL('../backend/Integrations/Zoho/ZohoSubscriptionAdapter.cs', import.meta.url), 'utf8');

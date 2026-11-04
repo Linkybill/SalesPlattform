@@ -12,6 +12,10 @@ on:
         description: 'Only test access (NO build or deployment)'
         type: boolean
         default: false
+      publish_only:
+        description: 'Publish images and a release candidate only (NO server access or deployment); confirm publish-only'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -38,13 +42,17 @@ jobs:
         shell: pwsh
         env:
           CONFIRMATION: ${{ inputs.confirmation }}
+          PUBLISH_ONLY: ${{ inputs.publish_only }}
+          ACCESS_ONLY: ${{ inputs.access_only }}
           ISOLATED_CI_READY: ${{ vars.APP_CI_ISOLATION_VERIFIED }}
         run: |
-          if ($env:ISOLATED_CI_READY -cne 'v3') {
+          if ($env:PUBLISH_ONLY -ne 'true' -and $env:ISOLATED_CI_READY -cne 'v3') {
             throw 'Complete and verify the dedicated version-3 app CI setup before enabling releases.'
           }
-          if ($env:GITHUB_REF -cne 'refs/heads/main' -or $env:CONFIRMATION -cne "$env:APP_CI_TARGET/dev") {
-            throw 'Choose main and confirm the fixed app target.'
+          if ($env:PUBLISH_ONLY -eq 'true' -and $env:ACCESS_ONLY -eq 'true') { throw 'Choose either publish-only or access-only.' }
+          $expectedConfirmation = if ($env:PUBLISH_ONLY -eq 'true') { 'publish-only' } else { "$env:APP_CI_TARGET/dev" }
+          if ($env:GITHUB_REF -cne 'refs/heads/main' -or $env:CONFIRMATION -cne $expectedConfirmation) {
+            throw 'Choose main and confirm the exact deployment or publication action.'
           }
           if ($env:IDENTITY_PLATFORM_DEPLOY_REF -cnotmatch '^[a-f0-9]{40}$') {
             throw 'Repository variable IDENTITY_PLATFORM_DEPLOY_REF must pin a reviewed platform commit containing app-ci-release.mjs.'
@@ -154,6 +162,25 @@ jobs:
             if ($digest -cnotmatch '^sha256:[a-f0-9]{64}$') { throw 'Missing image digest.' }
             Set-Content "$component.digest" $digest -Encoding utf8NoBOM
           }
+          $release = Get-Content release.json -Raw | ConvertFrom-Json
+          $manifest = Get-Content 'app/backend/manifest.json' -Raw | ConvertFrom-Json
+          $candidate = [ordered]@{
+            contract = 'identity-platform.application-release.v1'
+            applicationKey = $env:APP_CI_APP_KEY
+            version = "$env:GITHUB_SHA.$env:GITHUB_RUN_ID"
+            sourceCommit = $env:GITHUB_SHA
+            backendImage = (($release.images | Where-Object component -eq 'backend').repository + '@' + $env:BACKEND_DIGEST)
+            frontendImage = (($release.images | Where-Object component -eq 'frontend').repository + '@' + $env:FRONTEND_DIGEST)
+            webhookPaths = @($manifest.webhooks | Where-Object { $_ -and $_.path } | ForEach-Object { $_.path })
+            oauthCallbackPaths = @('/api/integrations/zoho/oauth/callback')
+          }
+          $candidate | ConvertTo-Json -Depth 5 | Set-Content installation-app-release.json -Encoding utf8NoBOM
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: installation-app-release
+          path: installation-app-release.json
+          if-no-files-found: error
+          retention-days: 90
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: app-digests
@@ -164,7 +191,7 @@ jobs:
 
   deploy:
     needs: [validate, ci, images]
-    if: ${{ always() && !cancelled() && needs.validate.result == 'success' && (inputs.access_only || (needs.ci.result == 'success' && needs.images.result == 'success')) }}
+    if: ${{ always() && !cancelled() && !inputs.publish_only && needs.validate.result == 'success' && (inputs.access_only || (needs.ci.result == 'success' && needs.images.result == 'success')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:

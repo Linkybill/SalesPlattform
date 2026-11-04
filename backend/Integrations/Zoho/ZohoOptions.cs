@@ -12,6 +12,16 @@ public sealed class ZohoOptions
     public string FrontendCallbackUrl { get; set; } =
         "https://127.0.0.1:3003/import";
 
+    public void ApplyInstallationOrigin(string publicOrigin)
+    {
+        if (!Uri.TryCreate(publicOrigin, UriKind.Absolute, out var origin) || origin.Scheme != "https"
+            || origin.UserInfo.Length != 0 || origin.AbsolutePath != "/" || origin.Query.Length != 0 || origin.Fragment.Length != 0)
+            throw new InvalidOperationException("Sales installations require a configured public HTTPS origin for CRM callbacks.");
+        var root = origin.GetLeftPart(UriPartial.Authority);
+        RedirectUri = root + "/api/integrations/zoho/oauth/callback";
+        FrontendCallbackUrl = root + "/import";
+    }
+
     public const string RequiredScopes =
         "ZohoCRM.modules.READ,ZohoCRM.modules.emails.READ,ZohoCRM.modules.tasks.CREATE,ZohoCRM.modules.tasks.UPDATE,ZohoCRM.notifications.CREATE,ZohoCRM.notifications.DELETE,ZohoCRM.notifications.READ,ZohoCRM.users.READ,ZohoCRM.org.READ,ZohoCRM.settings.modules.READ,ZohoCRM.settings.fields.READ,ZohoCRM.settings.layouts.READ,ZohoCRM.settings.pipeline.READ,ZohoCRM.settings.related_lists.READ";
 

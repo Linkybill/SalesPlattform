@@ -1,5 +1,21 @@
 # Projektkontext
 
+## Installationsconsumer lokal geprüft (04.11.2026)
+
+Shared 0.1.88 und React 0.1.66 regulär aus den veröffentlichten Registries
+übernommen; npm-Lockdatei aktualisiert. Backend-Releasebuild ohne Warnungen,
+Frontend-Produktionsbuild, 412 synthetische Zoho-Webhookprüfungen, 32 Node-
+Vertragstests sowie OAuth-/HTTPS-/Pipelineverträge lokal bestanden. Die
+GitHub-CI und die Live-Installation sind gesonderte Nachweise; kein Deployment.
+Jobparameter, Fortschritt, Logs und Ergebnisse werden im Installationsmodus
+direkt über das Sales-Backend in der lokalen Installationsdatenbank geführt.
+Scheduling, Jobfreigabe und technische Laufzustände bleiben bei der Plattform.
+Die vorhandene Shell übergibt `VITE_INSTALLATION_ID`; CRM-Fachlichkeit unverändert.
+Auch der eigene Hook-Neuaufbau bereitet den Lauf lokal vor und sendet zentral nur
+die Lauf-/Installationskennung. OAuth verwendet die öffentliche Kunden-App-Origin;
+unbestätigte Jobzustände erlauben keine automatische Verwaist-Bereinigung.
+Gesamtstand im Plattform-Repository: `docs/ki-app-installationen.md`.
+
 ## App-Installationsintegration begonnen (04.11.2026)
 
 Direkte Integration von Shared-Zielversion 0.1.86: expliziter gemeinsamer

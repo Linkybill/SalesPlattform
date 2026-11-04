@@ -9,6 +9,15 @@ if (-not ('SalesPlattform.Backend.Integrations.Zoho.ZohoOptions' -as [type])) {
     Add-Type -TypeDefinition ("using System;`nusing System.Linq;`n" + $source)
 }
 $options = [SalesPlattform.Backend.Integrations.Zoho.ZohoOptions]::new()
+Assert ($options.FrontendCallbackUrl -ceq 'https://127.0.0.1:3003/import') 'Legacy local callback remains available without installation configuration.'
+$options.ApplyInstallationOrigin('https://sales.customer.test:8443/')
+Assert ($options.RedirectUri -ceq 'https://sales.customer.test:8443/api/integrations/zoho/oauth/callback') 'Installation OAuth must return directly to the customer origin.'
+Assert ($options.FrontendCallbackUrl -ceq 'https://sales.customer.test:8443/import') 'Installation OAuth completion must return to its own frontend.'
+foreach ($invalidOrigin in @('', 'http://sales.customer.test', 'https://user:secret@sales.customer.test', 'https://sales.customer.test/path', 'https://sales.customer.test/?token=secret')) {
+    $rejected = $false
+    try { $options.ApplyInstallationOrigin($invalidOrigin) } catch { $rejected = $true }
+    Assert $rejected 'An incomplete installation origin must not fall back to localhost.'
+}
 $settings = Get-Content (Join-Path $root 'backend/appsettings.json') -Raw | ConvertFrom-Json
 Assert ($options.Scopes -ceq $settings.Zoho.Scopes) 'C# and appsettings scope defaults must match.'
 $required = @(

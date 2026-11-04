@@ -61,11 +61,8 @@ public sealed class ZohoSyncService(
             IntegrationSyncRun? blockingRun = null;
             foreach (var candidate in activeRuns)
             {
-                var platformIsActive = await platformJobLiveness.IsActiveAsync(candidate.Id, cancellationToken);
-                var fallbackIsActive = candidate.Status == "running"
-                    ? candidate.LeaseUntil is not null && candidate.LeaseUntil > now
-                    : candidate.QueuedAt > now.Subtract(TimeSpan.FromMinutes(5));
-                if (platformIsActive ?? fallbackIsActive)
+                var platformIsActive = await platformJobLiveness.IsActiveAsync(candidate.Id, request.TenantId, cancellationToken);
+                if (platformIsActive)
                 {
                     blockingRun = candidate;
                     break;

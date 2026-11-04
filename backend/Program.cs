@@ -34,9 +34,7 @@ builder.Services.AddAuthorization(authorization =>
 });
 
 builder.Services.AddPlatformTenantDatabase<SalesPlattformDbContext>();
-builder.Services.AddHttpClient<PlatformJobLivenessClient>(client =>
-    client.Timeout = TimeSpan.FromSeconds(5))
-    .AddHttpMessageHandler<IdentityPlatformServiceTokenHandler>();
+builder.Services.AddScoped<PlatformJobLivenessClient>();
 builder.Services.AddApplicationSettings<SalesPlattformDbContext>(builder.Configuration, options =>
 {
     options.ApplicationKey = builder.Configuration["IdentityPlatform:ApplicationKey"] ?? "sales-plattform";
@@ -65,7 +63,12 @@ builder.Services.AddScoped<SalesDashboardLayoutService>();
 builder.Services.AddScoped<SalesReportService>();
 builder.Services.AddScoped<SalesSnapshotService>();
 builder.Services.AddOptions<ZohoOptions>()
-    .Bind(builder.Configuration.GetSection("Zoho"));
+    .Bind(builder.Configuration.GetSection("Zoho"))
+    .Configure<IServiceProvider>((options, services) =>
+    {
+        if (services.GetService<InstallationRuntimeOptions>() is { } installation)
+            options.ApplyInstallationOrigin(installation.PublicOrigin);
+    });
 builder.Services.AddScoped<ZohoConfigurationService>();
 builder.Services.AddScoped<ZohoSchemaCacheService>();
 builder.Services.AddScoped<ZohoConnectionStore>();

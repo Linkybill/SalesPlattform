@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <IdentityPlatformSharedVersion Condition="'$(IdentityPlatformSharedVersion)' == ''">0.1.86</IdentityPlatformSharedVersion>
+    <IdentityPlatformSharedVersion Condition="'$(IdentityPlatformSharedVersion)' == ''">0.1.88</IdentityPlatformSharedVersion>
     <UserSecretsId>sales-plattform-local-development</UserSecretsId>
   </PropertyGroup>
 

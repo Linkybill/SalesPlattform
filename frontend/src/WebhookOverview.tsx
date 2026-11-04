@@ -74,7 +74,7 @@ export function WebhookOverview({ authorizedFetch, platformAuthorizedFetch, appl
       <div><p className="sales-eyebrow">ZOHO · EINGANG UND IMPORT</p><h2 id="hook-title">Hooks und Ereignisse</h2></div>
       <button className="secondary-button" type="button" disabled={loading} onClick={() => setRefresh(x => x + 1)}>Übersicht aktualisieren</button>
     </div>
-    <ZohoHookRebuild platformAuthorizedFetch={platformAuthorizedFetch} applicationKey={applicationKey}
+    <ZohoHookRebuild authorizedFetch={authorizedFetch} platformAuthorizedFetch={platformAuthorizedFetch} applicationKey={applicationKey}
       tenantId={tenantId} jobsUrl={jobsUrl} disabled={loading || !data} />
     <p>Zoho meldet Änderungen an diese Callback-URL. Die Registrierung pro Mandant und Modul übernimmt
       der Job „CRM-Hooks erneuern“ automatisch; keine einzelnen Hooks von Hand anlegen.</p>
