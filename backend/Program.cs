@@ -6,6 +6,7 @@ using IdentityPlatform.Shared.Authorization;
 using IdentityPlatform.Shared.Database;
 using IdentityPlatform.Shared.ApplicationSettings;
 using IdentityPlatform.Shared.Hosting;
+using IdentityPlatform.Shared.Installations;
 using IdentityPlatform.Shared.Jobs;
 using IdentityPlatform.Shared.Registration;
 using SalesPlattform.Backend.Integrations.Abstractions;
@@ -140,6 +141,7 @@ builder.Services
         ConcurrencyGroup: "crm-hook-processing"));
 
 var app = builder.Build();
+if (await app.RunInstallationMigrationsAsync<SalesPlattformDbContext>(args)) return;
 
 app.UseIdentityPlatform();
 app.UseCrmApiUsage();

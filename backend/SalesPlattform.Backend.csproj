@@ -4,11 +4,12 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <IdentityPlatformSharedVersion Condition="'$(IdentityPlatformSharedVersion)' == ''">0.1.86</IdentityPlatformSharedVersion>
     <UserSecretsId>sales-plattform-local-development</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="IdentityPlatform.Shared" Version="0.1.85" />
+    <PackageReference Include="IdentityPlatform.Shared" Version="$(IdentityPlatformSharedVersion)" />
     <PackageReference Include="MailKit" Version="4.17.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />

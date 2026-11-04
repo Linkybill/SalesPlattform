@@ -1,5 +1,17 @@
 # Projektkontext
 
+## App-Installationsintegration begonnen (04.11.2026)
+
+Direkte Integration von Shared-Zielversion 0.1.86: expliziter gemeinsamer
+Migrations-Job vor Hoststart sowie `VITE_INSTALLATION_ID` für den Browsermodus
+ohne zentralen Diagnoseexport. Keine CRM-/Fachmodelländerung. Vollständiger
+Umstellungsplan und offene Nachweise im benachbarten Plattform-Repository:
+`docs/ki-app-installationen.md` und `docs/app-installationen-umsetzung.md`.
+Installer-/Deploymentintegration noch in Arbeit, keine Live-Abnahme behauptet.
+Shared 0.1.86 und React 0.1.65 sind in GitHub Packages veröffentlicht und
+regulär eingebunden. Backend-Build (0 Warnungen/Fehler), TypeScript und
+Frontend-Produktionsbuild bestanden; bekannter Bundlegrößenhinweis bleibt.
+
 ## Diagnose-Hook nach Fehler erneut einreihen (28.10.2026, lokal)
 
 Erneut gesendete fehlgeschlagene Diagnose-Events werden wieder auf queued
