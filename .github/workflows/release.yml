@@ -164,15 +164,21 @@ jobs:
           }
           $release = Get-Content release.json -Raw | ConvertFrom-Json
           $manifest = Get-Content 'app/backend/manifest.json' -Raw | ConvertFrom-Json
+          $backendImage = (($release.images | Where-Object component -eq 'backend').repository + '@' + $env:BACKEND_DIGEST)
+          $catalogOutput = & docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 --memory 256m --cpus 1 --env DOTNET_EnableDiagnostics=0 $backendImage --export-installation-job-catalog
+          if ($LASTEXITCODE -ne 0) { throw 'The published backend could not export its compiled job catalog.' }
+          $catalog = ($catalogOutput -join "`n") | ConvertFrom-Json
+          if ($catalog.contract -cne 'identity-platform.job-catalog.v1' -or $catalog.applicationKey -cne $env:APP_CI_APP_KEY -or $null -eq $catalog.jobs) { throw 'Invalid compiled job catalog.' }
           $candidate = [ordered]@{
             contract = 'identity-platform.application-release.v1'
             applicationKey = $env:APP_CI_APP_KEY
             version = "$env:GITHUB_SHA.$env:GITHUB_RUN_ID"
             sourceCommit = $env:GITHUB_SHA
-            backendImage = (($release.images | Where-Object component -eq 'backend').repository + '@' + $env:BACKEND_DIGEST)
+            backendImage = $backendImage
             frontendImage = (($release.images | Where-Object component -eq 'frontend').repository + '@' + $env:FRONTEND_DIGEST)
             webhookPaths = @($manifest.webhooks | Where-Object { $_ -and $_.path } | ForEach-Object { $_.path })
             oauthCallbackPaths = @('/api/integrations/zoho/oauth/callback')
+            jobs = @($catalog.jobs)
           }
           $candidate | ConvertTo-Json -Depth 5 | Set-Content installation-app-release.json -Encoding utf8NoBOM
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

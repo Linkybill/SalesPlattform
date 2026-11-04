@@ -1,5 +1,36 @@
 # Sales: Deployment- und Betriebsstand
 
+## Folgeintegration: freigegebener Jobkatalog (04.11.2026)
+
+Der aktuelle Arbeitsstand benötigt nun Shared 0.1.92 für den festen
+`--export-installation-job-catalog`-Modus. Er exportiert die vier tatsächlich
+registrierten Jobs vor Plattform-/Hoststart. Der Releaseworkflow liest den
+Katalog am exakt publizierten Backend-Digest ohne Containernetzwerk und nimmt ihn
+in den Freigabekandidaten auf. Die Plattform bindet jede Installation an ihren
+Releasekatalog; ein alter globaler Appstart kann die neue Handofffähigkeit nicht
+mehr zurücksetzen. Der Workflow wurde nur geändert, nicht ausgeführt.
+Reguläre Paketpins bleiben unverändert; gebaut/geprüft wird zunächst im lokalen
+Isolat mit Versionsoverride. Der folgende 0.1.91-Nachweis bleibt historisch.
+Details: `C:/git/IdentityPlattform/docs/installation-release-jobkatalog.md`.
+
+Der aktuelle Quellstand wurde anschließend in einem neuen Isolat
+`C:/git/IdentityPlattform/artifacts/lc-1104-d` mit dem tatsächlich gepackten
+Shared 0.1.92 und React 0.1.68 geprüft. NuGet verwendete ausschließlich den
+lokalen Paketfeed und schon vorhandene Abhängigkeiten; npm lief offline.
+Backend und alle vier Fachtestprogramme bauen ohne Warnungen oder Fehler.
+Bestanden: 34 Taskfälle, 438 synthetische Webhookprüfungen, 625 Reportprüfungen,
+23 Verbrauchsprüfungen, 33 Node-Verträge, HTTPS-/Pipeline-/Scopeverträge sowie
+Frontend-Typecheck und Produktionsbuild. Der tatsächliche Backend-CLI-Export
+lieferte vier Jobs und das aktivierte Übergabeflag des CRM-Hookjobs, ohne
+Hoststart oder Plattformverbindung. Der neue native PostgreSQL-16-Lauf bestand
+zusätzlich 15 Migrations-/Datenerhaltungsfälle; sein Testserver wurde verifiziert
+gestoppt und die Daten bleiben erhalten. Paketprovenienz und konsumierte
+DLL-Hashes stehen in `lc-1104-d/consumption.json`; Shared-Paket-SHA256:
+`69F20C76060E4B25ADE1DB5CF62687FD4919CBEE733CAE10E895F783FF2ACC69`.
+Originale Paketpins und Lockdateien bleiben unverändert. Kein Registry-Publish,
+Workflowlauf, Deployment oder Live-CRM-Aufruf; der reguläre Registry-Build
+benötigt weiterhin die spätere Paketveröffentlichung und Pinaktualisierung.
+
 ## Lokaler Reviewstand für Installationsübergaben (04.11.2026)
 
 Die neuen vertrauenswürdigen Job-Claims und technischen Abschlussquittungen

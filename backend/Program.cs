@@ -18,6 +18,52 @@ using SalesPlattform.Backend.Integrations.Jobs;
 using SalesPlattform.Backend.Services.Mail;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services
+    .AddIdentityPlatformJobs(builder.Configuration)
+    .AddJob<CrmFullImportJob>(new PlatformJobDefinition(
+        Key: "crm-full-import",
+        Name: "CRM-Vollimport",
+        Description: "Gleicht alle verfügbaren Daten des ausgewählten CRM mit dem neutralen Sales-Datenmodell ab.",
+        ScheduleMode: PlatformJobScheduleMode.Configurable,
+        DefaultCronExpression: "0 2 * * *",
+        DefaultTimeZoneId: "Europe/Berlin",
+        AllowManualStart: true,
+        ComponentKey: "backend",
+        ConcurrencyGroup: "crm-synchronization"))
+    .AddJob<CrmIncrementalCrawlJob>(new PlatformJobDefinition(
+        Key: "crm-incremental-crawl",
+        Name: "CRM-Änderungen synchronisieren",
+        Description: "Übernimmt neue, geänderte und gelöschte CRM-Datensätze; standardmäßig alle 15 Minuten.",
+        ScheduleMode: PlatformJobScheduleMode.Configurable,
+        DefaultCronExpression: "*/15 * * * *",
+        DefaultTimeZoneId: "Europe/Berlin",
+        AllowManualStart: true,
+        ComponentKey: "backend",
+        ConcurrencyGroup: "crm-synchronization"))
+    .AddJob<ZohoSchemaCacheJob>(new PlatformJobDefinition(
+        Key: "zoho-schema-cache",
+        Name: "Zoho-Schema cachen",
+        Description: "Aktualisiert Zoho-Module und Felddefinitionen im lokalen Schema-Cache; standardmäßig einmal täglich. Der Zeitplan ist konfigurierbar.",
+        ScheduleMode: PlatformJobScheduleMode.Configurable,
+        DefaultCronExpression: "0 1 * * *",
+        DefaultTimeZoneId: "Europe/Berlin",
+        AllowManualStart: true,
+        ComponentKey: "backend",
+        ConcurrencyGroup: "crm-synchronization"))
+    .AddJob<CrmHookUpdateJob>(new PlatformJobDefinition(
+        // Keep the persisted key stable so existing tenant schedules continue
+        // to point to the same Platform job after the service refactor.
+        Key: "crm-subscription-maintenance",
+        Name: "CRM-Hooks erneuern",
+        Description: "Manueller Start registriert die verfügbaren Zoho-Modul-Hooks mit neuen Channels/Tokens. Geplante Läufe erneuern nur fällige Hooks. Verarbeitet anschließend wartende Ereignisse; der Zeitplan ist konfigurierbar.",
+        ScheduleMode: PlatformJobScheduleMode.Configurable,
+        DefaultCronExpression: "0 3 * * *",
+        DefaultTimeZoneId: "Europe/Berlin",
+        AllowManualStart: true,
+        ComponentKey: "backend",
+        ConcurrencyGroup: "crm-hook-processing",
+        OnInstallationPlacementChanged: true));
+if (builder.Services.TryExportInstallationJobCatalog(args, "sales-plattform")) return;
 builder.AddIdentityPlatform();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddAuthorization(authorization =>
@@ -99,51 +145,7 @@ builder.Services.AddScoped<CrmSynchronizationService>();
 builder.Services.AddScoped<ICrmHookUpdateService>(services =>
     services.GetRequiredService<ZohoCrmHookUpdateService>());
 builder.Services.AddScoped<CrmHookUpdateServiceRegistry>();
-builder.Services
-    .AddIdentityPlatformJobs(builder.Configuration)
-    .AddJob<CrmFullImportJob>(new PlatformJobDefinition(
-        Key: "crm-full-import",
-        Name: "CRM-Vollimport",
-        Description: "Gleicht alle verfügbaren Daten des ausgewählten CRM mit dem neutralen Sales-Datenmodell ab.",
-        ScheduleMode: PlatformJobScheduleMode.Configurable,
-        DefaultCronExpression: "0 2 * * *",
-        DefaultTimeZoneId: "Europe/Berlin",
-        AllowManualStart: true,
-        ComponentKey: "backend",
-        ConcurrencyGroup: "crm-synchronization"))
-    .AddJob<CrmIncrementalCrawlJob>(new PlatformJobDefinition(
-        Key: "crm-incremental-crawl",
-        Name: "CRM-Änderungen synchronisieren",
-        Description: "Übernimmt neue, geänderte und gelöschte CRM-Datensätze; standardmäßig alle 15 Minuten.",
-        ScheduleMode: PlatformJobScheduleMode.Configurable,
-        DefaultCronExpression: "*/15 * * * *",
-        DefaultTimeZoneId: "Europe/Berlin",
-        AllowManualStart: true,
-        ComponentKey: "backend",
-        ConcurrencyGroup: "crm-synchronization"))
-    .AddJob<ZohoSchemaCacheJob>(new PlatformJobDefinition(
-        Key: "zoho-schema-cache",
-        Name: "Zoho-Schema cachen",
-        Description: "Aktualisiert Zoho-Module und Felddefinitionen im lokalen Schema-Cache; standardmäßig einmal täglich. Der Zeitplan ist konfigurierbar.",
-        ScheduleMode: PlatformJobScheduleMode.Configurable,
-        DefaultCronExpression: "0 1 * * *",
-        DefaultTimeZoneId: "Europe/Berlin",
-        AllowManualStart: true,
-        ComponentKey: "backend",
-        ConcurrencyGroup: "crm-synchronization"))
-    .AddJob<CrmHookUpdateJob>(new PlatformJobDefinition(
-        // Keep the persisted key stable so existing tenant schedules continue
-        // to point to the same Platform job after the service refactor.
-        Key: "crm-subscription-maintenance",
-        Name: "CRM-Hooks erneuern",
-        Description: "Manueller Start registriert die verfügbaren Zoho-Modul-Hooks mit neuen Channels/Tokens. Geplante Läufe erneuern nur fällige Hooks. Verarbeitet anschließend wartende Ereignisse; der Zeitplan ist konfigurierbar.",
-        ScheduleMode: PlatformJobScheduleMode.Configurable,
-        DefaultCronExpression: "0 3 * * *",
-        DefaultTimeZoneId: "Europe/Berlin",
-        AllowManualStart: true,
-        ComponentKey: "backend",
-        ConcurrencyGroup: "crm-hook-processing",
-        OnInstallationPlacementChanged: true));
+
 
 var app = builder.Build();
 if (await app.RunInstallationMigrationsAsync<SalesPlattformDbContext>(args)) return;
