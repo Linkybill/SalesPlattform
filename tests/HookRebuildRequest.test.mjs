@@ -56,3 +56,14 @@ test('legacy hook rebuild still schedules once without local installation storag
   assert.deepEqual(calls[0].body, {})
   assert.ok(!calls[0].path.includes('installationId'))
 })
+
+test('handoff continuation is staged only locally and cannot authorize an invented transition centrally', async () => {
+  const { calls, input } = setup()
+  assert.equal((await requestZohoHookRebuild({ ...input, handoffOnly: true })).status, 202)
+  assert.deepEqual(calls[0].body, { parameters: { operation: 'resume-installation-handoff' } })
+  assert.deepEqual(calls[1].body, { runId })
+  assert.ok(!JSON.stringify(calls[1].body).includes('transition'))
+  const legacy = setup()
+  await assert.rejects(requestZohoHookRebuild({ ...legacy.input, installationId: undefined, handoffOnly: true }), /requires an installation/)
+  assert.equal(legacy.calls.length, 0)
+})

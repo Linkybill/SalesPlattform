@@ -1,5 +1,15 @@
 # Projektkontext
 
+## Aktueller lokaler Reviewstand: Webhook-Übergabe (04.11.2026)
+
+Die kontrollierte Übergabe bestehender Zoho-Channels ist lokal geprüft. Der
+Reviewcode benötigt Shared 0.1.91 aus einem isolierten lokalen Feed; reguläre
+Registry-Pins bleiben bis zur tatsächlichen Veröffentlichung unverändert.
+Ergebnisse, Prüfweg und Grenzen stehen in `09-deployment-und-betriebsstand.md`
+und `05-offene-punkte-und-entscheidungen.md`. Die folgende Consumer-Abnahme
+bezieht sich auf den vorherigen Stand mit Shared 0.1.88, nicht auf diesen
+unveröffentlichten Reviewcode. Keine Live-Zoho-Schreibaufrufe oder Deployments.
+
 ## Installationsconsumer lokal geprüft (04.11.2026)
 
 Shared 0.1.88 und React 0.1.66 regulär aus den veröffentlichten Registries

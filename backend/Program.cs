@@ -83,6 +83,7 @@ builder.Services.AddScoped<ZohoCrmHookUpdateService>();
 builder.Services.AddScoped<ZohoWebhookReceiver>();
 builder.Services.AddScoped<ZohoWebhookOverviewService>();
 builder.Services.AddScoped<ZohoWebhookSettingsService>();
+builder.Services.AddScoped<ZohoHookHandoffService>();
 builder.Services.AddScoped<ZohoWebhookDiagnosticService>();
 builder.Services.AddScoped<ZohoHookVerificationService>();
 builder.Services.AddSingleton<ZohoCrmRecordMapper>();
@@ -141,7 +142,8 @@ builder.Services
         DefaultTimeZoneId: "Europe/Berlin",
         AllowManualStart: true,
         ComponentKey: "backend",
-        ConcurrencyGroup: "crm-hook-processing"));
+        ConcurrencyGroup: "crm-hook-processing",
+        OnInstallationPlacementChanged: true));
 
 var app = builder.Build();
 if (await app.RunInstallationMigrationsAsync<SalesPlattformDbContext>(args)) return;

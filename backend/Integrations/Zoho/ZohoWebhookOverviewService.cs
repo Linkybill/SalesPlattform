@@ -13,13 +13,17 @@ public sealed record ZohoWebhookOverview(DateTimeOffset ObservedAt, string? Call
     string CallbackUrlSource, string? CallbackUrlError,
     bool SchemaCached, IReadOnlyList<ZohoHookSubscriptionView> Subscriptions,
     IReadOnlyDictionary<string, int> Counts, int Total, int Page, int PageSize,
-    IReadOnlyList<ZohoHookEventView> Events);
+    IReadOnlyList<ZohoHookEventView> Events)
+{
+    public ZohoHookHandoffView? Handoff { get; init; }
+}
 
 /// <summary>Read-only operational view. Never return stored payloads, token hashes or raw errors.</summary>
 public sealed class ZohoWebhookOverviewService(
     PlatformTenantDbContextFactory<SalesPlattformDbContext> dbFactory,
     ZohoSchemaCacheService schemaCache,
-    ZohoWebhookSettingsService webhookSettings)
+    ZohoWebhookSettingsService webhookSettings,
+    ZohoHookHandoffService handoff)
 {
     internal static void ValidateQuery(string? module, string? status, int page, int pageSize)
     {
@@ -78,7 +82,8 @@ public sealed class ZohoWebhookOverviewService(
         }).ToArray();
         var callback = await webhookSettings.ResolveCurrentAsync(cancellationToken);
         return new(now, callback.BaseUri?.AbsoluteUri, callback.Source, callback.Error,
-            schema is not null, subscriptionViews, counts, total, page, pageSize, events);
+            schema is not null, subscriptionViews, counts, total, page, pageSize, events)
+            { Handoff = await handoff.ReadCurrentAsync(cancellationToken) };
     }
 
     internal static string SubscriptionStatus(string status, DateTimeOffset? expiresAt, DateTimeOffset now)

@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { deploymentEnvironment } from './deploymentEnvironment'
 import { requestZohoHookRebuild } from './ZohoHookRebuildRequest'
 
-export function ZohoHookRebuild({ authorizedFetch, platformAuthorizedFetch, applicationKey, tenantId, jobsUrl, disabled }: {
+export function ZohoHookRebuild({ authorizedFetch, platformAuthorizedFetch, applicationKey, tenantId, jobsUrl, disabled, handoffOnly = false }: {
   authorizedFetch: (url: string, init?: RequestInit) => Promise<Response>
   platformAuthorizedFetch: (url: string, init?: RequestInit) => Promise<Response>
-  applicationKey: string; tenantId: string; jobsUrl: string; disabled: boolean
+  applicationKey: string; tenantId: string; jobsUrl: string; disabled: boolean; handoffOnly?: boolean
 }) {
   const [starting, setStarting] = useState(false)
   const [runId, setRunId] = useState<string | null>(null)
@@ -15,7 +15,9 @@ export function ZohoHookRebuild({ authorizedFetch, platformAuthorizedFetch, appl
   useEffect(() => () => { active.current?.abort(); active.current = null }, [])
   async function rebuild() {
     if (active.current || disabled) return
-    if (!window.confirm('Alle verfügbaren Zoho-Modul-Hooks dieses Mandanten mit neuen Channel-IDs und Tokens neu registrieren? Dies verbraucht Zoho-API-Anfragen. Der Job verarbeitet anschließend auch wartende Ereignisse.')) return
+    if (!window.confirm(handoffOnly
+      ? 'Die vorhandenen Zoho-Channels dieser Installationsübergabe erneut prüfen und gegebenenfalls ihre Callback-Adresse aktualisieren? Channels und Tokens bleiben erhalten.'
+      : 'Alle verfügbaren Zoho-Modul-Hooks dieses Mandanten mit neuen Channel-IDs und Tokens neu registrieren? Dies verbraucht Zoho-API-Anfragen. Der Job verarbeitet anschließend auch wartende Ereignisse.')) return
     const controller = new AbortController()
     active.current = controller
     setStarting(true); setRunId(null); setError(null)
@@ -23,7 +25,7 @@ export function ZohoHookRebuild({ authorizedFetch, platformAuthorizedFetch, appl
       // Same tenant-admin authorization, durable queue and concurrency group as /jobs.
       // Never retry a POST automatically: a lost reply may still mean the job was accepted.
       const response = await requestZohoHookRebuild({ authorizedFetch, platformAuthorizedFetch, applicationKey, tenantId,
-        installationId: deploymentEnvironment.VITE_INSTALLATION_ID, signal: controller.signal })
+        installationId: deploymentEnvironment.VITE_INSTALLATION_ID, signal: controller.signal, handoffOnly })
       if (active.current !== controller) return
       if (!response.ok) {
         setError(response.status === 403 ? 'Nur Mandanten-Administratoren dürfen Hooks neu registrieren.'
@@ -42,14 +44,15 @@ export function ZohoHookRebuild({ authorizedFetch, platformAuthorizedFetch, appl
       if (active.current === controller) { setStarting(false); active.current = null }
     }
   }
-  return <section aria-label="Hooks neu registrieren" aria-busy={starting}>
+  return <section aria-label={handoffOnly ? 'Callback-Übergabe fortsetzen' : 'Hooks neu registrieren'} aria-busy={starting}>
     <button type="button" className="secondary-button" disabled={disabled || starting} onClick={() => void rebuild()}>
-      {starting ? 'Job wird gestartet …' : 'Hooks aktualisieren'}
+      {starting ? 'Job wird gestartet …' : handoffOnly ? 'Übergabe fortsetzen' : 'Hooks aktualisieren'}
     </button>
-    <p>Registriert alle verfügbaren Modul-Hooks dieses Mandanten neu, unabhängig von den Listenfiltern und der Restlaufzeit.
-      Neue Registrierung zuerst bestätigen und lokal speichern, danach die alte deaktivieren.</p>
+    {handoffOnly ? <p>Prüft dieselben Channels erneut. Ein verlorener Antwortaufruf erzeugt keine neuen Channels oder Tokens.</p>
+      : <p>Registriert alle verfügbaren Modul-Hooks dieses Mandanten neu, unabhängig von den Listenfiltern und der Restlaufzeit.
+        Zuerst die alten Channels deaktivieren, anschließend neue registrieren und lokal speichern. Eine offene Installationsübergabe hat Vorrang.</p>}
     {error && <p role="alert" className="message error-message">{error} <a href={jobsUrl}>Jobs öffnen</a>.</p>}
-    {runId && <p role="status" className="message">Neuaufbau als Job angenommen – noch kein Abschlussnachweis.
+    {runId && <p role="status" className="message">{handoffOnly ? 'Übergabeprüfung' : 'Neuaufbau'} als Job angenommen – noch kein Abschlussnachweis.
       Lauf-ID: <code className="hook-url">{runId}</code>. <a href={jobsUrl}>Fortschritt und Fehler im Jobprotokoll öffnen</a>.
       Nach Abschluss „Übersicht aktualisieren“ und „Registrierung bei Zoho prüfen“ verwenden.</p>}
   </section>

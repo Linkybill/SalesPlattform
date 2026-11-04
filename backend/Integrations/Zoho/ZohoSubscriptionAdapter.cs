@@ -27,6 +27,7 @@ public sealed class ZohoCrmHookUpdateService(
     ICrmBusinessChangeProcessor businessChanges,
     ICrmApiUsageRecorder apiUsage,
     ZohoWebhookSettingsService webhookSettings,
+    ZohoHookHandoffService handoff,
     ILogger<ZohoCrmHookUpdateService> logger)
     : ICrmHookUpdateService
 {
@@ -87,26 +88,31 @@ public sealed class ZohoCrmHookUpdateService(
         try
         {
             var configurationResult = await configuration.ResolveCurrentAsync(cancellationToken);
-            if (string.Equals(
+            var hooksDisabled = string.Equals(
                     configurationResult.ChangeDetectionMode,
                     CrmChangeDetectionModes.CrawlOnly,
-                    StringComparison.OrdinalIgnoreCase))
+                    StringComparison.OrdinalIgnoreCase);
+            var connection = hooksDisabled ? null : await connections.GetActiveAsync(cancellationToken);
+            var handoffWarnings = await handoff.ResumeAsync(context, cancellationToken,
+                hooksDisabled ? "hooks-disabled" : connection is null ? "connection-unavailable" : null);
+            if (handoffWarnings is not null)
             {
-                await context.Logger.InfoAsync(
-                    "Zoho-Hooks sind für diesen Mandanten deaktiviert; der Incremental-Crawl bleibt aktiv.",
-                    "CRM-Hooks",
-                    cancellationToken: cancellationToken);
-                return SkippedResult(context.Trigger, "Hooks sind deaktiviert (crm.changeDetectionMode = crawl-only); kein Neuaufbau ausgeführt.");
+                foreach (var warning in handoffWarnings)
+                    await context.Logger.WarningAsync(warning, "Callback-Übergabe", cancellationToken: cancellationToken);
+                if (handoffWarnings.Count == 0)
+                    await context.Logger.InfoAsync("Callback-Übergabe bestätigt. Bestehende Channels und Tokens bleiben erhalten; kein Neuaufbau in diesem Lauf.",
+                        "Callback-Übergabe", cancellationToken: cancellationToken);
+                return new CrmHookUpdateResult(ProviderKey, 0, 0, 0, 0, 0, 0, handoffWarnings)
+                { PlacementChangeCompleted = handoffWarnings.Count == 0 && context.Installation?.PlacementChange is not null };
             }
 
-            var connection = await connections.GetActiveAsync(cancellationToken);
-            if (connection is null)
+            if (hooksDisabled || connection is null)
             {
-                await context.Logger.InfoAsync(
-                    "Zoho-Hooks übersprungen: keine aktive Zoho-Verbindung vorhanden.",
-                    "CRM-Hooks",
-                    cancellationToken: cancellationToken);
-                return SkippedResult(context.Trigger, "Keine aktive Zoho-Verbindung; kein Neuaufbau ausgeführt.");
+                var skipped = hooksDisabled
+                    ? "Hooks sind deaktiviert (crm.changeDetectionMode = crawl-only); kein Neuaufbau ausgeführt."
+                    : "Keine aktive Zoho-Verbindung; kein Neuaufbau ausgeführt.";
+                await context.Logger.InfoAsync(skipped, "CRM-Hooks", cancellationToken: cancellationToken);
+                return SkippedResult(context.Trigger, skipped);
             }
 
             var webhookConfiguration = await webhookSettings.ResolveCurrentAsync(cancellationToken);

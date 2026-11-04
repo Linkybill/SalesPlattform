@@ -94,6 +94,20 @@
       }
     },
     {
+      "key": "zoho.webhookAddressMode",
+      "name": "Zoho Webhook-Adressmodus",
+      "description": "Eigene Adresse erhält bestehende Relay-/Callback-URLs. Installationsadresse verwendet ausdrücklich den direkten öffentlichen Einstieg dieser Installation; nach einem kontrollierten Wechsel werden bestehende Channels gezielt übertragen.",
+      "category": "Zoho CRM",
+      "type": "enum",
+      "defaultValue": "custom",
+      "scopes": ["tenantApp"],
+      "options": [
+        { "value": "custom", "label": "Eigene Adresse / Kunden-Relay" },
+        { "value": "installation", "label": "Direkter Einstieg dieser Installation" }
+      ],
+      "dependsOn": { "scope": "tenantApp", "settingKey": "crm.integration", "value": "zoho" }
+    },
+    {
       "key": "zoho.webhookUrl",
       "name": "Zoho Webhook-URL",
       "description": "Öffentliche Sales-Callback-Basis-URL dieses Mandanten, z. B. https://sales.kunde.de/api/integrations/zoho/webhook. Ohne Tenant-ID, Query oder Token eintragen; der Queryparameter tenant_id wird automatisch ergänzt. Nach einer Änderung den Job CRM-Hooks erneuern starten. Die Adresse muss bereits als erreichbarer Sales-Einstieg eingerichtet sein.",

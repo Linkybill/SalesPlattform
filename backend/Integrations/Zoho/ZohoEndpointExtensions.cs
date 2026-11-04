@@ -32,6 +32,21 @@ public static class ZohoEndpointExtensions
             {
                 return Results.BadRequest(new { message = exception.Message });
             }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Forbid();
+            }
+        });
+
+        protectedGroup.MapPost("/hooks/handoff/confirm-relay", async (
+            ZohoHookRelayConfirmation request, ClaimsPrincipal user, HttpContext httpContext,
+            TenantAdminAccessService tenantAdminAccess, ZohoHookHandoffService handoff, CancellationToken token) =>
+        {
+            httpContext.Response.Headers.CacheControl = "no-store";
+            if (!await tenantAdminAccess.IsCurrentTenantAdminAsync(user, token)) return Results.Forbid();
+            try { await handoff.ConfirmRelayAsync(request, token); return Results.NoContent(); }
+            catch (UnauthorizedAccessException) { return Results.Forbid(); }
+            catch (InvalidOperationException exception) { return Results.Conflict(new { message = exception.Message }); }
         });
 
         // Explicit manual check; unlike /hooks this consumes a read request at Zoho.

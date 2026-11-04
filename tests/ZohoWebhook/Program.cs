@@ -560,6 +560,8 @@ await ReplacementChecks.Run(Check);
 await DiagnosticQueueChecks.Run(Check);
 await NotificationSdkChecks.Run(Check);
 await InstallationChecks.RunAsync(Check);
+await HandoffChecks.RunAsync(Check);
+await HandoffPostgresChecks.RunAsync(Check);
 Console.WriteLine($"Zoho webhook: {checks} checks passed (synthetic data; no live CRM calls).");
 
 sealed class SyntheticSettingsStore : IApplicationSettingsStore

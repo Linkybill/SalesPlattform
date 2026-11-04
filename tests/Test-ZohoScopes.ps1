@@ -23,7 +23,7 @@ Assert ($options.Scopes -ceq $settings.Zoho.Scopes) 'C# and appsettings scope de
 $required = @(
     'ZohoCRM.modules.READ', 'ZohoCRM.modules.emails.READ',
     'ZohoCRM.modules.tasks.CREATE', 'ZohoCRM.modules.tasks.UPDATE',
-    'ZohoCRM.notifications.CREATE', 'ZohoCRM.notifications.DELETE',
+    'ZohoCRM.notifications.CREATE', 'ZohoCRM.notifications.UPDATE', 'ZohoCRM.notifications.DELETE',
     'ZohoCRM.notifications.READ',
     'ZohoCRM.users.READ', 'ZohoCRM.org.READ',
     'ZohoCRM.settings.modules.READ', 'ZohoCRM.settings.fields.READ',
@@ -36,7 +36,7 @@ function Assert-HistoryScopes([string[]]$Scopes) {
     }
     Assert ($Scopes -cnotcontains 'ZohoCRM.modules.ALL') 'Do not add full module access.'
     Assert ($Scopes -notcontains 'ZohoCRM.modules.DealHistory.READ') 'Never send the unsupported history grant, including from old overrides.'
-    $writeGrants = @('ZohoCRM.modules.tasks.CREATE', 'ZohoCRM.modules.tasks.UPDATE', 'ZohoCRM.notifications.CREATE', 'ZohoCRM.notifications.DELETE')
+    $writeGrants = @('ZohoCRM.modules.tasks.CREATE', 'ZohoCRM.modules.tasks.UPDATE', 'ZohoCRM.notifications.CREATE', 'ZohoCRM.notifications.UPDATE', 'ZohoCRM.notifications.DELETE')
     Assert (@($Scopes | Where-Object { $_ -match '\.(CREATE|UPDATE|DELETE|ALL)$' -and $_ -cnotin $writeGrants }).Count -eq 0) 'Only existing task/hook writes are permitted.'
 }
 Assert-HistoryScopes $options.GetScopes()
@@ -72,7 +72,7 @@ try {
         Assert ($scopeEntry.Count -eq 1) 'Deployment must supply exactly one scope setting.'
         $deployed = $scopeEntry[0].value -split ','
         Assert-HistoryScopes $deployed
-        foreach ($scope in @('ZohoCRM.modules.tasks.CREATE', 'ZohoCRM.modules.tasks.UPDATE', 'ZohoCRM.notifications.CREATE', 'ZohoCRM.notifications.DELETE')) {
+        foreach ($scope in @('ZohoCRM.modules.tasks.CREATE', 'ZohoCRM.modules.tasks.UPDATE', 'ZohoCRM.notifications.CREATE', 'ZohoCRM.notifications.UPDATE', 'ZohoCRM.notifications.DELETE')) {
             Assert ($deployed -ccontains $scope) 'Preserve existing task/hook grants.'
         }
     }

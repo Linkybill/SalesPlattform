@@ -1,5 +1,55 @@
 # Sales: Deployment- und Betriebsstand
 
+## Lokaler Reviewstand für Installationsübergaben (04.11.2026)
+
+Die neuen vertrauenswürdigen Job-Claims und technischen Abschlussquittungen
+benötigen Shared **0.1.91**. Dieses Paket ist noch nicht veröffentlicht.
+Der reguläre NuGet-Pin bleibt deshalb vorerst 0.1.88, npm bleibt 0.1.66;
+ein unveränderter Registry-Build dieses Reviewstands ist noch nicht freigegeben.
+Es wurde kein fingierter Registry-Lock oder lokaler Dateipfad in die regulären
+Paketdateien eingetragen. Die spätere Veröffentlichung und die anschließende
+gemeinsame Aktualisierung der Consumer sind ein eigener Schritt.
+
+Der lokale Prüfweg verwendet eine getrennte Kopie der aktuellen Arbeitsdateien,
+ein lokal gepacktes Shared-0.1.91-NuGet und React-0.1.68-TGZ sowie getrennte
+NuGet-/npm-Caches. Restore und Build erhalten ausschließlich in dieser Kopie
+`-p:IdentityPlatformSharedVersion=0.1.91`; die NuGet-Quellzuordnung bindet
+`IdentityPlatform.Shared` ausschließlich an den lokalen Feed. Der npm-Dateiverweis
+und der daraus entstehende Lock bleiben ebenfalls in der Prüfkopie.
+
+Lokale Werkzeuge/Evidenz: `C:\git\IdentityPlattform\artifacts\local-sales-handoff-check.ps1`
+und `artifacts\lc-1104-b` mit Quellen-Commit/Dateihashes, Pakethashes und
+begrenzten Prozesslaufzeiten. Die ursprünglichen App-Caches und Paketdateien
+werden nicht verändert. Keine Actions, Pushes, Veröffentlichung oder
+Produktionsmigration durch diesen Prüfweg. Der native PostgreSQL-Prüfer verwendet
+nur eine neue `sales_handoff_validation_<Guid>`-Datenbank auf dem markierten
+lokalen Testserver; Testdaten und Protokolle bleiben nach dessen Stopp erhalten.
+
+Die additive Migration `20261104132530_AddInstallationHookHandoff` ergänzt
+ausschließlich die kundenseitigen Übergabejournale. Ihre Rückwärtsmigration
+verweigert das Löschen dieser Daten.
+
+Lokal am 04.11. geprüft: Backend-Releasebuild mit **0 Warnungen/Fehlern**,
+34 Zoho-Taskfälle, 438 synthetische Webhookprüfungen, 625 Reportprüfungen,
+23 Verbrauchsprüfungen, Frontend-Typecheck/Produktionsbuild mit lokalem React
+0.1.68, 33 Node-Vertragsprüfungen und die drei HTTPS-/Pipeline-/Scopeverträge.
+Der zusätzliche echte PostgreSQL-16-Lauf bestand **15 Migrations-,
+Isolations- und Datenerhaltungsprüfungen** (Webhookprogramm dort insgesamt
+453 Prüfungen). Der eigene Testserver wurde verifiziert gestoppt; Daten bleiben
+erhalten. Evidenz liegt in `lc-1104-b\sales-postgres-59b77caeed3b4e93b3bdc78d5492eba2`.
+Der finale lokale Shared-Pakethash (SHA256) lautet
+`5145F5CD1D40E68229F78C1D0F03FB0431B082E37434881264CB99362F771EAA`.
+Die Registry-spezifische Themeprüfung wurde am unveränderten Originalconsumer
+bestanden; sie wird im absichtlichen TGZ-Isolat nicht als Registry-Nachweis ausgegeben.
+
+Noch erforderlicher Integrationsschritt: Der zentral freigegebene Jobkatalog muss
+releasegebunden aus dem CI-Artefakt importiert werden, einschließlich des neuen
+Handoff-Flags. Die Installationsregistrierung prüft weiterhin strikt; eine alte
+zentrale Definition mit Flag `false` wird nicht von einem Kundencontainer geändert.
+Ohne diesen Freigabeschritt ist ein neues Installationsdeployment noch nicht
+vollständig abgenommen. Wiederherstellung abgelaufener Channels und reale
+Zoho-Zustellung sind ebenfalls getrennte offene Nachweise/Funktionen.
+
 ## CI-Wiederaufnahme (03.11.2026)
 
 Der aktuelle Security-Stand wird wieder durch die volle CI geprueft. Die bereits

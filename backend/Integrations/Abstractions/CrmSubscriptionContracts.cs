@@ -21,6 +21,7 @@ public sealed record CrmHookUpdateResult(
     IReadOnlyCollection<string> Warnings)
 {
     public bool HasWarnings => Warnings.Count > 0 || EventsFailed > 0;
+    public bool PlacementChangeCompleted { get; init; }
 
     [JsonIgnore]
     public IReadOnlyCollection<JsonElement> ApiRequests { get; init; } = [];

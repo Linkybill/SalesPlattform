@@ -18,6 +18,15 @@ CRM-Laufprüfung verwendet den Shared-Statusclient mit Installation und Tenant.
 Ein nicht bestätigbarer Status stoppt die Bereinigung alter Läufe; Zeitablauf
 oder fehlende Erreichbarkeit gelten nicht als Beleg für einen verwaisten Import.
 
+Bei kontrollierten Platzierungswechseln bleiben Callback-Adressen, Channel-IDs,
+Tokenhashes, Relay-Bestätigungen und Wiederanlaufzustand in
+`integration_hook_handoffs`/`integration_hook_handoff_channels` dieser lokalen
+Datenbank. Die Plattform erhält nur eine explizite technische Erfolgsquittung
+zum vorher authentifizierten Job-/Transition-/Tenant-Kontext. Warnungen oder
+allgemeiner Job-Erfolg ersetzen diese Quittung nicht. Weitere Wechsel bleiben
+bis zur Quittung gesperrt; eine Reaktivierung mit neuer Leasegeneration beseitigt
+keine alte offene Pflicht. Geschäftliche Ergebnisse werden nicht hochgeladen.
+
 ## Zusätzliche Report-AppSettings (09.10.2026, lokal)
 
 Normale tenantApp-Einstellungen, keine Secrets:

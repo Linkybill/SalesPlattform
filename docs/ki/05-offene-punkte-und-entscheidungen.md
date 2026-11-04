@@ -1,5 +1,52 @@
 # Offene Punkte, Entscheidungen und Status
 
+## Kontrollierte Webhook-Übergabe bei Installationswechsel (04.11.2026, lokal geprüft)
+
+Der Installationswechsel benötigt nach dem zentral bestätigten Eigentümerwechsel
+einen technischen Lauf des bestehenden Jobs `crm-subscription-maintenance`.
+Eine neue optionale Jobregistrierung kennzeichnet diesen Auftrag; Transition,
+Zielinstallation und Placement-Generation kommen aus der Plattform, niemals aus
+editierbaren Jobparametern. Geschäftliche Intents, Callback-Adressen und
+Channel-/Tokenprüfungen bleiben in der lokalen Sales-Datenbank.
+
+`zoho.webhookAddressMode` unterscheidet `custom` und ausdrücklich gewähltes
+`installation`. Bestehende nichtleere URLs ohne neuen Modus bleiben `custom`;
+der Auftrag vom 28.10. bleibt erhalten. Nur `installation` verwendet die geprüfte
+öffentliche App-Origin plus `/api/integrations/zoho/webhook`. Eigene Relays werden
+nicht umgeschrieben und benötigen nach dem Wechsel eine gezielte lokale
+Bestätigung ihrer Weiterleitung zum Ziel.
+
+Die Übergabe speichert ihren Intent vor einem externen Schreibaufruf, aktualisiert
+bestehende Channels per PATCH und verifiziert sie anschließend per GET.
+Channel-ID und Verification-Token bleiben erhalten. Unbestätigte Antworten führen
+zu erneutem Lesen desselben Channels; normale DELETE-/POST-Erneuerungen dürfen
+eine offene Übergabe nicht umgehen. `ZohoCRM.notifications.UPDATE` benötigt bei
+alten Verbindungen gegebenenfalls eine erneute OAuth-Freigabe. Kein Live-Aufruf,
+Rollout oder Nachweis lückenloser externer Zustellung durch diesen Arbeitsstand.
+
+Eine explizite technische Abschlussquittung erlaubt den nächsten kontrollierten
+Wechsel. Sie entsteht erst nach bestätigtem Abgleich aller vorhandenen Channels;
+ein leerer lokaler Channelbestand ist gesondert als leerer Intent dokumentiert.
+Fehlende OAuth-Verbindung, abgeschaltete Hooks mit vorhandenen Channels oder
+eine ausstehende Relay-Bestätigung bleiben sichtbar offen. Manuelle Fortsetzung
+und spätere planmäßige Läufe benutzen denselben vertrauenswürdigen Kontext.
+Die ursprüngliche Übergabegeneration bleibt von späteren Leasegenerationen
+getrennt, damit Reaktivierung eine offene Übergabe weder umgeht noch unlösbar macht.
+
+Noch offen: gezielte Wiederherstellung tatsächlich abgelaufener, bei Zoho nicht
+mehr vorhandener oder widersprüchlicher Channels. Dieser Fall bleibt mit Hinweis
+gesperrt; er erzeugt insbesondere nach einem Timeout keine zufälligen neuen
+Channels/Tokens. Ebenso noch unbelegt: echte Zoho-UPDATE-Freigabe und Zustellung
+über eine reale Source→Destination-Übergabe. Die normalen Incremental-Crawls
+bleiben für mögliche Zustellungslücken erforderlich; der PATCH-Nachweis verspricht
+keine Exactly-once-Zustellung durch den externen Anbieter.
+Der Release-Import des zentralen technischen Jobkatalogs ist als weitere
+Integrationsarbeit offen; der neue App-Prozess darf seinen Vertrag nicht selbst
+global freigeben oder ältere On-Prem-Versionen zwangsweise umstellen.
+
+Quellen: [Zoho PATCH](https://www.zoho.com/crm/developer/docs/api/v8/notifications/update-info.html)
+und [Zoho GET](https://www.zoho.com/crm/developer/docs/api/v8/notifications/get-details.html).
+
 ## Zoho-Einstieg auf Port 443 (28.10.2026)
 
 Benutzer beauftragt zusätzlichen HTTPS-Einstieg ohne Domain, vorerst mit

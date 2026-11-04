@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ZohoHookCheck } from './ZohoHookCheck'
 import { ZohoHookRebuild } from './ZohoHookRebuild'
+import { ZohoHookHandoffPanel, type HookHandoff } from './ZohoHookHandoffPanel'
 
 type Subscription = {
   module: string; status: string; expiresAt: string | null
@@ -15,6 +16,7 @@ export type HookOverviewData = {
   callbackUrlSource: string; callbackUrlError: string | null
   subscriptions: Subscription[]; counts: Record<string, number>
   total: number; page: number; pageSize: number; events: HookEvent[]
+  handoff?: HookHandoff | null
 }
 const labels: Record<string, string> = {
   active: 'Registriert', expired: 'Abgelaufen', missing: 'Nicht registriert',
@@ -75,7 +77,7 @@ export function WebhookOverview({ authorizedFetch, platformAuthorizedFetch, appl
       <button className="secondary-button" type="button" disabled={loading} onClick={() => setRefresh(x => x + 1)}>Übersicht aktualisieren</button>
     </div>
     <ZohoHookRebuild authorizedFetch={authorizedFetch} platformAuthorizedFetch={platformAuthorizedFetch} applicationKey={applicationKey}
-      tenantId={tenantId} jobsUrl={jobsUrl} disabled={loading || !data} />
+      tenantId={tenantId} jobsUrl={jobsUrl} disabled={loading || !data || Boolean(data.handoff && data.handoff.status !== 'completed')} />
     <p>Zoho meldet Änderungen an diese Callback-URL. Die Registrierung pro Mandant und Modul übernimmt
       der Job „CRM-Hooks erneuern“ automatisch; keine einzelnen Hooks von Hand anlegen.</p>
     <p>Der Callback speichert zunächst nur das Ereignis. Der Job importiert danach die betroffenen Datensätze
@@ -84,15 +86,19 @@ export function WebhookOverview({ authorizedFetch, platformAuthorizedFetch, appl
     {error && <div className="message error-message" role="alert">{error}</div>}
     {loading && <p role="status">Hook-Übersicht wird geladen …</p>}
     {data && <>
+      {data.handoff && <ZohoHookHandoffPanel key={data.handoff.id} handoff={data.handoff}
+        authorizedFetch={authorizedFetch} platformAuthorizedFetch={platformAuthorizedFetch} applicationKey={applicationKey}
+        tenantId={tenantId} jobsUrl={jobsUrl} onChanged={() => setRefresh(x => x + 1)} />}
       <p>Callback-URL für diesen Mandanten: <code className="hook-url">{callbackUrl ?? 'Nicht konfiguriert / ungültig'}</code><br />
         <small>Diese vollständige Adresse wird bei der Registrierung an Zoho übergeben.
           Die aktuell bei Zoho gespeicherte Adresse lässt sich unten prüfen.</small></p>
       <details>
         <summary>URL-Einstellung</summary>
         <p>Gespeicherte Basisadresse: <code className="hook-url">{data.callbackBaseUrl ?? 'Nicht konfiguriert / ungültig'}</code><br />
-          Quelle: {data.callbackUrlSource === 'tenantApp' ? 'Mandanten-AppSetting zoho.webhookUrl' : 'Nicht konfiguriert'}.<br />
-          Ändern unter Tenant-Portal → SalesPlattform → AppSettings → Zoho Webhook-URL.
-          Dort die Basisadresse ohne Tenant-Parameter eintragen; die Registrierung ergänzt ihn automatisch.</p>
+          Quelle: {data.callbackUrlSource === 'installation' ? 'Geprüfter direkter Einstieg dieser Installation'
+            : data.callbackUrlSource === 'tenantApp' ? 'Mandanten-AppSetting zoho.webhookUrl' : 'Nicht konfiguriert'}.<br />
+          In den Sales-AppSettings den Webhook-Adressmodus wählen. „Eigene Adresse“ erhält die konfigurierte Basisadresse;
+          „Installationsadresse“ verwendet den direkten Einstieg. Der Tenant-Parameter wird automatisch ergänzt.</p>
       </details>
       {data.callbackUrlError && <div className="message error-message">{data.callbackUrlError}</div>}
       {!data.schemaCached && <div className="message">Zuerst den Job „Zoho-Schema cachen“ starten. Ohne Schema werden keine Hooks registriert.</div>}

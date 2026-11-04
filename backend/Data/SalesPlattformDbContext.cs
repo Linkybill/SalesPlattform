@@ -41,6 +41,8 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
     public DbSet<IntegrationWritebackOperation> IntegrationWritebackOperations => Set<IntegrationWritebackOperation>();
     public DbSet<IntegrationWebhookEvent> IntegrationWebhookEvents => Set<IntegrationWebhookEvent>();
     public DbSet<IntegrationSubscription> IntegrationSubscriptions => Set<IntegrationSubscription>();
+    public DbSet<IntegrationHookHandoff> IntegrationHookHandoffs => Set<IntegrationHookHandoff>();
+    public DbSet<IntegrationHookHandoffChannel> IntegrationHookHandoffChannels => Set<IntegrationHookHandoffChannel>();
 
     public DbSet<SalesOwner> SalesOwners => Set<SalesOwner>();
     public DbSet<SalesTeam> SalesTeams => Set<SalesTeam>();
@@ -126,6 +128,7 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         });
 
         ConfigureIntegrationModel(modelBuilder);
+        IntegrationHookHandoffModel.Configure(modelBuilder);
         ConfigureCanonicalModel(modelBuilder);
         ConfigureWorkflowModel(modelBuilder);
         ConfigureAnalyticsModel(modelBuilder);

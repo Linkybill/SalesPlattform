@@ -45,8 +45,10 @@ public sealed class CrmHookUpdateJob(
                 + $"{results.Sum(result => result.SubscriptionsRenewed)} erneuert, "
                 + $"{results.Sum(result => result.SubscriptionsUnchanged)} unverändert; "
                 + $"{results.Sum(result => result.EventsProcessed)} Ereignisse verarbeitet, {warnings.Length} Warnung(en).";
-        return warnings.Length > 0 || results.Any(result => result.EventsFailed > 0)
+        var resultWithStatus = warnings.Length > 0 || results.Any(result => result.EventsFailed > 0)
             ? PlatformJobResult.SuccessWithWarnings(message, details)
             : PlatformJobResult.Success(message, details);
+        return resultWithStatus with { PlacementChangeCompleted = context.Installation?.PlacementChange is not null
+            && results.Count > 0 && !resultWithStatus.WithWarnings && results.All(result => result.PlacementChangeCompleted) };
     }
 }

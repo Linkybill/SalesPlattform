@@ -44,6 +44,14 @@ test('hook URL is configurable per tenant, never per user or hardcoded to a cust
   assert.notEqual(setting.secret, true);
   assert.deepEqual(setting.dependsOn, { scope: 'tenantApp', settingKey: 'crm.integration', value: 'zoho' });
 });
+
+test('installation callback selection preserves explicit customer addresses by default', () => {
+  const mode = manifest.settings.find(x => x.key === 'zoho.webhookAddressMode');
+  assert.equal(mode.type, 'enum');
+  assert.deepEqual(mode.scopes, ['tenantApp']);
+  assert.equal(mode.defaultValue, 'custom');
+  assert.deepEqual(mode.options.map(x => x.value), ['custom', 'installation']);
+});
 test('hook worker and overview use the same tenant settings resolver, not process options', () => {
   for (const file of ['ZohoSubscriptionAdapter.cs', 'ZohoWebhookOverviewService.cs']) {
     const source = readFileSync(new URL(`../backend/Integrations/Zoho/${file}`, import.meta.url), 'utf8');
