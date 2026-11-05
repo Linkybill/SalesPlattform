@@ -1,5 +1,41 @@
 # Projektkontext
 
+## Shared 0.1.97: einheitliche Startabfrage lokal geprüft (05.11.2026)
+
+Der Backend-Defaultpin ist auf die gemeinsame Bibliothek **0.1.97**
+gesetzt; React bleibt **0.1.69**. Die bestehende `AddIdentityPlatform`-Integration
+fragt den zentral gespeicherten Sollstand einmal beim Start auch im bisherigen
+Shared-/Dedicated-Runtimebetrieb ab. Der Runtime-Snapshot ist an Ziel und
+Umgebung gebunden; er bestätigt weder einen Rollout noch einen Datenumzug.
+Verwaltete Instanzen dürfen beim Neustart keinen alten Appstand zurückschreiben.
+Benachrichtigung und stündliche Wiederholung erfolgen zentral an die Agenten;
+Sales erhält keinen eigenen Versionsdienst oder Pollingzyklus.
+
+Der echte lokale .97-Paketconsumer ist nativ geprüft: Backend und vier
+Fachtestprogramme bauten mit **0 Warnungen / 0 Fehlern**. **34 Task-, 438 Webhook-,
+625 Report-/Import- und 23 Verbrauchsprüfungen** bestanden (zusammen **1.120**).
+Der Jobkatalogexport lieferte weiterhin **4 Jobs** vor dem Hoststart. Es gab keine
+Live-CRM-Aufrufe. Der gemeinsame Start-/Benachrichtigungsvertrag wird getrennt in
+den Plattformtests geprüft; die Consumerläufe bestätigen die Paketintegration.
+
+Prüfer: `C:/git/IdentityPlattform/artifacts/startup-release97-final-consumers/Run-ConsumerChecks.ps1`.
+Nachweis: gleicher Ordner, `run/validation.json`, `run/results.jsonl` und `run/logs/`.
+Verwendet wurde der reguläre .97-Defaultpin mit isoliertem Feed/Cache, ohne
+Versionsoverride, Projektverweis oder Remote-Paketquelle. Paket-SHA256:
+`1623400824F7D6430CE4AF7803FECD9A4D079D94CB3F9C4D5016CDA06C90D661`.
+Shared-DLL-SHA256:
+`AA5D17A40FD83F9CE7A7C6A83E474F55A4E277C2648BF2D6C706E7A45FE99C24`.
+Alle **7 DLL-Kopien** aus beiden Consumerprüfungen stimmten exakt; Original- und
+Isolatquellen waren während der Prüfung unverändert. Die danach erfolgte
+Aktualisierung dieses Nachweisabschnitts ist keine erneute Quellprüfung.
+
+Shared .97 ist im [Paketlauf 42026694858](https://github.com/Hammer2Fall/IdentityPlattform/actions/runs/42026694858)
+erfolgreich veröffentlicht und in der Registry bestätigt. **Der .97-App-Rollout
+folgt nach der kompatiblen Plattform.** Der darunter belegte
+.96-Liverollout bleibt der bisherige Betriebsstand. Fachlichkeit und React sind
+unverändert; keine neue Browser-, echte Cluster- oder fachliche Live-Abnahme.
+Kompatible Plattform vor den nächsten App-Images bereitstellen.
+
 ## Sales-Release erfolgreich ausgerollt (05.11.2026)
 
 Shared **0.1.96** und React **0.1.69** sind tatsächlich in GitHub Packages
