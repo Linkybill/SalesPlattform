@@ -1,5 +1,6 @@
 {
   "appKey": "sales-plattform",
+  "oauthCallbackPaths": ["/api/integrations/zoho/oauth/callback"],
   "name": "SalesPlattform",
   "description": "Startgerüst der SalesPlattform mit React-Frontend, HelloWorld-Endpunkt und Tenant-Datenbank.",
   "version": "0.1.1",

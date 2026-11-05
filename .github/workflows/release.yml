@@ -1,33 +1,26 @@
-name: Deploy SalesPlattform
+name: Publish SalesPlattform
 
-# App-only rollout; no remote shell, platform bootstrap or database creation.
+# Build app images, publish their central desired state; the platform owns rollout.
 on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: 'Type ax42-1/dev to deploy SalesPlattform'
+        description: 'Type publish to publish SalesPlattform and notify the platform'
         required: true
         type: string
-      access_only:
-        description: 'Only test access (NO build or deployment)'
-        type: boolean
-        default: false
-      publish_only:
-        description: 'Publish images and a release candidate only (NO server access or deployment); confirm publish-only'
-        type: boolean
-        default: false
 
 permissions:
   contents: read
   packages: read
 
 concurrency:
-  group: deploy-sales-plattform-ax42-1-dev
+  group: publish-sales-plattform
   cancel-in-progress: false
 
 env:
-  APP_CI_APP_KEY: sales-plattform
-  APP_CI_TARGET: ax42-1
+  APP_RELEASE_APP_KEY: sales-plattform
+  APP_RELEASE_PROFILE_TARGET: ax42-1
+  APP_RELEASE_IMAGE_REPOSITORY: ghcr.io/hammer2fall/identityplattform-sales-plattform
   IDENTITY_PLATFORM_DEPLOY_REF: ${{ vars.IDENTITY_PLATFORM_DEPLOY_REF }}
 
 jobs:
@@ -37,46 +30,46 @@ jobs:
     outputs:
       tooling_ref: ${{ steps.policy.outputs.tooling_ref }}
     steps:
-      - name: Require approved branch, target and reviewed platform tooling
+      - name: Require reviewed main publication and central tooling
         id: policy
         shell: pwsh
         env:
           CONFIRMATION: ${{ inputs.confirmation }}
-          PUBLISH_ONLY: ${{ inputs.publish_only }}
-          ACCESS_ONLY: ${{ inputs.access_only }}
-          ISOLATED_CI_READY: ${{ vars.APP_CI_ISOLATION_VERIFIED }}
         run: |
-          if ($env:PUBLISH_ONLY -ne 'true' -and $env:ISOLATED_CI_READY -cne 'v3') {
-            throw 'Complete and verify the dedicated version-3 app CI setup before enabling releases.'
-          }
-          if ($env:PUBLISH_ONLY -eq 'true' -and $env:ACCESS_ONLY -eq 'true') { throw 'Choose either publish-only or access-only.' }
-          $expectedConfirmation = if ($env:PUBLISH_ONLY -eq 'true') { 'publish-only' } else { "$env:APP_CI_TARGET/dev" }
-          if ($env:GITHUB_REF -cne 'refs/heads/main' -or $env:CONFIRMATION -cne $expectedConfirmation) {
-            throw 'Choose main and confirm the exact deployment or publication action.'
+          if ($env:GITHUB_REF -cne 'refs/heads/main' -or $env:GITHUB_EVENT_NAME -cne 'workflow_dispatch' -or $env:CONFIRMATION -cne 'publish') {
+            throw 'Choose main and confirm publication with publish.'
           }
           if ($env:IDENTITY_PLATFORM_DEPLOY_REF -cnotmatch '^[a-f0-9]{40}$') {
-            throw 'Repository variable IDENTITY_PLATFORM_DEPLOY_REF must pin a reviewed platform commit containing app-ci-release.mjs.'
+            throw 'Pin reviewed platform publication tooling with IDENTITY_PLATFORM_DEPLOY_REF.'
           }
           "tooling_ref=$env:IDENTITY_PLATFORM_DEPLOY_REF" >> $env:GITHUB_OUTPUT
 
   ci:
     needs: validate
-    if: ${{ !inputs.access_only }}
     uses: ./.github/workflows/ci.yml
     secrets:
       PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
 
   images:
     needs: [validate, ci]
-    if: ${{ !inputs.access_only }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    environment: application-release
     env:
       IDENTITY_PLATFORM_DEPLOY_REF: ${{ needs.validate.outputs.tooling_ref }}
     permissions:
       contents: read
-      packages: write
+      packages: read
     steps:
+      - name: Require central registry publisher access
+        shell: pwsh
+        env:
+          REGISTRY_USERNAME: ${{ vars.CENTRAL_REGISTRY_USERNAME }}
+          REGISTRY_TOKEN: ${{ secrets.CENTRAL_REGISTRY_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:REGISTRY_USERNAME) -or [string]::IsNullOrWhiteSpace($env:REGISTRY_TOKEN)) {
+            throw 'Configure protected central registry publisher access before building.'
+          }
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ github.sha }}
@@ -96,7 +89,7 @@ jobs:
         id: release
         shell: pwsh
         run: |
-          node platform/deploy/cicd/app-ci-release.mjs build app $env:APP_CI_APP_KEY $env:APP_CI_TARGET release.json
+          node platform/deploy/cicd/app-ci-release.mjs build app $env:APP_RELEASE_APP_KEY $env:APP_RELEASE_PROFILE_TARGET release.json
           if ($LASTEXITCODE -ne 0) { throw 'Invalid app release.' }
           $release = Get-Content release.json -Raw | ConvertFrom-Json
           foreach ($image in $release.images) {
@@ -111,8 +104,8 @@ jobs:
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ vars.CENTRAL_REGISTRY_USERNAME }}
+          password: ${{ secrets.CENTRAL_REGISTRY_TOKEN }}
       - name: Build and publish backend
         id: backend
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
@@ -163,28 +156,16 @@ jobs:
             Set-Content "$component.digest" $digest -Encoding utf8NoBOM
           }
           $release = Get-Content release.json -Raw | ConvertFrom-Json
-          $manifest = Get-Content 'app/backend/manifest.json' -Raw | ConvertFrom-Json
           $backendImage = (($release.images | Where-Object component -eq 'backend').repository + '@' + $env:BACKEND_DIGEST)
           $catalogOutput = & docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 --memory 256m --cpus 1 --env DOTNET_EnableDiagnostics=0 $backendImage --export-installation-job-catalog
           if ($LASTEXITCODE -ne 0) { throw 'The published backend could not export its compiled job catalog.' }
-          $catalog = ($catalogOutput -join "`n") | ConvertFrom-Json
-          if ($catalog.contract -cne 'identity-platform.job-catalog.v1' -or $catalog.applicationKey -cne $env:APP_CI_APP_KEY -or $null -eq $catalog.jobs) { throw 'Invalid compiled job catalog.' }
-          $candidate = [ordered]@{
-            contract = 'identity-platform.application-release.v1'
-            applicationKey = $env:APP_CI_APP_KEY
-            version = "$env:GITHUB_SHA.$env:GITHUB_RUN_ID"
-            sourceCommit = $env:GITHUB_SHA
-            backendImage = $backendImage
-            frontendImage = (($release.images | Where-Object component -eq 'frontend').repository + '@' + $env:FRONTEND_DIGEST)
-            webhookPaths = @($manifest.webhooks | Where-Object { $_ -and $_.path } | ForEach-Object { $_.path })
-            oauthCallbackPaths = @('/api/integrations/zoho/oauth/callback')
-            jobs = @($catalog.jobs)
-          }
-          $candidate | ConvertTo-Json -Depth 5 | Set-Content installation-app-release.json -Encoding utf8NoBOM
+          $catalogOutput -join "`n" | Set-Content compiled-job-catalog.json -Encoding utf8NoBOM
+          node platform/deploy/cicd/app-release-publication.mjs release.json compiled-job-catalog.json . application-release.json
+          if ($LASTEXITCODE -ne 0) { throw 'Invalid central application release metadata.' }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: installation-app-release
-          path: installation-app-release.json
+          name: application-release
+          path: application-release.json
           if-no-files-found: error
           retention-days: 90
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -195,23 +176,16 @@ jobs:
           overwrite: true
           retention-days: 7
 
-  deploy:
+  notify:
     needs: [validate, ci, images]
-    if: ${{ always() && !cancelled() && !inputs.publish_only && needs.validate.result == 'success' && (inputs.access_only || (needs.ci.result == 'success' && needs.images.result == 'success')) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    env:
-      IDENTITY_PLATFORM_DEPLOY_REF: ${{ needs.validate.outputs.tooling_ref }}
-    environment: sales-plattform-ax42-1-dev
+    timeout-minutes: 5
+    environment: application-release
     permissions:
       contents: read
       actions: read
+      id-token: write
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ github.sha }}
-          path: app
-          persist-credentials: false
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: Hammer2Fall/IdentityPlattform
@@ -219,38 +193,13 @@ jobs:
           token: ${{ secrets.PACKAGES_TOKEN }}
           path: platform
           persist-credentials: false
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: '22.x'
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v4
-        with:
-          version: v3.17.3
-      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4
-        with:
-          version: v1.36.4
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        if: ${{ !inputs.access_only }}
         with:
-          name: app-digests
-          path: digests
-      - name: Deploy app through verified Kubernetes tunnel (or explicit access-only test)
+          name: application-release
+          path: publication
+      - name: Publish desired release through GitHub OIDC
         shell: pwsh
         env:
-          ACCESS_ONLY: ${{ inputs.access_only }}
-          PLATFORM_CI_KUBECONFIG: ${{ secrets.APP_CI_KUBECONFIG }}
-          PLATFORM_CI_SSH_KEY: ${{ secrets.APP_CI_SSH_KEY }}
-          PLATFORM_CI_KNOWN_HOSTS: ${{ secrets.APP_CI_KNOWN_HOSTS }}
-          PLATFORM_CI_CONTEXT: ${{ vars.APP_CI_CONTEXT }}
-          PLATFORM_CI_CLUSTER_UID: ${{ vars.APP_CI_CLUSTER_UID }}
-          PLATFORM_CI_NAMESPACE_UID: ${{ vars.APP_CI_NAMESPACE_UID }}
-          PLATFORM_CI_DATABASE_UID: ${{ vars.APP_CI_DATABASE_UID }}
-          PLATFORM_CI_SSH_USER: ${{ vars.APP_CI_SSH_USER }}
-          PLATFORM_CI_SSH_PORT: ${{ vars.APP_CI_SSH_PORT }}
-          PLATFORM_CI_TRANSPORT: ${{ vars.APP_CI_TRANSPORT }}
-          PLATFORM_CI_VPN: ${{ secrets.APP_CI_VPN }}
-          APP_CI_PULL_SECRET: ${{ vars.APP_CI_PULL_SECRET }}
+          PLATFORM_API_URL: ${{ vars.APPLICATION_RELEASE_PLATFORM_URL }}
         run: |
-          if (($env:PLATFORM_CI_VPN -or $env:PLATFORM_CI_TRANSPORT -eq 'wireguard') -and -not (Test-Path ./platform/deploy/cicd/ci-vpn-transport.ps1)) {
-            throw 'Pinned platform tooling predates CI VPN. Update IDENTITY_PLATFORM_DEPLOY_REF to a verified VPN-capable commit; no public SSH fallback.'
-          }
-          ./platform/deploy/cicd/deploy-application.ps1 -AppRoot ./app -AppKey $env:APP_CI_APP_KEY -Target $env:APP_CI_TARGET -DigestDirectory ./digests -AccessOnly:($env:ACCESS_ONLY -eq 'true')
+          ./platform/deploy/cicd/notify-app-release.ps1 -AppKey $env:APP_RELEASE_APP_KEY -CandidatePath ./publication/application-release.json -PlatformApiUrl $env:PLATFORM_API_URL

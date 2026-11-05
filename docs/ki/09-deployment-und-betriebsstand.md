@@ -1,5 +1,39 @@
 # Sales: Deployment- und Betriebsstand
 
+## .97 live; nächster Publishweg noch nicht ausgerollt (05.11.2026)
+
+Salescommit `a2c757965ebab7e9ce424c45abf223c3cdec25c0` wurde mit Shared 0.1.97
+über [42030387024](https://github.com/Linkybill/SalesPlattform/actions/runs/42030387024)
+ausgerollt. Helmrevision 9 ist `deployed`. Beide Runtime-Pods nutzen die neuen
+Digests und sind bereit, beide Bootstrap-Templates stehen auf 0. Der gefilterte
+Lognachweis bestätigt am Backend genau eine gültige Startabfrage des zentralen
+Sollstands. Nachweise: Plattform-Artifactordner `deploy-auto-2026-11-05`,
+`sales-live-convergence42030387024.jsonl` und
+`sales-startup-release-42030387024.jsonl`. Keine fachliche CRM-/Browserabnahme.
+
+Der anschließende Umbau der Actions-Pipeline ist lokal vorbereitet:
+**Publish SalesPlattform**, `main`, Bestätigung `publish`, Environment
+`application-release`. CI baut beide Images in den zentralen Hammer2Fall-
+Registry-Namensraum und übergibt per GitHub OIDC einen unveränderlichen Sollstand
+an die Plattform. Containersteuerung erfolgt anschließend durch die Agenten;
+der Workflow enthält keine Clustercredentials. Die neue Pipeline wurde noch
+nicht live ausgeführt. Der CI-Schreibzugang wurde durch den Benutzer eingerichtet;
+die Veröffentlichung des kompatiblen Plattform-Toolings steht vor dem ersten Lauf.
+Einrichtung/Vertrag: [App-Pipeline](../../../../IdentityPlattform/docs/app-pipeline.md).
+
+Lokale Abschlussprüfung: **2.000 .NET-Tests grün**, 0 Fehler/62
+umgebungsgebundene Auslassungen; separat **16 PostgreSQL-Tests ohne Auslassung**.
+Operatorportalbuild und 11 Release-/Reader-UItests bestanden. Shared **0.1.98**
+ist lokal gepackt, noch nicht veröffentlicht. Der persönliche CI-Publisher
+`Linkybill` ist eingerichtet; der akzeptierte `repo`-Scope gilt ausschließlich
+für diesen CI-Zugang, nicht für den strikt lesenden Portalreader.
+
+Aktuelle öffentliche Notify-URL: `https://176.9.57.203:3101/platform`.
+Der neue Identity-Toolingpin, ein befugter persönlicher GHCR-Publisher für die
+Organisation `Hammer2Fall`, nachgewiesene Pullrechte und Actions-Kontingent
+bleiben Voraussetzungen des ersten neuen Laufs. Die Portalverwaltung des
+separaten Kunden-Downloadreaders ist kein Ersatz für den CI-Schreibzugang.
+
 ## Main-CI, Paketbezug und Sales-Rollout bestätigt (05.11.2026)
 
 Ausgerollter App-Commit: `7bd1872d697bcc9df145200ef09ff9d2461df8be`.

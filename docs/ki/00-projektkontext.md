@@ -1,5 +1,42 @@
 # Projektkontext
 
+## Zentraler Publishweg vorbereitet; .97 live bestätigt (05.11.2026)
+
+Die neue `release.yml` veröffentlicht geprüfte Backend-/Frontend-Images unter
+`ghcr.io/hammer2fall/identityplattform-sales-plattform-…` und meldet Manifest,
+Jobkatalog und Digests per GitHub OIDC an die Identity Platform. Die Plattform
+und ihre Agenten übernehmen den Rollout. Direkte Clusterzugänge entfallen aus
+diesem Workflow. Der neue Weg ist lokal geprüft, **noch nicht veröffentlicht
+oder deployed**. CI-Registry-Schreibzugang ist durch den Benutzer eingerichtet;
+der erste Imagepush und integrierte Live-Test stehen aus.
+Plattformarchitektur und Einrichtung:
+[App-Pipeline](../../../../IdentityPlattform/docs/app-pipeline.md).
+
+Die abschließende integrierte Plattformprüfung ist grün: **2.000 .NET-Tests,
+0 Fehler, 62 umgebungsgebundene Auslassungen**, separat **16/16** native
+PostgreSQL-Fälle, Operatorportalbuild und **11** Release-/Reader-UItests.
+EF meldet keine offenen Modelländerungen; Shared **0.1.98** ist lokal gepackt,
+noch nicht veröffentlicht. Der CI-Publisher `Linkybill` ist in beiden
+App-Environments eingerichtet; GitHubs zusätzliches `repo` ist dafür ausdrücklich
+akzeptiert. Der getrennte Portalreader bleibt ausschließlich `read:packages`.
+Dies ist der lokale Implementierungsnachweis, kein neuer Live-Rollout.
+
+Der neue Notify-Einstieg ist der Plattformrouter
+`https://176.9.57.203:3101/platform`. Nach Veröffentlichung muss
+`IDENTITY_PLATFORM_DEPLOY_REF` auf das neue geprüfte Tooling aktualisiert werden.
+Images liegen im Organisationsnamensraum `Hammer2Fall`; Publisher-PATs gehören
+einem befugten persönlichen Konto. Der neue plattformeigene Portal-Reader ist
+für Kundendownloads vorgesehen und ersetzt vorhandene Runtime-Pull-Secrets
+nicht. Der echte Actions-Lauf bleibt durch das Kontingent blockiert.
+
+Der vorherige `.97`-Stand `a2c757965ebab7e9ce424c45abf223c3cdec25c0` ist
+dagegen erfolgreich live: [Release 42030387024](https://github.com/Linkybill/SalesPlattform/actions/runs/42030387024),
+Helmrevision 9, beide Runtime-Pods bereit mit den veröffentlichten Digests.
+Das Backend bestätigte genau eine zentrale Startabfrage mit `Current`, ohne
+Neustart. Cluster-, Namespace- und Datenbankidentität blieben erhalten.
+Dies ersetzt keine fachliche Browser-/CRM-Abnahme. Die folgenden älteren
+Hinweise auf einen noch ausstehenden `.97`-Rollout sind durch diesen Nachweis überholt.
+
 ## Shared 0.1.97: einheitliche Startabfrage lokal geprüft (05.11.2026)
 
 Der Backend-Defaultpin ist auf die gemeinsame Bibliothek **0.1.97**
