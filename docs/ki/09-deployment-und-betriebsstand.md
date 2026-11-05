@@ -1,5 +1,31 @@
 # Sales: Deployment- und Betriebsstand
 
+## Shared 0.1.96: Consumerprüfung bestanden (05.11.2026)
+
+Der reguläre Backend-Pin ist auf 0.1.96 gesetzt. Die einmalige Abfrage des
+zentralen Appstands ist im gemeinsamen Startbaustein integriert; Sales
+erhält weder einen eigenen Versionsdienst noch laufendes Versionspolling.
+React und seine Paketdateien bleiben auf 0.1.69. Shared 0.1.96 ist lokal gebaut
+und geprüft, aber noch nicht veröffentlicht.
+
+Der neue lokale Prüfweg steht unter
+`C:/git/IdentityPlattform/artifacts/startup-release-consumers/Run-ConsumerChecks.ps1`.
+Er verwendet eine getrennte Quellenkopie, ein tatsächlich gepacktes .96-NuGet
+mit ausdrücklich geprüftem SHA-256, einen isolierten Paketcache und ausschließlich
+lokale Paketquellen. Backend und vier Fachtestprogramme werden seriell geprüft;
+der Jobkatalogexport muss ohne Plattform-/Hoststart weiterhin vier Jobs liefern.
+Paket-, DLL- und Quellenhashes werden gesondert verglichen. Der eigentliche
+Einmal-beim-Start-Vertrag wird in den gemeinsamen Plattformtests geprüft.
+Ergebnis: Backend und vier Testprogramme ohne Warnungen/Fehler gebaut;
+**34 Task-, 438 Webhook-, 625 Report- und 23 Verbrauchsprüfungen** bestanden.
+Jobkatalogexport liefert vier Jobs ohne Plattform-/Hoststart. Defaultpin .96
+ohne Versionsoverride/Projektverweis geprüft; Paket-/DLL-/Quellenhashes stimmen.
+Beleg: `C:/git/IdentityPlattform/artifacts/startup-release-consumers/run/validation.json`.
+Der gemeinsame Startvertrag ist zusätzlich mit 82 fokussierten und 1837 gesamten
+Plattformtests geprüft. Vor .96-App-Images die kompatible Plattform bereitstellen.
+Keine Live-CRM-Aufrufe, Publikation, Pushes, Deployments oder neuen PG-/Frontendtests.
+Ältere Nachweise bleiben erhalten.
+
 ## Reguläre Paketpins und lokaler Nachweis (04.11.2026)
 
 Backend-Pin und Frontend-Paketdateien sind auf Shared 0.1.95 / React 0.1.69

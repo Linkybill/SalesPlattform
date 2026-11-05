@@ -1,5 +1,17 @@
 # Projektkontext
 
+## Einmalige Abfrage des zentralen Appstands lokal geprüft (05.11.2026)
+
+Der Backend-Pin verwendet Shared 0.1.96; React bleibt 0.1.69.
+Die vorhandene `AddIdentityPlatform`-Startintegration übernimmt den neuen
+gemeinsamen Startvertrag. Es wird kein appseitiges Versionspolling ergänzt;
+Containersteuerung bleibt zentral. Export und Migrationsmodus beenden sich
+weiterhin vor dem Hoststart. CRM-Fachlichkeit und Kundendaten sind unverändert.
+Der echte lokale .96-Paketconsumer ist gebaut und mit den vorhandenen Fachtests
+geprüft. Nachweise: `09-deployment-und-betriebsstand.md`. Der einmalige Startvertrag
+selbst ist in den Plattformtests nachgewiesen. Shared .96 ist unveröffentlicht;
+kompatible Plattform vor neuen App-Images ausrollen. Kein Push oder Deployment.
+
 ## Reguläre Installationsintegration (04.11.2026)
 
 Die regulären Paketdateien verwenden jetzt Shared 0.1.95 und React 0.1.69.
