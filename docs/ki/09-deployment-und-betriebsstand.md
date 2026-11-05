@@ -1,5 +1,36 @@
 # Sales: Deployment- und Betriebsstand
 
+## Lokal nach GHCR veröffentlichen und Sollstand melden (05.11.2026)
+
+Im Sales-Solutionverzeichnis mit nativem Windows PowerShell 7.4+, Node,
+Git/GitHub CLI und Docker Desktop im Linux-Modus:
+
+```powershell
+.\publish-app.ps1                  # Vorschau ohne Build, Push oder Login
+.\publish-app.ps1 -Phase Apply     # Images veröffentlichen, dann Plattformadmin anmelden
+```
+
+`BuildPublish` führt nur den Image-/Katalogschritt aus; die Ausgabe nennt das
+Belegverzeichnis für `Notify -ReceiptDirectory '<Verzeichnis>'`. Die Quelle
+muss für Builds sauber auf `main` liegen und exakt dem veröffentlichten
+`origin/main` entsprechen. Ein temporärer Git-Export schützt die Arbeitskopie
+vor Manifeständerungen. Bereits gebaute Digests werden nur mit unverändertem
+Buildprofil wiederverwendet. `Notify` kann einen bestehenden Beleg auch nach
+weiteren Quelländerungen unverändert wiederholen.
+
+Der bestehende `gh`-Publisherzugang muss `write:packages` besitzen. Er wird nur
+für Pakete/GHCR verwendet; die Sollstandsmeldung verlangt einen frisch
+angemeldeten Plattformadministrator. Belege liegen standardmäßig unter
+`IdentityPlattform/artifacts/local-app-publications/sales-plattform/` und
+enthalten keine Zugangsdaten. Nach einer unklaren HTTP-Antwort denselben Beleg
+erneut mit `Notify` verwenden. Ein zwischenzeitlich geänderter Sollstand führt
+zu einem Konflikt und wird nicht automatisch überschrieben.
+
+Die lokale Prüfung umfasst Metadaten, native PowerShell-Verträge und die echte
+Sales-Vorschau. Neuer Imagepush, Adminlogin und Agentkonvergenz stehen als
+Live-Nachweis noch aus. Plattformdetails:
+[App-Pipeline](../../../../IdentityPlattform/docs/app-pipeline.md).
+
 ## .97 live; nächster Publishweg noch nicht ausgerollt (05.11.2026)
 
 Salescommit `a2c757965ebab7e9ce424c45abf223c3cdec25c0` wurde mit Shared 0.1.97

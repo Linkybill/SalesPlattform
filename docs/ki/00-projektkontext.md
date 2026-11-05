@@ -1,5 +1,22 @@
 # Projektkontext
 
+## Lokale zentrale App-Veröffentlichung ergänzt (05.11.2026)
+
+`publish-app.ps1` ergänzt die Actions-Veröffentlichung für lokale Windows-Builds.
+Standard ist eine lesende Vorschau. `-Phase Apply` baut und pusht aus einem
+sauberen, veröffentlichten `main` beide Images nach GHCR, öffnet anschließend
+die echte Plattformadmin-Anmeldung und meldet den vollständigen Sollstand.
+Die Plattform und ihre Agenten übernehmen den Rollout. `BuildPublish` und
+`Notify -ReceiptDirectory ...` erlauben getrennte Schritte und die Wiederholung
+desselben öffentlichen Belegs ohne erneuten Build. GitHub-Publisherzugang und
+Plattformadmin-Anmeldung bleiben getrennt; keine Eingabe eines Kunden-PAT.
+
+Native Metadaten-/PowerShell-Vertragstests und die Sales-Vorschau sind geprüft.
+Der neue lokale Publishweg wurde damit noch nicht live veröffentlicht oder
+ausgerollt. Bedienung und Grenzen stehen im
+[Deploymentkontext](09-deployment-und-betriebsstand.md) und im zentralen
+[Publishvertrag](../../../../IdentityPlattform/docs/app-pipeline.md).
+
 ## Zentraler Publishweg vorbereitet; .97 live bestätigt (05.11.2026)
 
 Die neue `release.yml` veröffentlicht geprüfte Backend-/Frontend-Images unter
