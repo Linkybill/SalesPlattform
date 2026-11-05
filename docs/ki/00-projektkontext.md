@@ -1,5 +1,26 @@
 # Projektkontext
 
+## Sales-Release erfolgreich ausgerollt (05.11.2026)
+
+Shared **0.1.96** und React **0.1.69** sind tatsächlich in GitHub Packages
+veröffentlicht ([Paketlauf](https://github.com/Hammer2Fall/IdentityPlattform/actions/runs/41946549757)).
+Der Main-Stand `7bd1872d697bcc9df145200ef09ff9d2461df8be` hat die
+[Main-CI](https://github.com/Linkybill/SalesPlattform/actions/runs/41947636407)
+und den [Sales-Release](https://github.com/Linkybill/SalesPlattform/actions/runs/42012981687)
+bestanden. Am 05.11.2026 wurden die exakt veröffentlichten Backend-/Frontend-
+Images auf `ax42-1/dev` im isolierten Namespace `app-sales-plattform`
+ausgerollt; beide Bootstrap-Deployments haben den Kubernetes-Rollout bestätigt.
+
+Der anschließende lesende Livecheck bestätigte Helm-Revision **8** als
+`deployed` und auch die beiden zentral verwalteten Runtime-Instanzen auf exakt
+demselben Release. Alle vier aktuellen Pods (Bootstrap und Runtime) waren
+`Running`/`Ready`, ohne Neustarts; die tatsächlichen `imageID`-Digests stimmten.
+Login, UI und CRM-/Zoho-Verhalten benötigen weiterhin eine fachliche
+Live-Abnahme. Details und Grenzen stehen in
+`09-deployment-und-betriebsstand.md`. Die folgenden lokalen Zwischenstände
+bleiben Historie; deren Aussagen zu unveröffentlichten Paketen und noch
+ausstehendem Push/Deployment sind durch diesen Abschnitt überholt.
+
 ## Einmalige Abfrage des zentralen Appstands lokal geprüft (05.11.2026)
 
 Der Backend-Pin verwendet Shared 0.1.96; React bleibt 0.1.69.

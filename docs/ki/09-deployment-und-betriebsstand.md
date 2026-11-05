@@ -1,5 +1,42 @@
 # Sales: Deployment- und Betriebsstand
 
+## Main-CI, Paketbezug und Sales-Rollout bestätigt (05.11.2026)
+
+Ausgerollter App-Commit: `7bd1872d697bcc9df145200ef09ff9d2461df8be`.
+Shared **0.1.96** und React **0.1.69** sind regulär veröffentlicht
+([Plattform-Paketlauf 41946549757](https://github.com/Hammer2Fall/IdentityPlattform/actions/runs/41946549757)).
+Die [Main-CI 41947636407](https://github.com/Linkybill/SalesPlattform/actions/runs/41947636407)
+und der [Release 42012981687](https://github.com/Linkybill/SalesPlattform/actions/runs/42012981687)
+sind erfolgreich. Der Release führte die vollständige App-CI erneut aus,
+veröffentlichte beide Images, exportierte den Jobkatalog am Backend-Digest und
+erzeugte den Installations-Releasekandidaten.
+
+Der [Deploymentjob 127198586807](https://github.com/Linkybill/SalesPlattform/actions/runs/42012981687/job/127198586807)
+bestätigte am **05.11.2026 um 10:48 UTC** den App-Bootstrap auf `ax42-1/dev`,
+Namespace `app-sales-plattform`. Verwendeter Plattform-Tooling-Pin:
+`4742b3e6f0129e7bf44bfe1c5f895941c14fd63f`. Der Workflow prüft die dedizierte
+CI-Identität und die gespeicherten Cluster-, Namespace- und PostgreSQL-UIDs,
+vorhandene interne Zertifikate und die exakten Backend-/Frontend-Image-Digests.
+Beide Bootstrap-Deployments bestanden `kubectl rollout status`.
+Lokaler technischer Logbeleg:
+`C:/git/IdentityPlattform/artifacts/deploy-auto-2026-11-05/sales-release-42012981687-deploy.log`.
+
+Der anschließende lesende Clustercheck um **10:49 UTC** bestätigte Helm-Revision
+**8** als `deployed`. Auch die durch die Plattform verwalteten Backend- und
+Frontend-Instanzen verwendeten exakt die Images des Releases `42012981687` und
+des Commits `7bd1872`. Alle vier aktuellen Pods (zwei Bootstrap-, zwei
+Runtime-Pods) waren `Running` und `Ready`, mit **0 Neustarts**. Die tatsächlichen
+Container-`imageID`-Digests entsprachen ebenfalls den publizierten Digests;
+die Namespace-/Cluster-/Datenbank-Identitäten wurden vorher geprüft.
+Beleg: `C:/git/IdentityPlattform/artifacts/deploy-auto-2026-11-05/sales-live-after42012981687.jsonl`.
+
+Login, Browserbedienung und reale CRM-/Zoho-Abläufe sind damit noch nicht
+fachlich abgenommen. Die technischen Belege bestätigen auch nicht einzeln den
+Migrationsstand jeder Tenant-Datenbank oder eine neue Kundeninstallation. Die additive
+Handoff-Migration und ihre Datenerhaltungsprüfungen bleiben im untenstehenden
+lokalen Nachweis dokumentiert. Frühere Aussagen zu zurückgestellter
+Paketveröffentlichung, Push und Deployment sind historische Zwischenstände.
+
 ## Shared 0.1.96: Consumerprüfung bestanden (05.11.2026)
 
 Der reguläre Backend-Pin ist auf 0.1.96 gesetzt. Die einmalige Abfrage des
