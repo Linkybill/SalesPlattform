@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Preview','BuildPublish','Notify','Apply')][string]$Phase = 'Preview',
-    [string]$ReceiptDirectory = '', [switch]$NoCache, [switch]$NoBrowser,
+    [string]$ReceiptDirectory = '', [switch]$NoCache,
     [string]$PlatformRepositoryRoot = ''
 )
 $ErrorActionPreference = 'Stop'

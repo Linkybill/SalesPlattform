@@ -1,6 +1,6 @@
 name: Publish SalesPlattform
 
-# Build app images, publish their central desired state; the platform owns rollout.
+# Both local and Actions publication execute the app-owned common entry.
 on:
   workflow_dispatch:
     inputs:
@@ -18,9 +18,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  APP_RELEASE_APP_KEY: sales-plattform
-  APP_RELEASE_PROFILE_TARGET: ax42-1
-  APP_RELEASE_IMAGE_REPOSITORY: ghcr.io/hammer2fall/identityplattform-sales-plattform
   IDENTITY_PLATFORM_DEPLOY_REF: ${{ vars.IDENTITY_PLATFORM_DEPLOY_REF }}
 
 jobs:
@@ -50,26 +47,16 @@ jobs:
     secrets:
       PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
 
-  images:
+  publish:
     needs: [validate, ci]
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 50
     environment: application-release
-    env:
-      IDENTITY_PLATFORM_DEPLOY_REF: ${{ needs.validate.outputs.tooling_ref }}
     permissions:
       contents: read
       packages: read
+      actions: read
     steps:
-      - name: Require central registry publisher access
-        shell: pwsh
-        env:
-          REGISTRY_USERNAME: ${{ vars.CENTRAL_REGISTRY_USERNAME }}
-          REGISTRY_TOKEN: ${{ secrets.CENTRAL_REGISTRY_TOKEN }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:REGISTRY_USERNAME) -or [string]::IsNullOrWhiteSpace($env:REGISTRY_TOKEN)) {
-            throw 'Configure protected central registry publisher access before building.'
-          }
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ github.sha }}
@@ -85,121 +72,41 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: '22.x'
-      - name: Resolve app-owned builds and canonical placement
-        id: release
-        shell: pwsh
-        run: |
-          node platform/deploy/cicd/app-ci-release.mjs build app $env:APP_RELEASE_APP_KEY $env:APP_RELEASE_PROFILE_TARGET release.json
-          if ($LASTEXITCODE -ne 0) { throw 'Invalid app release.' }
-          $release = Get-Content release.json -Raw | ConvertFrom-Json
-          foreach ($image in $release.images) {
-            "$($image.component)_context=$($image.context)" >> $env:GITHUB_OUTPUT
-            "$($image.component)_file=$($image.file)" >> $env:GITHUB_OUTPUT
-            "$($image.component)_tag=$($image.repository):$($release.tag)" >> $env:GITHUB_OUTPUT
-          }
-          foreach ($entry in $release.bundle.values.frontend.PSObject.Properties) {
-            "$($entry.Name)=$($entry.Value)" >> $env:GITHUB_OUTPUT
-          }
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - name: Bind retry to the preceding receipt artifact
+        id: receipt
+        shell: pwsh
+        run: |
+          $attempt = [int]$env:GITHUB_RUN_ATTEMPT
+          if ($attempt -lt 1) { throw 'Invalid workflow attempt.' }
+          "previous=application-publication-$($attempt - 1)" >> $env:GITHUB_OUTPUT
+      - name: Restore the original publication on retries
+        if: ${{ github.run_attempt > 1 }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          registry: ghcr.io
-          username: ${{ vars.CENTRAL_REGISTRY_USERNAME }}
-          password: ${{ secrets.CENTRAL_REGISTRY_TOKEN }}
-      - name: Build and publish backend
-        id: backend
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: ${{ steps.release.outputs.backend_context }}
-          file: ${{ steps.release.outputs.backend_file }}
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.release.outputs.backend_tag }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          secrets: |
-            github_packages_token=${{ secrets.PACKAGES_TOKEN }}
-          cache-from: type=gha,scope=release-backend
-          cache-to: type=gha,mode=max,scope=release-backend
-      - name: Build and publish frontend
-        id: frontend
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: ${{ steps.release.outputs.frontend_context }}
-          file: ${{ steps.release.outputs.frontend_file }}
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.release.outputs.frontend_tag }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          build-args: |
-            VITE_IDENTITY_PLATFORM_APPLICATION_KEY=${{ steps.release.outputs.VITE_IDENTITY_PLATFORM_APPLICATION_KEY }}
-            VITE_APPLICATION_BASE_URL=${{ steps.release.outputs.VITE_APPLICATION_BASE_URL }}
-            VITE_API_BASE_URL=${{ steps.release.outputs.VITE_API_BASE_URL }}
-            VITE_PLATFORM_API_BASE_URL=${{ steps.release.outputs.VITE_PLATFORM_API_BASE_URL }}
-            VITE_TENANT_PORTAL_URL=${{ steps.release.outputs.VITE_TENANT_PORTAL_URL }}
-          secrets: |
-            github_packages_token=${{ secrets.PACKAGES_TOKEN }}
-          cache-from: type=gha,scope=release-frontend
-          cache-to: type=gha,mode=max,scope=release-frontend
-      - name: Record exact content addresses
+          name: ${{ steps.receipt.outputs.previous }}
+          path: ${{ runner.temp }}/application-publication
+      - name: Build and publish through the common entry
         shell: pwsh
         env:
-          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
-          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
+          CENTRAL_REGISTRY_USERNAME: ${{ vars.CENTRAL_REGISTRY_USERNAME }}
+          CENTRAL_REGISTRY_TOKEN: ${{ secrets.CENTRAL_REGISTRY_TOKEN }}
+          PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN }}
+          RECEIPT_DIRECTORY: ${{ runner.temp }}/application-publication
         run: |
-          foreach ($component in @('backend', 'frontend')) {
-            $digest = [Environment]::GetEnvironmentVariable("$($component.ToUpperInvariant())_DIGEST")
-            if ($digest -cnotmatch '^sha256:[a-f0-9]{64}$') { throw 'Missing image digest.' }
-            Set-Content "$component.digest" $digest -Encoding utf8NoBOM
-          }
-          $release = Get-Content release.json -Raw | ConvertFrom-Json
-          $backendImage = (($release.images | Where-Object component -eq 'backend').repository + '@' + $env:BACKEND_DIGEST)
-          $catalogOutput = & docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 --memory 256m --cpus 1 --env DOTNET_EnableDiagnostics=0 $backendImage --export-installation-job-catalog
-          if ($LASTEXITCODE -ne 0) { throw 'The published backend could not export its compiled job catalog.' }
-          $catalogOutput -join "`n" | Set-Content compiled-job-catalog.json -Encoding utf8NoBOM
-          node platform/deploy/cicd/app-release-publication.mjs release.json compiled-job-catalog.json . application-release.json
-          if ($LASTEXITCODE -ne 0) { throw 'Invalid central application release metadata.' }
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+          ./app/publish-app.ps1 -Phase BuildPublish -PlatformRepositoryRoot ./platform -ReceiptDirectory $env:RECEIPT_DIRECTORY
+      - name: Notify through the same app publisher used locally
+        shell: pwsh
+        env:
+          APP_PUBLISHER_CLIENT_SECRET: ${{ secrets.APP_PUBLISHER_CLIENT_SECRET }}
+          RECEIPT_DIRECTORY: ${{ runner.temp }}/application-publication
+        run: |
+          ./app/publish-app.ps1 -Phase Notify -PlatformRepositoryRoot ./platform -ReceiptDirectory $env:RECEIPT_DIRECTORY
+      - name: Preserve publication ID, pinned generation and acknowledgement
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: application-release
-          path: application-release.json
-          if-no-files-found: error
+          name: application-publication-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/application-publication/
+          if-no-files-found: warn
           retention-days: 90
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: app-digests
-          path: '*.digest'
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 7
-
-  notify:
-    needs: [validate, ci, images]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    environment: application-release
-    permissions:
-      contents: read
-      actions: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          repository: Hammer2Fall/IdentityPlattform
-          ref: ${{ needs.validate.outputs.tooling_ref }}
-          token: ${{ secrets.PACKAGES_TOKEN }}
-          path: platform
-          persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: application-release
-          path: publication
-      - name: Publish desired release through GitHub OIDC
-        shell: pwsh
-        env:
-          PLATFORM_API_URL: ${{ vars.APPLICATION_RELEASE_PLATFORM_URL }}
-        run: |
-          ./platform/deploy/cicd/notify-app-release.ps1 -AppKey $env:APP_RELEASE_APP_KEY -CandidatePath ./publication/application-release.json -PlatformApiUrl $env:PLATFORM_API_URL

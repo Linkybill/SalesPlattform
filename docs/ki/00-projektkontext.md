@@ -1,6 +1,36 @@
 # Projektkontext
 
-## Lokale zentrale App-Veröffentlichung ergänzt (05.11.2026)
+## Einheitlicher technischer Publisher (Arbeitsstand 06.11.2026)
+
+Lokal und in GitHub Actions verwendet Sales denselben `publish-app.ps1`-Einstieg
+und denselben appgebundenen technischen Publisher. Nach einmaliger Einrichtung
+im Plattformrepository mit
+`.\deploy\Configure-ApplicationPublishers.ps1 -AppKey sales-plattform -Apply`
+verlangt ein normaler Publishaufruf keine Betreiberanmeldung oder Bestätigung.
+Nur die Einrichtung benötigt den Plattformadministrator; `-Rotate` ersetzt
+einen Zugang ausdrücklich. Lokal schützt Windows-DPAPI das Clientsecret,
+Actions verwendet `APP_PUBLISHER_CLIENT_SECRET` im Environment
+`application-release`. Der Registry-/Paketzugang bleibt davon getrennt.
+
+`-Phase Apply` baut beide Images aus sauberem, veröffentlichtem `main` und
+meldet den vollständigen Sollstand mit dem technischen Zugang. `BuildPublish`
+und `Notify -ReceiptDirectory ...` erlauben getrennte Schritte; Wiederholungen
+behalten Publikations-ID, Inhalt und Generation. Lokal und CI verwenden
+`identity-platform.application-release.v3`, ohne GitHub-Laufnummern oder einen
+separaten Operator-Publishweg. Plattform und Agenten übernehmen die Ausrollung;
+bestehende Daten und historische Publikationsbelege bleiben erhalten.
+
+Die neue Umstellung ist **noch nicht live abgenommen**; integrierte Builds und
+Tests laufen. Frühere erfolgreiche App-Rollouts sind kein Nachweis für diesen
+neuen Zugang. Bedienung und verbindlicher aktueller Vertrag stehen im
+[Deploymentkontext](09-deployment-und-betriebsstand.md) und zentralen
+[Publishvertrag](../../../../IdentityPlattform/docs/app-pipeline.md).
+
+Die folgenden datierten Abschnitte bleiben historische Entwicklungs- und
+Betriebsnachweise. Frühere Betreiberanmeldungen je Veröffentlichung und
+GitHub-OIDC-Publishzugänge sind keine aktuellen Bedienungsanweisungen.
+
+## Historie: lokale zentrale App-Veröffentlichung ergänzt (05.11.2026)
 
 `publish-app.ps1` ergänzt die Actions-Veröffentlichung für lokale Windows-Builds.
 Standard ist eine lesende Vorschau. `-Phase Apply` baut und pusht aus einem

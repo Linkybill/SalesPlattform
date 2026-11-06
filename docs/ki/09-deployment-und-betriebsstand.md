@@ -1,6 +1,63 @@
 # Sales: Deployment- und Betriebsstand
 
-## Lokal nach GHCR veröffentlichen und Sollstand melden (05.11.2026)
+## Einheitlich lokal und mit Actions veröffentlichen (Arbeitsstand 06.11.2026)
+
+Die Umstellung auf einen appgebundenen technischen Publisher ist noch **nicht
+live abgenommen**; integrierte Builds und Tests laufen. Die kompatible Plattform
+und das geprüfte Tooling müssen bereitstehen, bevor der neue Weg verwendet
+wird. Frühere technische Rolloutnachweise bleiben erhalten und belegen die
+damalige Implementierung.
+
+Einmalig im Plattformrepository:
+
+```powershell
+.\deploy\Configure-ApplicationPublishers.ps1 -AppKey sales-plattform -Apply
+# Ohne -AppKey werden Sales und Aufmass eingerichtet; -Rotate ersetzt bewusst.
+```
+
+Nur diese Einrichtung verlangt eine Betreiberanmeldung. Ein vorhandener
+gültiger Zugang wird wiederverwendet. Das appgebundene Clientsecret liegt lokal
+mit Windows-DPAPI geschützt und für Actions als `APP_PUBLISHER_CLIENT_SECRET`
+im Sales-Environment `application-release`. Der normale Publishweg benutzt
+Client-Credentials und öffnet keinen Benutzerlogin. Im Operatorportal lässt
+sich der Publisher sperren; laufende Apps und Daten bleiben dabei erhalten.
+
+Im Sales-Solutionverzeichnis mit Windows PowerShell 7.4+, Node, Git/GitHub CLI
+und Docker Desktop im Linux-Modus:
+
+```powershell
+.\publish-app.ps1                  # Vorschau ohne Veröffentlichung
+.\publish-app.ps1 -Phase Apply     # Images veröffentlichen und Sollstand melden
+.\publish-app.ps1 -Phase BuildPublish
+.\publish-app.ps1 -Phase Notify -ReceiptDirectory '<Belegverzeichnis>'
+```
+
+Ein neuer Build verlangt sauberes `main` auf exakt `origin/main`; gebaut wird
+aus einem temporären Gitarchiv. Der vorhandene GitHub-CLI-Zugang dient Paketen
+und GHCR, der eingerichtete technische Publisher nur der Sollstandsmeldung.
+Standardbelege liegen unter
+`IdentityPlattform/artifacts/app-publications/sales-plattform/` und enthalten
+keine Credentials. `Notify` wiederholt einen vorhandenen Kandidaten auch nach
+weiteren Quelländerungen unverändert. Nach unklarer Antwort denselben Beleg
+verwenden: Publikations-ID und erwartete Generation bleiben gepinnt, ein
+inzwischen geänderter Sollstand wird nicht automatisch überschrieben.
+
+**Publish SalesPlattform** führt nach erfolgreicher App-CI dieselben Phasen
+über denselben Wrapper aus (`main`, Bestätigung `publish`). Das Environment
+enthält weiterhin die getrennten Registry-/Paketcredentials; der vollständige
+`IDENTITY_PLATFORM_DEPLOY_REF` muss das neue geprüfte Plattformtooling pinnen.
+Beide Wege verwenden `identity-platform.application-release.v3` und
+`publish-{Quellcommit}-{Publikations-ID ohne Bindestriche}`. GitHub OIDC und
+Operator-Publishrouten sind keine alternativen Zugänge mehr. Plattform und
+Agenten verteilen den angenommenen Sollstand; die App-Pipeline benötigt keine
+Kubernetes-/SSH-Zugangsdaten. Zentraler Vertrag und Einrichtung:
+[App-Pipeline](../../../../IdentityPlattform/docs/app-pipeline.md).
+
+Die folgenden datierten Abschnitte sind historische Nachweise. Ihre früheren
+Anmelde-, Versions- und Startanweisungen beschreiben den damaligen Stand und
+sind keine aktuelle Anleitung für den einheitlichen Publisher.
+
+## Historie: lokal nach GHCR veröffentlichen und Sollstand melden (05.11.2026)
 
 Im Sales-Solutionverzeichnis mit nativem Windows PowerShell 7.4+, Node,
 Git/GitHub CLI und Docker Desktop im Linux-Modus:
