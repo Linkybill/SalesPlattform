@@ -1,12 +1,26 @@
 # Sales: Deployment- und Betriebsstand
 
-## Einheitlich lokal und mit Actions veröffentlichen (Arbeitsstand 06.11.2026)
+## Einheitlicher Publisher: Build fertig, Einrichtung und Annahme offen (06.11.2026)
 
-Die Umstellung auf einen appgebundenen technischen Publisher ist noch **nicht
-live abgenommen**; integrierte Builds und Tests laufen. Die kompatible Plattform
-und das geprüfte Tooling müssen bereitstehen, bevor der neue Weg verwendet
-wird. Frühere technische Rolloutnachweise bleiben erhalten und belegen die
-damalige Implementierung.
+Der Sales-Code `bc0f960b5454519bd98308ffae1903f185be8c46` ist committed und
+auf `main` gepusht. Der gemeinsame `BuildPublish`-Schritt ist abgeschlossen:
+Backend und Frontend sind veröffentlicht, der vollständige v3-Kandidat liegt
+im Plattformrepository unter
+`artifacts/app-publications/sales-plattform/20261106-unified/`.
+
+Die kompatible Plattform ist aus
+`067b95e74439f3a6e7c2c6dccaccb9a77d4452fa` als **80/deployed** bereitgestellt
+und unabhängig live geprüft. Beleg im Plattformrepository:
+`artifacts/deploy-unified-2026-11-06/platform-unified79-20261106031015/live-verification80-20261106035214.json`.
+Die `79` im Ordnernamen bezeichnet die Ausgangsrevision.
+
+Die einmalige technische Publisher-Einrichtung benötigt weiterhin eine reale
+Adminbestätigung. Der bisherige Device-Versuch ist ohne Benutzerfreigabe
+abgelaufen; keine Credentials wurden gespeichert. **Kein neuer `Notify` und
+keine Generation 2 sind bestätigt; Generation 1 bleibt live.** Imagepush,
+Publisher-Einrichtung, Plattformannahme und Appkonvergenz bleiben getrennte
+Nachweise. Kundeninstaller- und fachliche Abnahme sind weiterhin offen.
+Die folgenden älteren Rolloutnachweise bleiben als Historie erhalten.
 
 Einmalig im Plattformrepository:
 
@@ -16,8 +30,8 @@ Einmalig im Plattformrepository:
 ```
 
 Nur diese Einrichtung verlangt eine Betreiberanmeldung. Ein vorhandener
-gültiger Zugang wird wiederverwendet. Das appgebundene Clientsecret liegt lokal
-mit Windows-DPAPI geschützt und für Actions als `APP_PUBLISHER_CLIENT_SECRET`
+gültiger Zugang wird wiederverwendet. Nach erfolgreicher Einrichtung liegt
+das appgebundene Clientsecret lokal mit Windows-DPAPI geschützt und für Actions als `APP_PUBLISHER_CLIENT_SECRET`
 im Sales-Environment `application-release`. Der normale Publishweg benutzt
 Client-Credentials und öffnet keinen Benutzerlogin. Im Operatorportal lässt
 sich der Publisher sperren; laufende Apps und Daten bleiben dabei erhalten.
@@ -41,6 +55,9 @@ keine Credentials. `Notify` wiederholt einen vorhandenen Kandidaten auch nach
 weiteren Quelländerungen unverändert. Nach unklarer Antwort denselben Beleg
 verwenden: Publikations-ID und erwartete Generation bleiben gepinnt, ein
 inzwischen geänderter Sollstand wird nicht automatisch überschrieben.
+Der bereits gebaute Quellstand `bc0f960` bleibt im Beleg festgehalten;
+spätere reine Dokumentationscommits erfordern keinen neuen Build für dessen
+`Notify`. Die Meldung veröffentlicht weiterhin genau den gespeicherten Kandidaten.
 
 **Publish SalesPlattform** führt nach erfolgreicher App-CI dieselben Phasen
 über denselben Wrapper aus (`main`, Bestätigung `publish`). Das Environment

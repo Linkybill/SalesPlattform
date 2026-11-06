@@ -1,6 +1,6 @@
 # Projektkontext
 
-## Einheitlicher technischer Publisher (Arbeitsstand 06.11.2026)
+## Technischer Publisher: Sales gebaut, Annahme noch offen (06.11.2026)
 
 Lokal und in GitHub Actions verwendet Sales denselben `publish-app.ps1`-Einstieg
 und denselben appgebundenen technischen Publisher. Nach einmaliger Einrichtung
@@ -20,9 +20,21 @@ behalten Publikations-ID, Inhalt und Generation. Lokal und CI verwenden
 separaten Operator-Publishweg. Plattform und Agenten übernehmen die Ausrollung;
 bestehende Daten und historische Publikationsbelege bleiben erhalten.
 
-Die neue Umstellung ist **noch nicht live abgenommen**; integrierte Builds und
-Tests laufen. Frühere erfolgreiche App-Rollouts sind kein Nachweis für diesen
-neuen Zugang. Bedienung und verbindlicher aktueller Vertrag stehen im
+Der Sales-Code `bc0f960b5454519bd98308ffae1903f185be8c46` ist committed und
+auf `main` gepusht. `BuildPublish` ist abgeschlossen; beide Images und der
+vollständige Kandidat sind unter
+`IdentityPlattform/artifacts/app-publications/sales-plattform/20261106-unified/`
+belegt. Die kompatible Plattform **80/deployed** aus `067b95e` ist unabhängig
+live geprüft. Ein erfolgreicher Imagepush ist noch keine Sollstandsannahme.
+
+Die einmalige Publisher-Einrichtung benötigt weiterhin die reale
+Adminbestätigung: Der bisherige Device-Versuch ist ohne Freigabe abgelaufen;
+keine Credentials wurden gespeichert. Noch kein neuer `Notify` und keine
+Generation **2** sind bestätigt; **Generation 1 bleibt live**. Die technische
+Publikation über den neuen Zugang sowie Kundeninstaller- und fachliche
+Abnahme stehen weiterhin aus. Spätere reine Dokumentationscommits ändern den
+gespeicherten Build-Quellstand nicht; `Notify` verwendet denselben Beleg.
+Bedienung und verbindlicher aktueller Vertrag stehen im
 [Deploymentkontext](09-deployment-und-betriebsstand.md) und zentralen
 [Publishvertrag](../../../../IdentityPlattform/docs/app-pipeline.md).
 
