@@ -39,7 +39,7 @@ public sealed class ZohoHookHandoffService(PlatformTenantDbContextFactory<SalesP
         if (change is null)
             return pending.Length > 0 || resumeRequested || technicalRun ? [Message("owner-unconfirmed")] : null;
         if (change.TransitionId == Guid.Empty || change.TargetInstallationId != installation.InstallationId
-            || change.SourceInstallationId == Guid.Empty || change.SourceInstallationId == change.TargetInstallationId
+            || !change.HasValidSource
             || change.DestinationGeneration <= 0 || change.DestinationGeneration > authority.PlacementGeneration)
             return [Message("owner-unconfirmed")];
         if (pending.Any(x => x.TransitionId != change.TransitionId || x.PlacementGeneration != change.DestinationGeneration

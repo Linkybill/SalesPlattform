@@ -1,5 +1,18 @@
 # Sales: Deployment- und Betriebsstand
 
+## Zentralen Bestand nach OnPrem übernehmen (09.11.2026, Rollout vorbereitet)
+
+Backend referenziert Shared 0.1.99. ZohoHookHandoffService akzeptiert dessen
+explizit bestätigte zentrale Quelle (CentralMigrationId), ohne eine Quellinstallation
+zu erfinden. Alle bisherigen Prüfungen für Zielinstallation, Generation und
+ausstehende Hooks bleiben bestehen. Die Plattform übernimmt vorher Geschäftsdaten,
+Einstellungen, Geheimnisse und Jobhistorie; erst die bestätigte App-Übergabe beendet
+den Umzug. Keine Kundenzuordnung/CRM-Hooks im Hintergrund zum Test verändern.
+Der Benutzer startet Antonios Migration selbst in der Tenant-App-UI.
+Build und PostgreSQL-Adapter-/Handoff-Tests bestehen; tatsächlicher lokaler Rollout
+und der UI-Live-Test werden separat nachgewiesen. Kein erfolgreicher Datenumzug
+allein aus Paketveröffentlichung oder Build ableiten.
+
 ## Einheitlicher Publisher: Build fertig, Einrichtung und Annahme offen (06.11.2026)
 
 Der Sales-Code `bc0f960b5454519bd98308ffae1903f185be8c46` ist committed und
