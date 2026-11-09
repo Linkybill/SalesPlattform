@@ -1,6 +1,21 @@
 # Sales: Deployment- und Betriebsstand
 
-## Zentralen Bestand nach OnPrem übernehmen (09.11.2026, Rollout vorbereitet)
+## Zentralen Bestand nach OnPrem übernehmen (09.11.2026, Sales deployed)
+
+Quellstand `1e8d672114c0f29e254f4fb9f4c32e33dbebadaa` ist auf main gepusht,
+lokal veröffentlicht und durch Identity als Generation **2 / Current** bestätigt
+(Release `867d6582-d068-4cd6-bf4f-03a563cab0a9`). Laufende Sales-Pods verwenden
+die neuen veröffentlichten Digests und sind bereit. Identity ist Helm98/deployed;
+beide zentralen Runtime-Agents sind aktualisiert. Technischer Publisher ist nach
+Betreiberanmeldung eingerichtet und lokal verschlüsselt gespeichert. Belege im
+Plattformrepo: `artifacts/app-publications/sales-plattform/central-20261109/`
+und `artifacts/central-app-pods-verify.log`.
+
+OnPrem-Live-Abnahme bleibt offen: Kundenagent-Update läuft als Pod, erreicht aber
+Broker TCP 5671 noch nicht (VM-Egress 84.44.224.117; vorgelagerte Hetzner-Freigabe
+prüfen). Kunde verlangt außerdem Klärung „nur über Portal erreichbar“ versus
+öffentliche App mit Identity-Anmeldung. Keine Migration für Antonio gestartet;
+Benutzer startet diese selbst über die UI. Details im aktuellen Plattform-KI-Kontext.
 
 Backend referenziert Shared 0.1.99. ZohoHookHandoffService akzeptiert dessen
 explizit bestätigte zentrale Quelle (CentralMigrationId), ohne eine Quellinstallation
@@ -9,8 +24,8 @@ ausstehende Hooks bleiben bestehen. Die Plattform übernimmt vorher Geschäftsda
 Einstellungen, Geheimnisse und Jobhistorie; erst die bestätigte App-Übergabe beendet
 den Umzug. Keine Kundenzuordnung/CRM-Hooks im Hintergrund zum Test verändern.
 Der Benutzer startet Antonios Migration selbst in der Tenant-App-UI.
-Build und PostgreSQL-Adapter-/Handoff-Tests bestehen; tatsächlicher lokaler Rollout
-und der UI-Live-Test werden separat nachgewiesen. Kein erfolgreicher Datenumzug
+Build und PostgreSQL-Adapter-/Handoff-Tests bestehen; lokaler Rollout ist bestätigt,
+der UI-Live-Test bleibt separat. Kein erfolgreicher Datenumzug
 allein aus Paketveröffentlichung oder Build ableiten.
 
 ## Einheitlicher Publisher: Build fertig, Einrichtung und Annahme offen (06.11.2026)
