@@ -1,5 +1,20 @@
 # Sales: Deployment- und Betriebsstand
 
+## Installationsfreigabe statt zentraler Drain-Sperre (10.11.2026)
+
+Shared 0.1.101 ist veröffentlicht und wird jetzt eingebunden. Im Installationsmodus
+gelten signierte Leases; die nur für zentrale Runtime-Instanzen geeignete
+Drain-Sperre wird dort nicht mehr registriert. Sie hatte den abschließenden
+crm-subscription-maintenance-Auftrag trotz gültiger Installation blockiert.
+68 fokussierte Shared-Tests, nativer Sales-Release-Build (0 Warnungen/Fehler)
+und 438 synthetische Zoho-Webhook-/Handoff-Checks sind erfolgreich. Rollout folgt;
+dieser Eintrag ist noch kein Nachweis eines abgeschlossenen Umzugs.
+
+Antonios bestehender Umzug 6385aa00-a97e-468f-96af-8c6ebdf09db5 steht in
+FinalizingApp: Daten geprüft und Ziel aktiviert. Quelle bleibt gesperrt und
+erhalten. Der Benutzer hat inzwischen autonome Reparaturen und Wiederholungen
+dieses Umzugs ausdrücklich erlaubt; keinen neuen Umzug oder Reset starten.
+
 ## Zentralen Bestand nach OnPrem übernehmen (09.11.2026, Sales deployed)
 
 Quellstand `1e8d672114c0f29e254f4fb9f4c32e33dbebadaa` ist auf main gepusht,
