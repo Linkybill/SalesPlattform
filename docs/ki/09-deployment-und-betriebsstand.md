@@ -1,5 +1,62 @@
 # Sales: Deployment- und Betriebsstand
 
+## Lokalen Arbeitsstand veröffentlichen (25.11.2026)
+
+Die frühere clean-main-/origin-main-Voraussetzung gilt beim App-Deploy nicht
+mehr: deploy-all aktiviert WorkingTree. Auch deploy-remote bei Sales benutzt
+diesen Weg. Der direkte Publisher bietet -WorkingTree explizit an; CI und
+Publisher ohne diesen Schalter behalten ihre bisherigen Commit-Prüfungen.
+
+Ein unveränderter Snapshot übernimmt die aktuellen Bytes aller getrackten
+und neuen nicht ignorierten Dateien; Löschungen werden berücksichtigt.
+Git-ignorierte neue Dateien (z.B. lokale Secrets und Buildausgaben) fehlen.
+Links/Junctions werden abgelehnt. Weder Index noch Commit/Branch/Remote werden
+verändert. Snapshot-ID und zusätzlicher SHA256-Inhaltsnachweis stehen im Beleg,
+SourceKind=working-tree und BaseCommit kennzeichnen die Herkunft. Das bestehende
+Wire-Feld sourceCommit transportiert in diesem Modus die Snapshot-ID, keinen
+Git-Commit. Alte Portalansichten nennen dieses Feld noch Commit; für lokale
+Snapshots ist das eine bekannte Beschriftungsgrenze. Image-Label source-kind
+kennzeichnet den Modus ebenfalls. Kopie und erneute Quellenprüfung verhindern
+Veröffentlichung eines während des Builds veränderten Arbeitsstands.
+
+Bauen, Registry-Push und technische Plattformmeldung bleiben derselbe Ablauf;
+keine GitHub Actions, kein Commit/Push erforderlich. Die Plattform entscheidet
+über die verwalteten Instanzen; Online-Target ist kein Instanzfilter. Ein neuer
+angenommener Sollstand ist noch keine abgeschlossene Live-Abnahme.
+
+Geprüft: Snapshot-Test (Änderungen, neue/ignorierte/gelöschte Dateien, stabiler
+Hash, unveränderter Index), beide App-Deploy-Vertragstests, native zentrale
+Publication-Tests und beide Release-Candidate-Tests. Aufmass-Preview mit
+uncommittetem WorkingTree bestanden. End-to-End-Publish noch zu prüfen.
+
+
+## Deploy integriert Publish (25.11.2026)
+
+Online-Aufrufe von `deploy-all.ps1` verwenden jetzt den zentralen Publisher
+mit Phase Apply: lokal bauen, Images veröffentlichen und Release an die
+Plattform melden. `deploy-remote.ps1` delegiert an denselben Einstieg; der alte
+SSH-/sudo-Basis-Rollout wird nicht mehr aufgerufen. Keine GitHub Actions.
+Ohne Zielangabe gilt Online-Publish; ax42-1 / ax42-1 / dev bleibt als bisheriger
+Aufruf kompatibel. Diese Angaben filtern keine Instanzen; deren Platzierung
+und Aktualisierung steuert die Plattform. Abweichende Ziele sowie SSH-, Tag-,
+Installations- und Clusteroptionen werden online ausdrücklich abgelehnt.
+`-Target local` und der lokale Rebuild bleiben beim Entwicklungsweg.
+Preview, NoCache und ReceiptDirectory werden weitergereicht. Publisherfehler
+brechen ab, ohne Fallback auf Basis-Deployments. Nach Publish wird keine
+abgeschlossene öffentliche Live-Abnahme behauptet.
+
+Hintergrund: Bei AufmassApp aktualisierte der alte Deploy nur Basis-Container,
+während öffentlich verwendete verwaltete Instanzen auf ihrem alten Image
+blieben. Sales verhindert diesen getrennten Online-Weg nun ebenfalls.
+Der Publisher verlangt unverändert clean main gleich origin/main. Kein Commit,
+Push oder tatsächlicher Sales-Publish im Rahmen dieser Anpassung.
+
+Nachweis: native Test-DeployPublication.ps1 bestanden (Standard, bisheriger
+Online-Aufruf, Remote-Alias, Preview, lokaler Weg, Optionen, Fehlerweitergabe).
+Echter deploy-remote-Preview zeigt sales-plattform, korrekte zentrale Image-
+Repositories und SourceClean=False. Live-Rollout/Anmeldung nicht geprüft.
+
+
 ## Installationsfreigabe statt zentraler Drain-Sperre (10.11.2026)
 
 Shared 0.1.101 ist veröffentlicht und wird jetzt eingebunden. Im Installationsmodus
