@@ -24,7 +24,7 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             ],
             ["Leads"] =
             [
-                "id", "Full_Name", "First_Name", "Last_Name", "Company", "Email", "Phone",
+                "id", "Full_Name", "First_Name", "Last_Name", "Company", "Industry", "Email", "Phone",
                 "Lead_Status", "Lead_Source", "Last_Contact", "Last_Call", "Call_Attempts",
                 "Calls_Since_Conversation", "Owner", "Created_Time", "Modified_Time"
             ],
@@ -243,7 +243,8 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             ZohoFieldReader.Int32(record.Payload, "Calls_Since_Conversation") ?? 0,
             ZohoFieldReader.Int32(record.Payload, "Call_Attempts", "anrufversuche") ?? 0,
             ZohoFieldReader.LookupId(record.Payload, "Account_Name", "Account"),
-            ZohoFieldReader.LookupId(record.Payload, "Owner"));
+            ZohoFieldReader.LookupId(record.Payload, "Owner"),
+            ZohoFieldReader.String(record.Payload, "Industry"));
     }
 
     private static CrmCanonicalProduct MapProduct(CrmExternalRecord record)
@@ -380,7 +381,8 @@ public sealed class ZohoCrmRecordMapper : ICrmRecordMapper
             .ToArray();
         var duration = ZohoFieldReader.Int32(record.Payload, "Call_Duration", "Duration", "Duration_Seconds");
         var connectionStatus = ZohoFieldReader.String(record.Payload, "Call_Status", "Connection_Status");
-        var result = ZohoFieldReader.String(record.Payload, "Call_Result", "Status", "Result");
+        var result = type == "task" ? ZohoFieldReader.String(record.Payload, "Status")
+            : ZohoFieldReader.String(record.Payload, "Call_Result", "Status", "Result");
         var countsAsConversation = type == "call"
             && CallQualification.IsConversation(
                 duration,

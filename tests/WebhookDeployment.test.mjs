@@ -102,12 +102,12 @@ test('live verification is explicit, abortable and independent of overview refre
   assert.match(source, /active.current === controller/);
   assert.match(source, /notifications.READ/);
 });
-test('hook rebuild uses the central manual job queue with tenant scope and confirmation', () => {
+test('hook rebuild uses the Sales jobs API with confirmation', () => {
   const source = readFileSync(new URL('../frontend/src/ZohoHookRebuild.tsx', import.meta.url), 'utf8');
   assert.match(source, /window.confirm/);
   assert.match(source, /platformAuthorizedFetch/);
   const request = readFileSync(new URL('../frontend/src/ZohoHookRebuildRequest.ts', import.meta.url), 'utf8');
-  assert.match(request, /crm-subscription-maintenance\/runs\?tenantId=/);
+  assert.match(request, /\/api\/app-jobs\/jobs\/crm-subscription-maintenance\/runs'/);
   assert.match(request, /method: 'POST'/);
   assert.match(source, /active.current === controller/);
   assert.match(source, /response.status === 409/);
@@ -116,7 +116,7 @@ test('hook rebuild uses the central manual job queue with tenant scope and confi
   assert.match(worker, /!forceRebuild && CanKeepSubscription/);
   assert.match(worker, /await using var moduleSession = await dbFactory.OpenAsync/);
   assert.doesNotMatch(worker, /subscription.Status = "failed"/);
-  assert.doesNotMatch(worker.split('var forceRebuild')[1].split('var eventResult')[0], /exception.Message/);
+  assert.doesNotMatch(worker.split('var forceRebuild')[1].split('return new CrmHookUpdateResult')[0], /(?<!SafeError\()exception\.Message/);
 });
 
 
@@ -124,11 +124,11 @@ test('hook rebuild completes the DELETE phase before any registration', () => {
   const source = readFileSync(new URL('../backend/Integrations/Zoho/ZohoSubscriptionAdapter.cs', import.meta.url), 'utf8');
   const [prepare, install] = source.split('foreach (var target in preparedTargets)');
   assert.ok(install, 'A separate registration phase is required');
-  assert.match(prepare, /await crm.DisableNotificationsAsync/);
+  assert.match(prepare, /await crm.EnsureNotificationsDisabledAsync/);
   assert.doesNotMatch(prepare, /crm.RegisterNotificationsAsync/);
   assert.doesNotMatch(install, /DisableNotificationsAsync/);
   assert.match(install, /crm.RegisterNotificationsAsync/);
-  assert.ok(prepare.indexOf('await crm.DisableNotificationsAsync') < prepare.indexOf('subscription.Status = "disabled"'));
+  assert.ok(prepare.indexOf('await crm.EnsureNotificationsDisabledAsync') < prepare.indexOf('subscription.Status = "disabled"'));
   assert.ok(prepare.indexOf('await preparationDb.SaveChangesAsync', prepare.indexOf('subscription.Status = "disabled"')) < prepare.indexOf('preparedTargets.Add(target)'));
   assert.match(prepare, /subscription.Status != "disabled"/);
   assert.match(prepare, /!forceRebuild && CanKeepSubscription/);

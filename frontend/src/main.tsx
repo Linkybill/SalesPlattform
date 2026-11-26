@@ -21,6 +21,7 @@ createRoot(document.getElementById('root')!).render(
     <IdentityPlatformApplication
       {...identityPlatformConfig}
       jobs={{
+        appOwned: true,
         navigationTitle: 'Jobs',
         title: 'Jobübersicht',
         description: 'Konfigurieren und überwachen Sie die Hintergrundaufträge dieses Mandanten.',

@@ -1,5 +1,183 @@
 # Sales: Deployment- und Betriebsstand
 
+## App-eigene Jobs online bestätigt (26.11.2026)
+
+Plattform-Revision **128** und Sales **Generation 14** wurden ausgerollt.
+Backend und Frontend auf `ax42-1` waren mit den veröffentlichten Digests
+bereit. Das Backend hat `20261126170000_AddApplicationJobs` per EF beim
+Start angewendet. Die App-Datenbank enthält sechs übernommene
+Zeitplan-Konfigurationen und **1.640 historische Läufe**.
+
+Der appseitige Lauf von `crm-webhook-processing` war um **16:30 Uhr**
+(Europe/Berlin) erfolgreich. Er meldete null verarbeitete und null
+fehlgeschlagene Ereignisse. Der übernommene Zeitplan steht auf
+`*/5 * * * *`. Unter **Jobs** können Tenant-Admins auf einen Minutentakt
+`* * * * *` umstellen. Der Minutentakt ist der Startwert für neue
+Mandanten ohne gespeicherten Zeitplan. Shared `0.1.103`, React `0.1.73`.
+
+Die Sales-Frontend-Builds, 453 synthetische Zoho-Webhook-Checks,
+50 Zielprofilprüfungen mit PostgreSQL und der Browsercheck für Zielprofile
+und „Meine Aufgaben“ waren erfolgreich. Die folgenden lokalen Statusangaben
+sind historische Zwischenstände.
+
+## Zoho als führende Aufgabenoberfläche (lokal)
+
+„Meine Aufgaben“ verlinkt vorhandene CRM-Aufgaben direkt und zeigt ihren
+eingelesenen Status. Sales hat keine Eingabefelder zur Aufgabenbearbeitung.
+Der CRM-Import speichert die Erledigung einer verknüpften Zuweisung über die
+additive Migration `20261126141443_TrackCrmTaskCompletion`. Weitere Änderungen
+am bereits erledigten CRM-Task verschieben den Erledigungszeitpunkt nicht.
+Der Job `crm-webhook-processing` erhält den einstellbaren Standard
+`* * * * *`. Die kompatible IdentityPlattform muss vor der App aktualisiert
+werden, da sie die bisherige feste Zeitplanung in einen Tenant-Zeitplan überführt.
+
+## Eigenständiger Fünf-Minuten-Hook-Import (lokal)
+
+Live blockierten verwaiste Broker-Aufträge den vorhandenen Fünf-Minuten-Lauf
+von `crm-subscription-maintenance`. Nach DB-Abgleich wurden 100 Aufträge ohne
+Joblauf gesichert. Der anschließende Hook-Lauf importierte alle 14 wartenden
+Ereignisse ohne Fehler. Der neue feste Job `crm-webhook-processing` trennt den
+Import lokal von Registrierung und Renewal. Die Plattformkorrektur behält
+terminal markierte Laufdatensätze bei Cleanup, damit verspätete Nachrichten
+bestätigt werden können. Beide Codekorrekturen warten auf Rollout.
+
+## Zeitraumziele bearbeiten und deaktivieren (lokal)
+
+Die Migration `20261126131122_ManageSalesTaskPeriods` ergänzt Revision und
+Deaktivierungszeitpunkt beim bestehenden EF-Startup. Aktive und geplante Ziele
+können unter „Zielprofile“ bearbeitet oder deaktiviert werden. Deaktivierte
+Zeiträume bleiben sichtbar und geben ihre Daten für Ersatzvorgaben frei.
+Der Verteilungsjob ignoriert deaktivierte Ziele. Noch nicht online ausgerollt.
+
+## Aufgabenverteilung nach Branche und Zeitraum (lokal)
+
+Migration `20261126111101_AddSalesTaskPlanning` läuft beim Backendstart. Für
+Bestandsleads übernimmt der nächste CRM-Vollimport die in Zoho gepflegte Branche.
+Der Jobkatalog ergänzt `sales-task-distribution`, fester Takt alle 15 Minuten.
+Der Job verteilt bereits vorliegende offene Sales-Vorgänge und ändert keine
+CRM-Zuständigkeiten. Ein Zeitraumziel gilt für die bei Erfassung berechtigten
+Sales-Benutzer. Bereits ausgegebene Aufträge bleiben bestehen und zählen für
+die Tagesmenge, wenn sie zum aktuellen Branchenfilter passen. Eine noch offene
+Zuweisung verhindert weitere Zuweisungen desselben Zielvorgangs.
+„Meine Aufgaben“ ist die neue Startseite. Dieses Update ist noch nicht online.
+
+## Zielprofile mit direkter Stückzahl (lokale Korrektur)
+
+Nach Benutzerkorrektur zeigt die Seite pro Aufgabentyp nur die Anzahl pro Tag.
+Die API akzeptiert Profile ohne Zeitanteile, Kapazität und Planminuten. Die
+Korrektur braucht keine EF-Migration und ist noch nicht online ausgerollt.
+
+## Aufgabenzielprofile als Generation 10 ausgerollt (26.11.2026)
+
+Neue Seite `/task-goal-profiles`, Navigation „Zielprofile“, API
+`/api/task-goal-profiles` und additive Migration
+`20261126070435_AddTaskGoalProfiles`. Anwendung durch den vorhandenen EF-Startup,
+kein separater Migrationsjob. Publikation `96388003-1296-4e92-b6b5-54ea0390a8b7`
+wurde nach Wiederherstellung des vorherigen Router-Digests als Generation 10
+angenommen. Beide Sales-Rollouts bestätigt. EF-Historie und beide Tabellen im
+zentralen PostgreSQL bestätigt. Die öffentliche Seite liefert HTTP 200 und das
+Frontend enthält die Zielprofile. Eine angemeldete Live-UI-Abnahme steht aus.
+
+Prüfungen: 27 InMemory- und 29 PostgreSQL-Checks (einschließlich wiederholter
+Migration, Tenant-Isolation, tenantgebundenem Fremdschlüssel, Autorisierung und
+Bearbeitungskonflikten); nativer Chrome-Test für Erfassung, Liste, Vorschläge,
+manuelle Mengen, Kapazitätshinweis, Bearbeitung, Validierung, Suche, Lesesicht,
+Ladefehler und Konfliktanzeige. Frontend-Produktionsbuild und 10 Navigationstests
+bestanden. Vite meldet weiterhin das große gemeinsame JavaScript-Bundle.
+Mitarbeiterziele und Verteilungsjob sind noch nicht implementiert.
+
+Reproduzierbar mit `dotnet run --project tests/TaskGoalProfiles`, für den lokalen
+synthetischen PostgreSQL-Test zusätzlich `-- --postgres` (Port 55439,
+Datenbank sales_team_test; Zugang ausschließlich synthetisch im Test).
+UI: `node tests/TaskGoalProfilesBrowser.mjs`. Kein Live-CRM-Zugriff in diesen Tests.
+
+## EF-Startup statt Schemajob (26.11.2026, Abnahme läuft)
+
+Teams scheiterte nach frischer Anmeldung an PostgreSQL 42P01:
+`sales_team_user_members` fehlte, obwohl die Migration
+`20261125225434_AddSalesTeamUsers` im Backend kompiliert war.
+Kein manuelles Nachholen der SQL-Migration: Benutzer verlangt automatisches
+`Database.MigrateAsync()` beim Backend-Start durch die gemeinsame Library,
+identisch zentral und On-Prem, ohne Migrationsjob.
+Sales verwendet dafür Shared 0.1.102. Fehler verhindern Betriebsbereitschaft.
+Die Plattform muss die neuen Startverbindungen vor dem Sales-Update unterstützen.
+Rollout und tatsächlich angewendete EF-Historie separat nachweisen.
+
+## Hook-Reparatur und Rollout (26.11.2026)
+
+Zentraler Befund: mehrere Tausend wartende Ereignisse, 16 abgelaufene
+Registrierungen mit gespeichertem Status active. Zwei Crawl-Zeitpläne zeigten
+noch auf die entfernte OnPrem-Installation; gezielt auf zentrale Platzierung
+zurückgesetzt. Ein neuer zentraler Crawl wurde eingeplant. Seine Ausführung
+war durch alte Broker-Nachrichten ohne zentralen Joblauf blockiert (Start 403).
+219 nachweislich verwaiste Nachrichten wurden nach erneutem DB-Abgleich per
+bestätigter Veröffentlichung in eine dauerhafte Quarantäne-Queue verschoben.
+Kein Queue-Purge und keine vorgetäuschte erfolgreiche Verarbeitung.
+Lokale Korrekturen für Users-Einzelimport und Ereignisstatus nach Fehler getestet;
+453 Hookprüfungen, 34 Task-Payload-Prüfungen und Frontendbuild bestanden.
+Generation 6 / Publikation fc1bf1e9-3913-4b82-be5f-1aa584c1b5f0 ausgerollt;
+Backend-Rollout bestätigt. Enthält auch die zuvor lokal geprüfte Teamverwaltung.
+Der erste vollständige Live-Hooklauf 1d2a125e-2440-4173-88ea-b6e6f45442dc
+importierte 93 Ereignisse und beendete die fachliche Nachverarbeitung. Sieben
+Fehler waren alte Test-IDs (z.B. 999/asdfasf), die Zoho mit 204/404 beantwortet.
+Insgesamt danach 189 processed, 2732 queued, 12 failed. Der begrenzte Rückstauabbau
+läuft alle fünf Minuten mit maximal 100 Ereignissen. Der öffentliche Callback
+auf Port 443 antwortet auf einen leeren Testpayload korrekt mit 400.
+Live bestätigt: alle 16 Registrierungen einschließlich Users und vier generierter
+Module erneuert, gültig bis 02.12.2026, alle mit dem konfigurierten Callback auf
+Port 443. Lauf 56af20b6-3ac8-45cc-b1b9-54bde1f8dd16 abgeschlossen mit Warnungen
+zu nicht mehr verfügbaren Datensätzen; insgesamt 286 Ereignisse verarbeitet.
+
+Zusätzlicher Live-Befund: jsonb-Formatierung führte beim Aufgabenvergleich zu
+erneuten PUTs unveränderter Tasks. Typisierter Projektionsvergleich korrigiert;
+45 Task-/Projektionsprüfungen und 453 Hookprüfungen bestanden. Generation 7,
+Publikation 6978b5d7-32d8-403a-98e8-516354923dbe, enthält diese Korrektur.
+Generation 7 live bestätigt: Backend und Frontend 1/1 bereit. Lauf
+029ac7e4-4c40-4357-b345-06da3b3d830f vollständig abgeschlossen in rund 24 Sekunden:
+99 Datensätze erfolgreich gelesen, ein nicht mehr verfügbarer Datensatz (204).
+Aufgabenabgleich: 1027 unverändert, 0 Updates, 0 neue Tasks; keine PUT-Requests
+mehr. Fünf bereits bestehende Aufgabenanlagen bleiben von Zoho mit INVALID_DATA
+für Feld id abgewiesen; keine Referenzen geraten oder Datensätze gelöscht.
+Endstand der Prüfung: 385 processed, 2535 queued, 13 failed. Alle 16 Channels
+gültig; Rückstauabbau alle fünf Minuten. Die fünf Aufgabenfehler und nicht mehr
+abrufbare Ereignis-IDs sind weiterhin sichtbare Datenbereinigungsfälle.
+Ein neuer von Zoho selbst ausgelöster Callback nach der Erneuerung wurde nicht
+gesondert provoziert; belegt sind Registrierung, öffentlicher Empfangsweg und
+Verarbeitung der bereits vorliegenden echten Ereignisse.
+
+## Teams lokal geprüft, Arbeitslisten-403 offen (26.11.2026)
+
+Teamübersicht und Teameditor sowie additive Datenbankmigration sind lokal
+implementiert. 20 Backendprüfungen bestanden mit InMemory und PostgreSQL 17
+(vollständige Migration in einer isolierten Testdatenbank). Browserprüfung für
+Erfassung, Liste, Bearbeitung, Mitgliederentfernung, Suche und Lesesicht bestanden;
+13 Navigations-/URL-Prüfungen bestanden. Kein Publish und keine Live-Migration.
+
+Benutzer meldete nach der zentralen Rückstellung 403 auf der Arbeitsliste.
+URL und Router sind zentral, Anfrage erreicht das Sales-Backend und wird dort
+mit 403 abgewiesen. Tenant-Mitgliedschaften, Sales-Zuweisungen sowie effektive
+tenantgebundene Keycloak-Rollen sind aktiv. OIDC-Client und Backend-Client sind
+sales-plattform. Zentraler Migrationsblock ist weiterhin aufgehoben. Das Ergebnis
+einer erneuten Benutzeranmeldung steht aus; Fehlerursache und Behebung sind nicht
+bestätigt. Die bisherige HTTP-200-Prüfung betraf nur die öffentliche App-Shell.
+
+## OnPrem-Test zurückgestellt (25.11.2026)
+
+Auf Benutzerauftrag läuft Antonios Sales wieder über die zentrale Umgebung.
+Die OnPrem-Leerinstallation d777a544-5d14-4417-8f66-a5fa43e69000 wurde regulär
+stillgelegt (Removed, keine App-Pods/Deployments oder gültigen Prozessleases).
+Kunden-VM, PostgreSQL, Vault und PVCs bleiben erhalten; kein Rückimport und keine
+Löschung der OnPrem-Testdaten. Der zentrale Bestand war nie übertragen worden.
+Seine migrationsbezogene Schreibsperre und die OnPrem-Platzierung sind aufgehoben.
+Details und begrenzte Betriebsskripte im IdentityPlattform-Repository unter
+docs/ki-kontext.md und artifacts/sales-return-*.sql.
+
+Geprüft: zentraler App-Grant aktiv, Backend/Frontend 1/1 bereit, Einstieg
+https://176.9.57.203:3003 HTTP 200 (curl -k); Bestandszählung vor/nach Rückstellung
+unverändert: 703 Kunden, 263 Leads, 366 Deals. Browserlogin und fachliches
+Schreiben nicht live geprüft. Keine App-Codeänderung oder Veröffentlichung.
+
+
 ## Lokalen Arbeitsstand veröffentlichen (25.11.2026)
 
 Die frühere clean-main-/origin-main-Voraussetzung gilt beim App-Deploy nicht

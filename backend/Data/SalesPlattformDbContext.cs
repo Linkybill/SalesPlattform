@@ -8,6 +8,7 @@ namespace SalesPlattform.Backend.Data;
 public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbContext> options)
     : PlatformTenantDbContext<SalesPlattformDbContext>(options)
 {
+    public Guid CurrentTenantId => PlatformTenantId;
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         NormalizeDateTimeOffsets();
@@ -46,6 +47,11 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
 
     public DbSet<SalesOwner> SalesOwners => Set<SalesOwner>();
     public DbSet<SalesTeam> SalesTeams => Set<SalesTeam>();
+    public DbSet<TaskGoalProfile> TaskGoalProfiles => Set<TaskGoalProfile>();
+    public DbSet<TaskGoalProfileItem> TaskGoalProfileItems => Set<TaskGoalProfileItem>();
+    public DbSet<SalesTaskGoalPlan> SalesTaskGoalPlans => Set<SalesTaskGoalPlan>();
+    public DbSet<SalesTaskAssignment> SalesTaskAssignments => Set<SalesTaskAssignment>();
+    public DbSet<SalesTeamUserMember> SalesTeamUserMembers => Set<SalesTeamUserMember>();
     public DbSet<SalesTeamMember> SalesTeamMembers => Set<SalesTeamMember>();
     public DbSet<SalesCustomer> SalesCustomers => Set<SalesCustomer>();
     public DbSet<SalesCustomerStatusHistory> SalesCustomerStatusHistories => Set<SalesCustomerStatusHistory>();
@@ -340,7 +346,29 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
 
     private static void ConfigureCanonicalModel(ModelBuilder modelBuilder)
     {
+        var profile = Table<TaskGoalProfile>(modelBuilder, "sales_task_goal_profiles");
+        profile.Property(p => p.Name).HasMaxLength(200).IsRequired();
+        profile.Property(p => p.Industries).HasDefaultValueSql("ARRAY[]::text[]");
+        profile.Property(p => p.Revision).IsConcurrencyToken();
+        profile.HasAlternateKey(p => new { p.TenantId, p.Id });
+        profile.HasIndex(p => new { p.TenantId, p.Name });
+        var goal = Table<TaskGoalProfileItem>(modelBuilder, "sales_task_goal_profile_items");
+        goal.Property(p => p.TaskType).HasMaxLength(60).IsRequired();
+        goal.HasIndex(p => new { p.TenantId, p.ProfileId, p.TaskType }).IsUnique();
+        goal.HasOne(p => p.Profile).WithMany(p => p.Items)
+            .HasForeignKey(p => new { p.TenantId, p.ProfileId })
+            .HasPrincipalKey(p => new { p.TenantId, p.Id }).OnDelete(DeleteBehavior.Cascade);
+
         var owner = Table<SalesOwner>(modelBuilder, "sales_owners");
+        var plan = Table<SalesTaskGoalPlan>(modelBuilder, "sales_task_goal_plans");
+        plan.Property(p => p.Name).HasMaxLength(200);
+        plan.Property(p => p.Configuration).HasColumnType("jsonb");
+        plan.HasIndex(p => new { p.TenantId, p.MembershipId }).IsUnique();
+        plan.HasIndex(p => new { p.TenantId, p.StartsOn, p.EndsOn });
+        var assignment = Table<SalesTaskAssignment>(modelBuilder, "sales_task_assignments");
+        assignment.HasIndex(p => new { p.TenantId, p.WorkItemId }).IsUnique();
+        assignment.HasIndex(p => new { p.TenantId, p.AssignedOn, p.TargetType, p.TargetId }).IsUnique();
+        assignment.HasIndex(p => new { p.TenantId, p.MembershipId, p.AssignedOn });
         owner.Property(item => item.DisplayName).HasMaxLength(300).IsRequired();
         owner.Property(item => item.Email).HasMaxLength(320);
         owner.HasIndex(item => new { item.TenantId, item.DisplayName });
@@ -350,6 +378,15 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         team.Property(item => item.Key).HasMaxLength(100).IsRequired();
         team.Property(item => item.Name).HasMaxLength(200).IsRequired();
         team.HasIndex(item => new { item.TenantId, item.Key }).IsUnique();
+        team.Property(item => item.Revision).IsConcurrencyToken();
+        team.HasAlternateKey(item => new { item.TenantId, item.Id });
+
+        var userMember = Table<SalesTeamUserMember>(modelBuilder, "sales_team_user_members");
+        userMember.Property(item => item.Email).HasMaxLength(320).IsRequired();
+        userMember.HasIndex(item => new { item.TenantId, item.TeamId, item.MembershipId }).IsUnique();
+        userMember.HasOne(item => item.Team).WithMany(item => item.UserMembers)
+            .HasForeignKey(item => new { item.TenantId, item.TeamId })
+            .HasPrincipalKey(item => new { item.TenantId, item.Id }).OnDelete(DeleteBehavior.Cascade);
 
         var teamMember = Table<SalesTeamMember>(modelBuilder, "sales_team_members");
         teamMember.HasIndex(item => new { item.TenantId, item.TeamId, item.OwnerId, item.ValidFrom }).IsUnique();

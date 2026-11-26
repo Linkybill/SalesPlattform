@@ -2462,6 +2462,9 @@ namespace SalesPlattform.Backend.Data.Migrations
                     b.Property<DateTimeOffset?>("FirstActivityAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Industry")
+                        .HasColumnType("text");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
@@ -3688,6 +3691,108 @@ namespace SalesPlattform.Backend.Data.Migrations
                     b.ToTable("sales_target_periods", (string)null);
                 });
 
+            modelBuilder.Entity("SalesPlattform.Backend.Data.SalesTaskAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateOnly>("AssignedOn")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset?>("CrmCompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Industry")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("MembershipId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PlanId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TargetId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("TargetType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("TaskType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("WorkItemId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "WorkItemId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "MembershipId", "AssignedOn");
+
+                    b.HasIndex("TenantId", "AssignedOn", "TargetType", "TargetId")
+                        .IsUnique();
+
+                    b.ToTable("sales_task_assignments", (string)null);
+                });
+
+            modelBuilder.Entity("SalesPlattform.Backend.Data.SalesTaskGoalPlan", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.PrimitiveCollection<Guid[]>("Audience")
+                        .IsRequired()
+                        .HasColumnType("uuid[]");
+
+                    b.Property<string>("Configuration")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTimeOffset?>("DeactivatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly?>("EndsOn")
+                        .HasColumnType("date");
+
+                    b.Property<Guid?>("MembershipId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("Revision")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateOnly?>("StartsOn")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "MembershipId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "StartsOn", "EndsOn");
+
+                    b.ToTable("sales_task_goal_plans", (string)null);
+                });
+
             modelBuilder.Entity("SalesPlattform.Backend.Data.SalesTeam", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3706,6 +3811,10 @@ namespace SalesPlattform.Backend.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
@@ -3752,6 +3861,34 @@ namespace SalesPlattform.Backend.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("sales_team_members", (string)null);
+                });
+
+            modelBuilder.Entity("SalesPlattform.Backend.Data.SalesTeamUserMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<Guid>("MembershipId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TeamId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "TeamId", "MembershipId")
+                        .IsUnique();
+
+                    b.ToTable("sales_team_user_members", (string)null);
                 });
 
             modelBuilder.Entity("SalesPlattform.Backend.Data.SalesWorkCalendar", b =>
@@ -4005,6 +4142,77 @@ namespace SalesPlattform.Backend.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("sales_working_hours", (string)null);
+                });
+
+            modelBuilder.Entity("SalesPlattform.Backend.Data.TaskGoalProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("DailyCapacityMinutes")
+                        .HasColumnType("integer");
+
+                    b.PrimitiveCollection<string[]>("Industries")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasDefaultValueSql("ARRAY[]::text[]");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Name");
+
+                    b.ToTable("sales_task_goal_profiles", (string)null);
+                });
+
+            modelBuilder.Entity("SalesPlattform.Backend.Data.TaskGoalProfileItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("DailyTarget")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("MinutesPerTask")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("SharePercent")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TaskType")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "ProfileId", "TaskType")
+                        .IsUnique();
+
+                    b.ToTable("sales_task_goal_profile_items", (string)null);
                 });
 
             modelBuilder.Entity("SalesPlattform.Backend.Data.ZohoSchemaCache", b =>
@@ -4772,6 +4980,18 @@ namespace SalesPlattform.Backend.Data.Migrations
                     b.Navigation("Team");
                 });
 
+            modelBuilder.Entity("SalesPlattform.Backend.Data.SalesTeamUserMember", b =>
+                {
+                    b.HasOne("SalesPlattform.Backend.Data.SalesTeam", "Team")
+                        .WithMany("UserMembers")
+                        .HasForeignKey("TenantId", "TeamId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Team");
+                });
+
             modelBuilder.Entity("SalesPlattform.Backend.Data.SalesWorkItem", b =>
                 {
                     b.HasOne("SalesPlattform.Backend.Data.SalesOwner", "Owner")
@@ -4820,6 +5040,18 @@ namespace SalesPlattform.Backend.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Calendar");
+                });
+
+            modelBuilder.Entity("SalesPlattform.Backend.Data.TaskGoalProfileItem", b =>
+                {
+                    b.HasOne("SalesPlattform.Backend.Data.TaskGoalProfile", "Profile")
+                        .WithMany("Items")
+                        .HasForeignKey("TenantId", "ProfileId")
+                        .HasPrincipalKey("TenantId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Profile");
                 });
 
             modelBuilder.Entity("SalesPlattform.Backend.Data.IntegrationHookHandoff", b =>
@@ -4980,6 +5212,8 @@ namespace SalesPlattform.Backend.Data.Migrations
             modelBuilder.Entity("SalesPlattform.Backend.Data.SalesTeam", b =>
                 {
                     b.Navigation("Members");
+
+                    b.Navigation("UserMembers");
                 });
 
             modelBuilder.Entity("SalesPlattform.Backend.Data.SalesWorkCalendar", b =>
@@ -4998,6 +5232,11 @@ namespace SalesPlattform.Backend.Data.Migrations
                     b.Navigation("Relations");
 
                     b.Navigation("RuleEvaluations");
+                });
+
+            modelBuilder.Entity("SalesPlattform.Backend.Data.TaskGoalProfile", b =>
+                {
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

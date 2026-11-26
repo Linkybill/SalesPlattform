@@ -558,6 +558,7 @@ try
 catch (InvalidOperationException) { checks++; }
 await ReplacementChecks.Run(Check);
 await DiagnosticQueueChecks.Run(Check);
+await ImportRegressionChecks.Run(Check);
 await NotificationSdkChecks.Run(Check);
 await InstallationChecks.RunAsync(Check);
 await HandoffChecks.RunAsync(Check);

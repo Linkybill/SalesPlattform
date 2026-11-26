@@ -41,17 +41,17 @@ test('four work themes cover all existing rules once; reports stay under Steueru
   assert.equal(new Set(grouped).size, grouped.length)
 })
 
-test('top-level routes default to Arbeit, then Steuerung; tenant root and old worklist links work', () => {
+test('top-level routes start with Meine Aufgaben; tenant root and old worklist links work', () => {
   globalThis.window = { location: { origin: 'https://sales.example' } }
   for (const root of ['/', '/tenant-id']) {
     const routes = load('salesRoutes.tsx', { './identityPlatformConfig': { tenantApplicationPath: { routerBasePath: root } } })
-    assert.deepEqual(routes.salesRoutes.slice(0, 2).map(r => r.title), ['Arbeit', 'Steuerung'])
-    assert.equal(routes.resolveSalesRoute(root), 'worklist')
+    assert.deepEqual(routes.salesRoutes.slice(0, 3).map(r => r.title), ['Meine Aufgaben', 'Arbeit', 'Steuerung'])
+    assert.equal(routes.resolveSalesRoute(root), 'my-tasks')
     const base = root === '/' ? '' : root
-    assert.equal(routes.canonicalSalesEntryPath(root), `${base}/worklist`)
+    assert.equal(routes.canonicalSalesEntryPath(root), `${base}/my-tasks`)
     assert.equal(routes.canonicalSalesEntryPath(`${base}/auth/callback`), `${base}/auth/callback`)
     assert.equal(routes.canonicalSalesEntryPath(`${base}/reports`), `${base}/reports`)
-    for (const [route, expected] of [['worklist', 'worklist'], ['reports', 'dashboard'], ['settings/dashboard', 'dashboard-layout'], ['import', 'import'], ['usage', 'usage']]) {
+    for (const [route, expected] of [['worklist', 'worklist'], ['reports', 'dashboard'], ['teams', 'teams'], ['task-goal-profiles', 'task-goal-profiles'], ['settings/dashboard', 'dashboard-layout'], ['import', 'import'], ['usage', 'usage']]) {
       assert.equal(routes.resolveSalesRoute(`${base}/${route}/`), expected)
     }
     const tabs = load('DashboardNavigation.tsx', { './salesRoutes': routes, './salesNavigation': navigation })

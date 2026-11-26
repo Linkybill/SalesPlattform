@@ -51,6 +51,10 @@ public interface ICrmHookUpdateService
     Task<CrmHookUpdateResult> ExecuteAsync(
         PlatformJobExecutionContext context,
         CancellationToken cancellationToken = default);
+
+    Task<CrmHookUpdateResult> ProcessEventsAsync(
+        PlatformJobExecutionContext context,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class CrmHookUpdateServiceRegistry(

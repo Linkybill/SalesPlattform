@@ -44,7 +44,7 @@ public sealed class ZohoCrmHookUpdateService(
     public CrmHookJobRegistration JobRegistration { get; } = new(
         "crm-zoho-hook-update",
         "Zoho-Hooks erneuern",
-        "Manuell: Modul-Hooks neu registrieren. Geplant: fällige Hooks erneuern. Verarbeitet anschließend wartende Ereignisse.",
+        "Manuell: Modul-Hooks neu registrieren. Geplant: fällige Hooks erneuern.",
         "0 3 * * *");
 
     internal static readonly string[] RelevantModules =
@@ -216,7 +216,7 @@ public sealed class ZohoCrmHookUpdateService(
                     // A previous failed registration may already have a confirmed DELETE.
                     if (subscription is not null && subscription.Status != "disabled")
                     {
-                        await crm.DisableNotificationsAsync(subscription.ChannelId, cancellationToken);
+                        await crm.EnsureNotificationsDisabledAsync(subscription.ChannelId, target.Module, cancellationToken);
                         subscription.Status = "disabled";
                         subscription.LastCheckedAt = DateTimeOffset.UtcNow;
                         subscription.Error = "Alter Channel deaktiviert; Neuregistrierung steht aus.";
@@ -227,7 +227,7 @@ public sealed class ZohoCrmHookUpdateService(
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
                 catch (Exception exception)
                 {
-                    var message = $"Zoho-Hook '{target.Module}': Deaktivierung oder lokales Speichern nicht bestätigt; keine Neuregistrierung für dieses Modul.";
+                    var message = $"Zoho-Hook '{target.Module}': Deaktivierung oder lokales Speichern nicht bestätigt; keine Neuregistrierung für dieses Modul. {ZohoWebhookOverviewService.SafeError(exception.Message)}";
                     warnings.Add(message);
                     await context.Logger.WarningAsync(message, "CRM-Hooks",
                         JsonSerializer.SerializeToElement(new { module = target.Module,
@@ -341,21 +341,14 @@ public sealed class ZohoCrmHookUpdateService(
                 }
             }
 
-            await using var session = await dbFactory.OpenAsync(cancellationToken);
-            var db = session.Context;
-            var eventResult = await ProcessQueuedEventsAsync(
-                context,
-                db,
-                cancellationToken);
-            warnings.AddRange(eventResult.Warnings);
             return new CrmHookUpdateResult(
                 ProviderKey,
                 created,
                 renewed,
                 unchanged,
-                eventResult.Queued,
-                eventResult.Processed,
-                eventResult.Failed,
+                0,
+                0,
+                0,
                 warnings)
             {
                 ApiRequests = RequestDiagnostics()
@@ -372,33 +365,72 @@ public sealed class ZohoCrmHookUpdateService(
         }
         finally
         {
-            var summary = apiUsage.GetPendingSummary();
-            await context.Logger.InfoAsync(
-                $"CRM-API-Verbrauch der Hook-Verwaltung: {summary.Requests} Requests, {summary.EstimatedUnits} Einheiten, {summary.FailedRequests} fehlgeschlagen.",
-                "API-Verbrauch",
-                JsonSerializer.SerializeToElement(summary),
-                CancellationToken.None);
-            try
-            {
-                await apiUsage.FlushAsync(CancellationToken.None);
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                logger.LogWarning(exception, "CRM-API-Verbrauch der Zoho-Hook-Verwaltung konnte nicht gespeichert werden.");
-            }
+            await FlushUsageAsync(context);
         }
     }
+
+    public async Task<CrmHookUpdateResult> ProcessEventsAsync(PlatformJobExecutionContext context, CancellationToken cancellationToken = default)
+    {
+        var empty = new CrmHookUpdateResult(ProviderKey, 0, 0, 0, 0, 0, 0, []);
+        await using var session = await dbFactory.OpenAsync(cancellationToken);
+        var db = session.Context;
+        if (!await PendingEvents(db).AnyAsync(cancellationToken))
+            return empty;
+
+        using var usageScope = apiUsage.BeginScope(context.TenantId, context.RunId,
+            context.RequestedBy ?? "system:platform-job", CrmApiUsageOrigins.Job);
+        try
+        {
+            var crmConfiguration = await configuration.ResolveCurrentAsync(cancellationToken);
+            if (string.Equals(crmConfiguration.ChangeDetectionMode, CrmChangeDetectionModes.CrawlOnly, StringComparison.OrdinalIgnoreCase))
+                return empty;
+            if (await connections.GetActiveAsync(cancellationToken) is null)
+                return empty with { Warnings = ["Wartende Zoho-Hooks wurden zurückgestellt. Es fehlt eine aktive Zoho-Verbindung."] };
+
+            var result = await ProcessQueuedEventsAsync(context, db, cancellationToken);
+            return empty with { EventsQueued = result.Queued, EventsProcessed = result.Processed,
+                EventsFailed = result.Failed, Warnings = result.Warnings };
+        }
+        catch (InvalidOperationException exception) when (
+            exception.Message.Contains("nicht als CRM-Integration ausgewählt", StringComparison.OrdinalIgnoreCase))
+        {
+            return empty;
+        }
+        finally
+        {
+            await FlushUsageAsync(context);
+        }
+    }
+
+    private async Task FlushUsageAsync(PlatformJobExecutionContext context)
+    {
+        var summary = apiUsage.GetPendingSummary();
+        await context.Logger.InfoAsync(
+            $"CRM-API-Verbrauch des Hook-Jobs: {summary.Requests} Requests, {summary.EstimatedUnits} Einheiten, {summary.FailedRequests} fehlgeschlagen.",
+            "API-Verbrauch",
+            JsonSerializer.SerializeToElement(summary),
+            CancellationToken.None);
+        try
+        {
+            await apiUsage.FlushAsync(CancellationToken.None);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogWarning(exception, "CRM-API-Verbrauch des Zoho-Hook-Jobs konnte nicht gespeichert werden.");
+        }
+    }
+
+    private IQueryable<IntegrationWebhookEvent> PendingEvents(SalesPlattformDbContext db) =>
+        db.IntegrationWebhookEvents.Where(item => item.ProviderKey == ProviderKey
+            && item.ConnectionKey == ConnectionKey
+            && (item.Status == QueuedStatus || (item.Status == FailedStatus && item.AttemptCount < 5)));
 
     private async Task<WebhookProcessingResult> ProcessQueuedEventsAsync(
         PlatformJobExecutionContext context,
         SalesPlattformDbContext db,
         CancellationToken cancellationToken)
     {
-        var events = await db.IntegrationWebhookEvents
-            .Where(item => item.ProviderKey == ProviderKey
-                && item.ConnectionKey == ConnectionKey
-                && (item.Status == QueuedStatus
-                    || (item.Status == FailedStatus && item.AttemptCount < 5)))
+        var events = await PendingEvents(db)
             .OrderBy(item => item.ReceivedAt)
             .Take(EventBatchSize)
             .ToArrayAsync(cancellationToken);
@@ -744,8 +776,8 @@ public sealed class ZohoCrmHookUpdateService(
     }
 
     private static string[] Operations(string module, bool allOperations)
-        => allOperations || module.Equals("Users", StringComparison.OrdinalIgnoreCase)
-            ? [module + ".all"]
+        => module.Equals("Users", StringComparison.OrdinalIgnoreCase) ? ["users.all"]
+            : allOperations ? [module + ".all"]
             : [module + ".create", module + ".edit", module + ".delete"];
 
     private static CrmHookUpdateResult EmptyResult()
@@ -893,6 +925,7 @@ internal sealed record ZohoWebhookPayload(
         using var document = JsonDocument.Parse(payloadJson);
         var root = document.RootElement;
         var module = ReadString(root, "module");
+        if (string.Equals(module, "users", StringComparison.OrdinalIgnoreCase)) module = "Users";
         var channelId = ReadString(root, "channel_id");
         var token = ReadString(root, "token");
         if (string.IsNullOrWhiteSpace(module)

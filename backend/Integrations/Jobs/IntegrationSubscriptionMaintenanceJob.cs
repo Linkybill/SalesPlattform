@@ -52,3 +52,19 @@ public sealed class CrmHookUpdateJob(
             && results.Count > 0 && !resultWithStatus.WithWarnings && results.All(result => result.PlacementChangeCompleted) };
     }
 }
+
+public sealed class CrmWebhookProcessingJob(CrmHookUpdateServiceRegistry services) : IPlatformJob
+{
+    public async Task<PlatformJobResult> ExecuteAsync(PlatformJobExecutionContext context, CancellationToken cancellationToken)
+    {
+        var results = new List<CrmHookUpdateResult>();
+        foreach (var service in services.All)
+            results.Add(await service.ProcessEventsAsync(context, cancellationToken));
+
+        var details = JsonSerializer.SerializeToElement(new { providers = results });
+        var message = $"Hook-Import: {results.Sum(r => r.EventsProcessed)} verarbeitet, {results.Sum(r => r.EventsFailed)} fehlgeschlagen.";
+        return results.Any(r => r.HasWarnings)
+            ? PlatformJobResult.SuccessWithWarnings(message, details)
+            : PlatformJobResult.Success(message, details);
+    }
+}

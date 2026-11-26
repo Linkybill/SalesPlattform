@@ -1,0 +1,7 @@
+.goal-editor-table input:not([type=checkbox]) { max-width: 8rem; }
+.goal-profiles-page h1 { font-size: clamp(1.8rem, 3vw, 2.6rem); }
+.goal-industry-selector { padding: .75rem; border: 1px solid var(--ip-border, #8094ad); border-radius: .4rem; }
+.goal-industry-selector summary { cursor: pointer; }
+.goal-industry-selector button { margin-top: .6rem; }
+.goal-plan-fields { margin-top: 1rem; }
+.goal-plan-fields select { max-width: 36rem; padding: .65rem; border-radius: .4rem; color: inherit; background: var(--ip-surface); }

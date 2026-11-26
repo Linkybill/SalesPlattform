@@ -73,7 +73,8 @@ public sealed record CrmCanonicalLead(
     int? CallsSinceConversation,
     int? TotalCallAttempts,
     string? CustomerExternalId,
-    string? OwnerExternalId)
+    string? OwnerExternalId,
+    string? Industry = null)
     : CrmCanonicalRecord(ProviderKey, ConnectionKey, CrmEntityTypes.Lead, ExternalId, Payload, CreatedAt, ModifiedAt);
 
 public sealed record CrmCanonicalProductCategory(

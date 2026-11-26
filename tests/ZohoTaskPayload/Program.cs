@@ -23,6 +23,25 @@ var cases = new (string Type, string Module)[]
     ("order", "Sales_Orders"), ("invoice", "Invoices")
 };
 var checkedCases = 0;
+var matches = typeof(SalesPlattform.Backend.Services.CrmTaskMirrorService).GetMethod("TaskProjectionMatches", BindingFlags.NonPublic | BindingFlags.Static)!;
+var projection = new SalesPlattform.Backend.Services.CrmTaskProjection("Synthetic", "2026-11-26", "Description", "123", "lead", "456");
+bool Matches(string stored, SalesPlattform.Backend.Services.CrmTaskProjection current)
+    => (bool)matches.Invoke(null, [stored, current])!;
+const string jsonb = """{ "DueDate": "2026-11-26", "Subject": "Synthetic", "Description": "Description", "OwnerExternalId": "123", "TargetEntityType": "lead", "TargetExternalId": "456" }""";
+Check(Matches(jsonb, projection), "jsonb property ordering/spacing must not trigger an outbound CRM update.");
+checkedCases++;
+foreach (var changed in new[] { projection with { Subject = "Changed" }, projection with { DueDate = "2026-11-27" },
+    projection with { Description = "Changed" }, projection with { OwnerExternalId = "789" },
+    projection with { TargetEntityType = "customer" }, projection with { TargetExternalId = "789" } })
+{
+    Check(!Matches(jsonb, changed), "Actual changes in every outbound field must still trigger an update.");
+    checkedCases++;
+}
+foreach (var invalid in new[] { "{", "null", "[]", "{}" })
+{
+    Check(!Matches(invalid, projection), "Invalid/incomplete saved projections must not hide actual changes.");
+    checkedCases++;
+}
 foreach (var (type, module) in cases)
 foreach (var create in new[] { true, false })
 foreach (var externalId in new[] { recordId, $" {module}:{recordId} " })

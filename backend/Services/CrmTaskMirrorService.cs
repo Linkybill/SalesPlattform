@@ -171,10 +171,7 @@ public sealed class CrmTaskMirrorService(
                     continue;
                 }
 
-                if (string.Equals(
-                        existingLink.LastOutboundTaskProjectionJson,
-                        projectionJson,
-                        StringComparison.Ordinal))
+                if (TaskProjectionMatches(existingLink.LastOutboundTaskProjectionJson, projection))
                 {
                     unchangedCount++;
                     decisions.Add(new CrmTaskMirrorDecision(
@@ -357,6 +354,14 @@ public sealed class CrmTaskMirrorService(
             skippedCount,
             failures.Take(10).ToArray(),
             decisions);
+    }
+
+    private static bool TaskProjectionMatches(string storedJson, CrmTaskProjection expected)
+    {
+        // jsonb normalizes whitespace and property order. Text equality would
+        // resend every task on every hook batch, generating more incoming hooks.
+        try { return JsonSerializer.Deserialize<CrmTaskProjection>(storedJson) == expected; }
+        catch (JsonException) { return false; }
     }
 
     private static CrmTaskProjection BuildProjection(CrmTaskWriteRequest request)

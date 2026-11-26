@@ -1,5 +1,72 @@
 # Projektkontext
 
+## Aktueller Online-Stand (26.11.2026)
+
+Sales Generation 14 läuft auf `ax42-1`. Shared NuGet `0.1.103`
+betreibt die fachlichen Jobs in Sales. Die gemeinsame Jobs-Seite aus React
+`0.1.73` nutzt die tenantgebundene Sales-API. „Meine Aufgaben“ zeigt
+persistierte Zuständigkeiten und den importierten CRM-Status. Bearbeitet
+werden die Aufgaben in Zoho CRM. Den bestätigten Rollout und die übernommenen
+Zeitpläne dokumentiert der [Betriebsstand](09-deployment-und-betriebsstand.md).
+Die folgenden datierten Zwischenstände beschreiben frühere Implementierungsphasen.
+
+## Persönliche Aufgaben und Zeitraumziele (lokal)
+
+Die neue Einstiegsseite „Meine Aufgaben“ zeigt gespeicherte eigene Zuweisungen.
+Das bisherige „Arbeit“ bleibt im Menü. Lead-Branche wird aus Zoho übernommen.
+Vorlagen, persönliche Ziele und Zeitraumziele verwenden Tagesmengen und
+optionale Branchenfilter. Ein Zeitraumziel speichert eine Kopie für Start und
+Enddatum und übersteuert persönliche Ziele für neue Verteilungen. Der feste
+Sales-Job `sales-task-distribution` läuft viertelstündlich.
+
+## Aufgabenzielprofile (26.11.2026, lokal)
+
+Unter „Zielprofile“ können Tenant-Admins benannte Vorlagen mit einer direkt
+editierbaren Stückzahl pro Tag und Aufgabentyp pflegen.
+Feste Typen: Kaltakquise-Anruf, Lead-Reaktivierungsanruf, Verlängerungsgespräch,
+Wiedervorlage bearbeiten. Sales-Benutzer haben Lesezugriff. Additive EF-Migration
+AddTaskGoalProfiles wird über den bestehenden Backendstart angewandt.
+Rolloutstand siehe `09-deployment-und-betriebsstand.md`. Mitarbeiterziele
+übernehmen Vorlagenwerte als eigenständige Kopie. Der Sales-Job speichert
+Aufgabenzuweisungen für „Meine Aufgaben“.
+
+## Hook-Importreparatur (26.11.2026)
+
+Zoho-V8-Vertrag erneut abgeglichen: Users-Endpunkt/Antwortformat und `users.all`
+korrigiert, Ereignisstatus nach Fehlern im Stapel erhalten, abgelaufene bereits
+entfernte Channels vor Ersatz per GET gegenprüfen. 453 synthetische Hookchecks
+bestanden. Zentrale Crawl-Platzierung repariert und Hook-Zeitplan für Antonio
+auf fünf Minuten gestellt. 219 verwaiste Broker-Nachrichten ohne Joblauf
+gesichert in Quarantäne verschoben; keine fachlichen Daten gelöscht. Erster
+vollständiger Live-Lauf importierte 93 Ereignisse, anschließend insgesamt 189.
+Generation 7 ausgerollt: zusätzlich jsonb-fester Vergleich ausgehender Aufgaben,
+live 1027 unveränderte Aufgaben ohne PUT übersprungen. Abschlussstand 385
+verarbeitete Ereignisse und 16 gültige Channels. Restliche Warnungen und
+Rückstau in 09-deployment-und-betriebsstand.md.
+
+## Vertriebsteams (26.11.2026, lokal)
+
+Neue Navigation „Teams“: Teamname und vorhandene Sales-Benutzer erfassen,
+auflisten, suchen und bearbeiten. Lesen mit Sales-Zugriff, Pflege durch
+Mandantenadministration. Mitglieder sind stabile Plattform-Membership-IDs;
+CRM-Besitzer sind keine Voraussetzung. Additive Tabelle sales_team_user_members,
+tenantgebundener Fremdschlüssel und Revisionsprüfung. Ziele/Aufgabenverteilung
+sind noch nicht Bestandteil. Backend-/PostgreSQL- und Browsertests bestanden;
+Mit Hook-Reparatur ab Generation 4 veröffentlicht. Details in 05-offene-punkte-und-entscheidungen.md.
+
+Separat: gemeldetes HTTP 403 der zentralen Arbeitsliste erreicht das Backend;
+Tenant-App-Zugriff und Keycloak-Rollen geprüft aktiv. Ursache noch nicht bestätigt,
+Rückmeldung nach Neuanmeldung steht aus. Lokal zeigt ein Ladefehler keine
+irreführende Anzahl „0 offene Vorgänge“ mehr.
+
+## OnPrem-Test zurückgestellt (25.11.2026)
+
+Antonios Sales ist auf Benutzerauftrag wieder zentral freigegeben. Die aktive
+OnPrem-Leerinstallation wurde regulär stillgelegt; ihre VM und Daten bleiben
+erhalten. Zentraler Bestand unverändert, migrationsbezogene Schreibsperre und
+OnPrem-Platzierung aufgehoben. Zentraler Einstieg HTTP 200, Backend/Frontend
+bereit; Browserlogin nicht geprüft. Details im aktuellen Deploymentkontext.
+
 ## Lokalen Arbeitsstand veröffentlichen (25.11.2026)
 
 Die frühere clean-main-/origin-main-Voraussetzung gilt beim App-Deploy nicht

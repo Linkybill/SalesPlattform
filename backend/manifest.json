@@ -1,4 +1,5 @@
 {
+  "appOwnedJobs": true,
   "appKey": "sales-plattform",
   "oauthCallbackPaths": ["/api/integrations/zoho/oauth/callback"],
   "name": "SalesPlattform",

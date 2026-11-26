@@ -1,0 +1,18 @@
+.teams-page { display: grid; gap: 1.25rem; }
+.teams-page .sales-panel { padding: 1.5rem; background: var(--ip-surface, #14263b); color: var(--ip-text, #d9e8f8); border: 1px solid var(--ip-border, #294766); border-radius: 12px; }
+.teams-heading, .teams-actions, .team-unavailable { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.teams-heading h1, .teams-heading h2 { margin-top: 0; }
+.teams-actions { justify-content: flex-start; margin-top: 1rem; }
+.team-fields { border: 0; margin: 0; padding: 0; display: grid; gap: .6rem; min-width: 0; }
+.teams-page input:not([type=checkbox]) { display: block; width: 100%; max-width: 36rem; box-sizing: border-box; padding: .7rem; margin: .4rem 0; border: 1px solid var(--ip-border-strong, #8094ad); border-radius: .4rem; color: inherit; background: transparent; }
+.team-member-picker { border: 1px solid var(--ip-border, #8094ad); border-radius: .5rem; padding: 1rem; margin-top: .75rem; min-width: 0; }
+.team-user-options { max-height: 20rem; overflow: auto; margin-top: .75rem; }
+.team-user-option { display: flex; align-items: center; gap: .7rem; padding: .65rem .25rem; overflow-wrap: anywhere; cursor: pointer; }
+.team-user-option input { width: 1.1rem; height: 1.1rem; flex-shrink: 0; }
+.team-unavailable { margin-top: .75rem; overflow-wrap: anywhere; }
+.teams-table-scroll { overflow-x: auto; margin-top: 1rem; }
+.teams-table { border-collapse: collapse; width: 100%; text-align: left; }
+.teams-table th, .teams-table td { padding: 1rem .75rem; vertical-align: top; border-bottom: 1px solid var(--ip-border, #8094ad); overflow-wrap: anywhere; }
+.teams-table ul { margin: .5rem 0 0; padding-left: 1.1rem; }
+.teams-error { padding: .8rem; border: 1px solid var(--ip-danger-border, #874554); background: var(--ip-danger-bg, #391923); border-radius: .4rem; color: var(--ip-danger, #ffd1d8); }
+@media (max-width: 600px) { .teams-page .sales-panel { padding: 1rem; } .teams-table th, .teams-table td { padding: .7rem .35rem; } }

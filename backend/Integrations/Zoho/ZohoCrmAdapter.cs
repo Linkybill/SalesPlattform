@@ -317,15 +317,16 @@ public sealed partial class ZohoCrmAdapter(
         var rawExternalId = externalId.Contains(':', StringComparison.Ordinal)
             ? externalId[(externalId.LastIndexOf(':') + 1)..]
             : externalId;
-        var path = $"/crm/v8/{Uri.EscapeDataString(module)}/{Uri.EscapeDataString(rawExternalId)}";
-        if (fields.Count > 0)
+        var isUser = module.Equals("Users", StringComparison.OrdinalIgnoreCase);
+        var path = $"/crm/v8/{Uri.EscapeDataString(isUser ? "users" : module)}/{Uri.EscapeDataString(rawExternalId)}";
+        if (!isUser && fields.Count > 0)
             path += $"?fields={Uri.EscapeDataString(string.Join(',', fields.Take(50)))}";
 
         using var response = await SendAsync(HttpMethod.Get, path, cancellationToken);
         if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
             return null;
         using var document = await ParseDocumentAsync(response, cancellationToken);
-        return ParseRecords(document.RootElement, module, null).FirstOrDefault();
+        return ParseRecords(document.RootElement, isUser ? "Users" : module, null, isUser ? "users" : "data").FirstOrDefault();
     }
 
     public async Task<ZohoNotificationRegistration> RegisterNotificationsAsync(
@@ -533,6 +534,19 @@ public sealed partial class ZohoCrmAdapter(
         ValidateDisableConfirmation(document.RootElement, channelId);
     }
 
+    public async Task EnsureNotificationsDisabledAsync(string channelId, string module,
+        CancellationToken cancellationToken = default)
+    {
+        try { await DisableNotificationsAsync(channelId, cancellationToken); }
+        catch (InvalidOperationException)
+        {
+            // Expired channels may already be absent. A failed DELETE alone is
+            // never permission to replace: confirm absence through Zoho first.
+            var remaining = await ReadNotificationsAsync(channelId, module, cancellationToken);
+            if (remaining.Count != 0) throw;
+        }
+    }
+
     public async Task<IReadOnlyCollection<CrmDeletedRecord>> GetDeletedRecordsAsync(
         string module,
         DateTimeOffset? deletedSince = null,
@@ -654,8 +668,8 @@ public sealed partial class ZohoCrmAdapter(
     }
 
     private static IReadOnlyCollection<string> NotificationOperations(string module, bool allOperations)
-        => allOperations || module.Equals("Users", StringComparison.OrdinalIgnoreCase)
-            ? [$"{module}.all"]
+        => module.Equals("Users", StringComparison.OrdinalIgnoreCase) ? ["users.all"]
+            : allOperations ? [$"{module}.all"]
             : [$"{module}.create", $"{module}.edit", $"{module}.delete"];
 
     private static JsonObject BuildTaskPayload(

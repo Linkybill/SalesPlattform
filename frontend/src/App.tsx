@@ -4,6 +4,9 @@ import { DashboardLayoutPage } from './DashboardLayoutPage'
 import { ImportPage } from './ImportPage'
 import { ReportsPage } from './ReportsPage'
 import { UsagePage } from './UsagePage'
+import { TeamsPage } from './TeamsPage'
+import { TaskGoalProfilesPage } from './TaskGoalProfilesPage'
+import { MySalesTasksPage } from './MySalesTasksPage'
 import { resolveSalesRoute } from './salesRoutes'
 import { useApplicationContext } from '@hammer2fall/identity-platform-react'
 
@@ -25,7 +28,10 @@ function TenantApp() {
   if (route === 'dashboard-layout') return <DashboardLayoutPage />
   if (route === 'import') return <ImportPage />
   if (route === 'usage') return <UsagePage />
+  if (route === 'teams') return <TeamsPage />
+  if (route === 'task-goal-profiles') return <TaskGoalProfilesPage />
   if (route === 'worklist') return <DashboardPage />
+  if (route === 'my-tasks') return <MySalesTasksPage />
   return <ReportsPage />
 }
 

@@ -102,6 +102,14 @@ public sealed class ZohoWebhookOverviewService(
             return "HTTP 429: Zoho-Anfragelimit erreicht.";
         if (message.Contains("HTTP 401", StringComparison.OrdinalIgnoreCase))
             return "HTTP 401: Zoho-Authentifizierung prüfen.";
+        if (message.Contains("HTTP 403", StringComparison.OrdinalIgnoreCase))
+            return "HTTP 403: Zoho verweigert den Zugriff.";
+        if (message.Contains("HTTP 404", StringComparison.OrdinalIgnoreCase))
+            return "HTTP 404: Zoho-Ressource nicht gefunden.";
+        if (message.Contains("nicht mehr zurück", StringComparison.Ordinal))
+            return "Datensatz nicht verfügbar: Zoho liefert zur gemeldeten ID keinen Datensatz mehr. Löschung oder Zugriffsrechte über den Crawl abgleichen.";
+        if (message.Contains("Deaktivierung des alten Channels nicht eindeutig bestätigt", StringComparison.Ordinal))
+            return "Zoho hat die Deaktivierung des alten Channels nicht bestätigt.";
         return "Hook-Verarbeitung fehlgeschlagen. Details über Ereignis-ID im zugehörigen Joblauf prüfen.";
     }
 }

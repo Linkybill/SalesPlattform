@@ -1,5 +1,48 @@
 # Ziel-Datenmodell der SalesPlattform
 
+## App-eigene Jobdaten
+
+`app_job_schedules` enthält mandantenbezogene Cron-Konfiguration,
+Zeitzone und geplante Laufzeitpunkte. `app_job_runs` speichert
+Läufe und ihren Zustand. `app_job_events` enthält Laufereignisse.
+`app_job_imports` markiert die einmalige Übernahme bisheriger Jobdaten.
+Die Migration `20261126170000_AddApplicationJobs` richtet diese Tabellen
+beim Backend-Start in der Sales-Datenbank ein.
+
+## Branchen und Aufgabenverteilung
+
+`sales_leads.Industry` enthält die übernommene CRM-Branche. Profile speichern
+mehrere Branchenlabels. `sales_task_goal_plans` enthält je Membership ein
+persönliches Ziel oder einen Zeitraum mit Empfängern und kopierten Tagesmengen.
+Bei Änderungen schützt eine Revision vor veralteten Bearbeitungen. Ein
+Deaktivierungszeitpunkt erhält den Eintrag im Verlauf. `sales_task_assignments` hält Benutzer,
+Quellvorgang, Aufgabentyp, Branche, Zieldatensatz und Zuweisungsdatum fest.
+Eindeutige Indizes und ein Tenant-Lock verhindern doppelte Zuweisungen bei
+Parallelität. Ein bestehender offener Auftrag reserviert seinen Zielvorgang.
+
+## Ergänzung Aufgabenzielprofile (26.11.2026)
+
+sales_task_goal_profiles enthält Name, Tageskapazität und Revisionskennung.
+sales_task_goal_profile_items enthält pro festem Aufgabentyp Zeitanteil,
+Planminuten, Priorität und Tagesziel. Beide sind tenantisoliert; der Fremdschlüssel
+nutzt TenantId/ProfileId, ein eindeutiger Index verhindert doppelte Typen pro
+Profil. Revision schützt konkurrierende Änderungen des gesamten Profils.
+Die API prüft die vollständige Typmenge und die täglichen Stückzahlen. Die
+vorhandenen Planungsfelder bleiben aus Kompatibilitätsgründen optional im API-
+Vertrag und erhalten ihre gespeicherten Werte bei reinen Stückzahländerungen.
+Diese Vorlagen sind noch keine Mitarbeiterziele und erzeugen keine Aufgaben.
+
+## Ergänzung Vertriebsteams (26.11.2026)
+
+SalesTeam erhält eine Revision als Nebenläufigkeitsschutz. Die neue typisierte
+Tabelle sales_team_user_members verbindet TeamId mit der stabilen
+Tenant-Membership-ID eines Sales-Benutzers. E-Mail dient nur als zuletzt geprüfter
+Anzeigewert. Eindeutiger Index auf TenantId/TeamId/MembershipId und Fremdschlüssel
+TenantId/TeamId auf sales_teams verhindern tenantfremde Beziehungen. Die vorhandene
+CRM-Owner-Zuordnung sales_team_members bleibt unverändert. Neue Teammitglieder
+werden beim Speichern über das Plattformverzeichnis validiert. Keine Ziel- oder
+Aufgabenverteilung aus dieser Zuordnung; diese Ausbaustufen sind offen.
+
 **Status:** EF-Modell, additive Migration und Zoho-Initialimport umgesetzt; produktiver Lauf steht nach der OAuth-Neuautorisierung aus
 **Quelle:** Pflichtenheft, insbesondere Abschnitte 02, 04, 06, 08–18, sowie
 `02-datenmodell-und-zoho.md` und `06-integrationsarchitektur.md`.

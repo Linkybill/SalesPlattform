@@ -603,6 +603,7 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
                      entry.Entity is not IntegrationSyncRun
                      && entry.Entity is not IntegrationSyncRunItem
                      && entry.Entity is not IntegrationSyncError
+                     && entry.Entity is not IntegrationWebhookEvent
                      && entry.Entity is not IntegrationSyncCursor))
         {
             entry.State = EntityState.Detached;
@@ -705,6 +706,7 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
 
         lead.Name = record.Name;
         lead.CompanyName = record.CompanyName;
+        lead.Industry = record.Industry;
         lead.CustomerId = await FindInternalIdAsync(record, CrmEntityTypes.Customer, record.CustomerExternalId, cancellationToken);
         lead.OwnerId = await FindInternalIdAsync(record, CrmEntityTypes.Owner, record.OwnerExternalId, cancellationToken);
         lead.Email = record.Email;
@@ -1006,6 +1008,8 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
             ? new SalesActivity { Id = Guid.NewGuid(), ActivityType = record.ActivityType, OccurredAt = record.OccurredAt }
             : await db.SalesActivities.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken)
                 ?? throw MissingEntity("Aktivität", link.InternalEntityId);
+        if (record.ActivityType == "task" && link?.WorkItemId != null && record.ModifiedAt < activity.SourceModifiedAt)
+            return;
         if (link is null)
         {
             db.SalesActivities.Add(activity);
@@ -1039,6 +1043,18 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         activity.LastSeenAt = DateTimeOffset.UtcNow;
         activity.SourceDeletedAt = null;
         SetLinkSeen(link, record);
+
+        if (record.ActivityType == "task" && link?.WorkItemId is Guid workItemId && !string.IsNullOrWhiteSpace(record.Result))
+        {
+            var assignment = await db.SalesTaskAssignments.SingleOrDefaultAsync(item => item.WorkItemId == workItemId, cancellationToken);
+            if (assignment is not null)
+            {
+                if (CrmTaskStatus.IsCompleted(record.Result))
+                    assignment.CrmCompletedAt ??= record.ModifiedAt ?? DateTimeOffset.UtcNow;
+                else
+                    assignment.CrmCompletedAt = null;
+            }
+        }
 
         foreach (var relation in record.Relations)
         {

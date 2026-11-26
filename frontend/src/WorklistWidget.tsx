@@ -123,7 +123,7 @@ export function WorklistWidget({ compact = false, selectedTheme, onSelectTheme }
       <div className="card-heading">
         <div>
           <p className="sales-eyebrow">{response?.teamView ? 'TEAM-ARBEITSLISTE' : 'MEINE ARBEITSLISTE'}</p>
-          <h2>{meetingView ? 'Meeting Report' : `${visibleItems.length} offene Vorgänge`}</h2>
+            <h2>{meetingView ? 'Meeting Report' : error ? 'Arbeitsliste nicht verfügbar' : loading && !response ? 'Arbeitsliste wird geladen …' : `${visibleItems.length} offene Vorgänge`}</h2>
         </div>
         <button className="secondary-button" type="button" onClick={() => void loadWorklist(true)} disabled={loading}>
           {loading ? 'Wird aktualisiert …' : 'Aktualisieren'}

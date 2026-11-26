@@ -4,6 +4,12 @@ export async function requestZohoHookRebuild({ authorizedFetch, platformAuthoriz
   authorizedFetch: AuthorizedFetch; platformAuthorizedFetch: AuthorizedFetch
   applicationKey: string; tenantId: string; installationId?: string; signal: AbortSignal; handoffOnly?: boolean
 }): Promise<Response> {
+  if (!handoffOnly) {
+    return authorizedFetch('/api/app-jobs/jobs/crm-subscription-maintenance/runs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: '{}', signal,
+    })
+  }
   let runId: string | undefined
   if (handoffOnly && !installationId) throw new Error('A callback handoff requires an installation')
   if (installationId) {
@@ -21,6 +27,6 @@ export async function requestZohoHookRebuild({ authorizedFetch, platformAuthoriz
   return platformAuthorizedFetch(
     `/api/application-context/${encodeURIComponent(applicationKey)}/jobs/crm-subscription-maintenance/runs?tenantId=${encodeURIComponent(tenantId)}${scope}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(runId ? { runId } : {}), signal,
+      body: JSON.stringify({ runId, placementRecovery: true }), signal,
     })
 }

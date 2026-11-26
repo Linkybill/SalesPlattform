@@ -27,6 +27,11 @@ Projektentscheidungen haben Vorrang. Bei einem Widerspruch die Abweichung in
 
 ## Projektleitplanken
 
+- Die Sales-Jobdefinitionen liegen im App-Backend. Shared-NuGet verwaltet
+  Zeitpläne und Laufdaten in der Sales-Datenbank. Die Jobs-Seite aus der
+  React-Bibliothek nutzt die Sales-API. Hook-Verarbeitung und Hook-Erneuerung
+  haben eigene Jobdefinitionen.
+
 - Die SalesPlattform enthält React-Frontend, ASP.NET-Core-Backend und eine
   tenant-isolierte Plattform-Datenbank. Arbeitsliste, Reports mit Nachweisen,
   CRM-Verbrauch und Zoho-Integration mit Import/Hook-Verarbeitung sind umgesetzt.

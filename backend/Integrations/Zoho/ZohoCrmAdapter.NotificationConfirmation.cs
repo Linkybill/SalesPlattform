@@ -14,7 +14,7 @@ public sealed partial class ZohoCrmAdapter
         {
             var events = GetArray(details, "events").ToArray();
             if (events.Length == 1 && GetString(events[0], "channel_id") == channelId
-                && GetString(events[0], "resource_name") == module
+                && string.Equals(GetString(events[0], "resource_name"), module, StringComparison.OrdinalIgnoreCase)
                 && DateTimeOffset.TryParse(GetString(events[0], "channel_expiry"), CultureInfo.InvariantCulture,
                     DateTimeStyles.RoundtripKind, out var expiry) && expiry > now && expiry <= now.AddDays(7))
                 return new(channelId, expiry.ToUniversalTime());

@@ -1,5 +1,27 @@
 # Rollen, Ansichten und Berechtigungen
 
+## Jobverwaltung
+
+Die gemeinsame Jobs-Seite und die Sales-API `/api/app-jobs` verlangen
+serverseitig bestätigte Administration des aktiven Mandanten. Die Berechtigung
+umfasst Zeitpläne, manuelle Starts, Abbruch und Laufhistorie des Mandanten.
+
+## Aufgabenzielprofile (26.11.2026)
+
+Sales-Zugriff erlaubt das Lesen des festen Typkatalogs und der tenantgebundenen
+Profile. Anlegen und Bearbeiten verlangen dieselbe serverseitig bestätigte
+Mandantenadministration wie Teams. Ein sales-manager-Claim allein genügt nicht.
+Die Oberfläche bietet anderen Benutzern ausschließlich die Übersicht an.
+
+## Teamverwaltung (26.11.2026)
+
+Die Teamübersicht ist mit regulärem Sales-Zugriff lesbar. Anlegen, Umbenennen und
+Ändern der Mitglieder verlangen serverseitig die bestätigte Mandantenadministration.
+Das Mitgliederverzeichnis ist ebenfalls nur dort zugänglich. Teammitgliedschaft
+vergibt keine App-Rollen und erweitert keine Sicht auf CRM-Daten oder Arbeitslisten.
+Auswählbar sind ausschließlich aktive Mitglieder des aktuellen Mandanten mit
+Sales-Zugriff. Weitere fachliche Teamrechte bleiben eine spätere Entscheidung.
+
 ## Nutzergruppen
 
 Das Pflichtenheft unterscheidet fachlich:

@@ -101,5 +101,16 @@ internal static class DiagnosticQueueChecks
         await db.SaveChangesAsync();
         check(await Receive(Payload("valid-channel", "valid-token"), diagnostic: false)
             is { Queued: true, Authenticated: true }, "Verified callbacks must retain normal authenticated queueing.");
+        db.IntegrationSubscriptions.Add(new IntegrationSubscription
+        {
+            ProviderKey = "zoho", ConnectionKey = "default", Module = "Users", ChannelId = "users-channel",
+            EventsJson = "[\"users.all\"]", NotifyUrl = "https://sales.example.test/api/integrations/zoho/webhook",
+            Status = "active", ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+            VerificationTokenHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("valid-token")))
+        });
+        await db.SaveChangesAsync();
+        var userReceipt = await Receive(Payload("users-channel", "valid-token", "users"), diagnostic: false);
+        check(userReceipt.Authenticated && (await db.IntegrationWebhookEvents.SingleAsync(x => x.Id == userReceipt.EventId)).EventType == "Users.edit",
+            "Lowercase Zoho users callbacks must verify against the canonical Users subscription.");
     }
 }

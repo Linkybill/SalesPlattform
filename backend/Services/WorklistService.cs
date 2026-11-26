@@ -1960,7 +1960,7 @@ public sealed class WorklistService(
         DateTimeOffset? lastContact, DateTimeOffset? createdAt, int inactiveDays, DateTimeOffset now)
         => lastContact?.AddDays(inactiveDays) ?? (createdAt < now ? createdAt.Value : now);
 
-    private static bool IsOpenStatus(string? status)
+    internal static bool IsOpenStatus(string? status)
         => !status.IsOneOf("won", "closed", "closed_won", "lost", "closed_lost", "converted", "cancelled", "canceled", "expired", "terminated", "rejected", "completed", "done", "archived");
 
     private static bool IsOpenInvoice(string? status)

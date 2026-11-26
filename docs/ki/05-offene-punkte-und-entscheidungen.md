@@ -1,5 +1,67 @@
 # Offene Punkte, Entscheidungen und Status
 
+## Verteilung nach Branche und Zeitraum
+
+Lead-Branche kommt aus dem CRM. Profile und persönliche Ziele speichern optionale
+Branchenlisten. Leer bedeutet alle Branchen, mehrere Werte werden mit ODER
+verknüpft. Zeitraumziele sind Kopien mit Start und Ende einschließlich in
+Europe/Berlin. Sie haben Vorrang vor persönlichen Zielen. Aktive und geplante
+Zeitraumziele dürfen bearbeitet und deaktiviert werden. Deaktivierte Ziele
+bleiben im Verlauf, gelten bei Überschneidungen und bei neuer Verteilung
+nicht mehr und lassen vorhandene Zuweisungen bestehen. Überlappende wirksame
+Zeiträume werden abgelehnt. „Meine Aufgaben“ zeigt gespeicherte Zuständigkeiten.
+
+## Aufgabenzielprofile (26.11.2026)
+
+Benutzerentscheidung: zuerst Vorlagen erfassen, auflisten und bearbeiten. Feste
+Aufgabentypen: Kaltakquise-Anruf, Lead-Reaktivierungsanruf, Verlängerungsgespräch
+und Wiedervorlage bearbeiten. Keine frei konfigurierbaren Aufgabentypen.
+Nach Benutzerkorrektur erfasst das Profil direkt die Anzahl pro Tag je Typ.
+Die erste Fassung mit Zeitanteilen, Kapazität und berechneten Vorschlägen wird
+durch die direkte Stückzahl ersetzt. Bestehende Tagesmengen bleiben erhalten.
+Lesen mit Sales-Zugriff, Pflege zunächst wie Teams durch Tenant-Admins.
+
+Umgesetzt: Die Anwendung einer Vorlage kopiert Werte in eigenständige Mitarbeiterziele.
+Individuelle Ziele ohne Vorlage und erneutes bewusstes Überschreiben sind möglich.
+Vorlagenänderungen verändern niemals bereits übernommene Mitarbeiterziele.
+Der Sales-Job speichert konkrete Zuweisungen für „Meine Aufgaben“. Die
+Bearbeitung erfolgt in Zoho CRM. Sales importiert den Erledigungsstatus
+verknüpfter CRM-Aufgaben. Eine aufklappbare Teamauswertung mit Aufschlüsselung
+nach Mitglied ist ein eigener fachlicher Ausbauschritt.
+
+## Vertriebsteams erfassen und auflisten (26.11.2026, lokal umgesetzt)
+
+Benutzerauftrag: Teams mit Namen und mehreren bestehenden Sales-Benutzern
+erfassen und auflisten. Ziele je Person und Aufgabenverteilung sind spätere
+Ausbaustufen. Ein Team benötigt einen Namen und mindestens ein Mitglied;
+Personen dürfen mehreren Teams angehören. Die Übersicht zeigt Mitglieder und
+erlaubt der Mandantenadministration das Anlegen und Bearbeiten. Lesen ist mit
+Sales-Zugriff möglich. Keine Änderungen an CRM-Daten oder Reportberechtigungen.
+
+Mitglieder referenzieren die stabile Tenant-Membership-ID der Identity Platform,
+nicht eine frei eingegebene E-Mail oder einen CRM-Besitzer. Beim Speichern wird
+jede Person serverseitig gegen aktive Mandantenmitgliedschaft und Sales-Zugriff
+geprüft. Die vorhandene CRM-Teamzuordnung bleibt erhalten; eine zusätzliche
+typisierte Mitgliedertabelle verbindet SalesTeams mit Plattformbenutzern.
+Konkurrierende Bearbeitungen dürfen keine Mitglieder still überschreiben.
+
+Umgesetzt: `/teams` mit Übersicht, Suche, Erfassung und Bearbeitung;
+`/api/teams` mit serverseitiger Prüfung der Mandantenadministration beim
+Schreiben. `/api/teams/users` nutzt das bestehende authentifizierte
+Tenant-Portal-Mitgliederverzeichnis. Nur aktive Mitglieder mit Sales-Zugriff
+(einschließlich Tenant-Admins bei aktivierter App) sind auswählbar. E-Mail ist
+ein zuletzt geprüfter Anzeigewert; die Zuordnung beruht auf der Membership-ID.
+Entzogener Zugriff wird beim nächsten Bearbeiten ausgewiesen und beim Speichern
+abgewiesen. Keine automatische Rechtevergabe durch Teammitgliedschaft.
+
+Additive Migration `AddSalesTeamUsers`, tenantgebundener Fremdschlüssel und
+eindeutige Mitgliedschaft je Team. Revision schützt Bearbeitungen vor veralteten
+Schreibständen. Bestehende CRM-Teammitgliedschaften werden nicht umgeschrieben.
+20 Prüfungen mit InMemory und echter PostgreSQL-Migration bestanden; nativer
+Browsertest für Erfassung/Liste/Bearbeitung/Suche/Lesesicht bestanden.
+Mit der Hook-Reparatur am 26.11.2026 ab Generation 4 veröffentlicht;
+Ziele und Aufgabenverteilung bleiben offen.
+
 ## Kontrollierte Webhook-Übergabe bei Installationswechsel (04.11.2026, lokal geprüft)
 
 Der Installationswechsel benötigt nach dem zentral bestätigten Eigentümerwechsel

@@ -19,7 +19,16 @@ using SalesPlattform.Backend.Services.Mail;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services
-    .AddIdentityPlatformJobs(builder.Configuration)
+    .AddApplicationJobs<SalesPlattformDbContext>(builder.Configuration)
+    .AddJob<DistributeSalesTasksJob>(new PlatformJobDefinition(
+        Key: "sales-task-distribution",
+        Name: "Vertriebsaufgaben verteilen",
+        Description: "Füllt die Tagesziele mit passenden Aufgaben aus der aktuellen Sales-Arbeitsliste auf.",
+        ScheduleMode: PlatformJobScheduleMode.Fixed,
+        DefaultCronExpression: "*/15 * * * *",
+        AllowManualStart: true,
+        ComponentKey: "backend",
+        ConcurrencyGroup: "crm-synchronization"))
     .AddJob<CrmFullImportJob>(new PlatformJobDefinition(
         Key: "crm-full-import",
         Name: "CRM-Vollimport",
@@ -55,16 +64,27 @@ builder.Services
         // to point to the same Platform job after the service refactor.
         Key: "crm-subscription-maintenance",
         Name: "CRM-Hooks erneuern",
-        Description: "Manueller Start registriert die verfügbaren Zoho-Modul-Hooks mit neuen Channels/Tokens. Geplante Läufe erneuern nur fällige Hooks. Verarbeitet anschließend wartende Ereignisse; der Zeitplan ist konfigurierbar.",
+        Description: "Manueller Start registriert die verfügbaren Zoho-Modul-Hooks mit neuen Channels/Tokens. Geplante Läufe erneuern nur fällige Hooks.",
         ScheduleMode: PlatformJobScheduleMode.Configurable,
         DefaultCronExpression: "0 3 * * *",
         DefaultTimeZoneId: "Europe/Berlin",
         AllowManualStart: true,
         ComponentKey: "backend",
         ConcurrencyGroup: "crm-hook-processing",
-        OnInstallationPlacementChanged: true));
+        OnInstallationPlacementChanged: true))
+    .AddJob<CrmWebhookProcessingJob>(new PlatformJobDefinition(
+        Key: "crm-webhook-processing",
+        Name: "CRM-Hooks verarbeiten",
+        Description: "Importiert wartende Hook-Ereignisse anhand der betroffenen CRM-Datensätze. Der Zeitplan ist je Mandant einstellbar.",
+        ScheduleMode: PlatformJobScheduleMode.Configurable,
+        DefaultCronExpression: "* * * * *",
+        DefaultTimeZoneId: "Europe/Berlin",
+        AllowManualStart: true,
+        ComponentKey: "backend",
+        ConcurrencyGroup: "crm-hook-processing") { EnableByDefault = true });
 if (builder.Services.TryExportInstallationJobCatalog(args, "sales-plattform")) return;
 builder.AddIdentityPlatform();
+builder.Services.AddPlatformTenantDatabase<SalesPlattformDbContext>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddAuthorization(authorization =>
 {
@@ -79,7 +99,6 @@ builder.Services.AddAuthorization(authorization =>
             .RequireAuthenticatedUser());
 });
 
-builder.Services.AddPlatformTenantDatabase<SalesPlattformDbContext>();
 builder.Services.AddScoped<PlatformJobLivenessClient>();
 builder.Services.AddApplicationSettings<SalesPlattformDbContext>(builder.Configuration, options =>
 {
@@ -106,6 +125,10 @@ builder.Services.AddScoped<CrmApiUsageService>();
 builder.Services.AddScoped<CrmDailyUsageService>();
 builder.Services.AddSingleton<ICrmApiUsageCostModel, ZohoCrmApiUsageCostModel>();
 builder.Services.AddScoped<SalesDashboardLayoutService>();
+builder.Services.AddScoped<SalesTeamDirectory>();
+builder.Services.AddScoped<SalesTeamService>();
+builder.Services.AddScoped<TaskGoalProfileService>();
+builder.Services.AddScoped<SalesTaskPlanningService>();
 builder.Services.AddScoped<SalesReportService>();
 builder.Services.AddScoped<SalesSnapshotService>();
 builder.Services.AddOptions<ZohoOptions>()
@@ -148,15 +171,18 @@ builder.Services.AddScoped<CrmHookUpdateServiceRegistry>();
 
 
 var app = builder.Build();
-if (await app.RunInstallationMigrationsAsync<SalesPlattformDbContext>(args)) return;
 
 app.UseIdentityPlatform();
 app.UseCrmApiUsage();
 app.MapIdentityPlatformEndpoints();
+app.MapApplicationJobs<SalesPlattformDbContext>();
 app.MapApplicationSettingsEndpoints();
 app.MapZohoIntegrationEndpoints();
 app.MapCrmApiUsageEndpoints();
 app.MapAnnualTargetEndpoints();
+app.MapSalesTeamEndpoints();
+app.MapTaskGoalProfileEndpoints();
+app.MapSalesTaskPlanningEndpoints();
 
 app.MapGet("/api/reports/dashboard", async (
     ClaimsPrincipal user,

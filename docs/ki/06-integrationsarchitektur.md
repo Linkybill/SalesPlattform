@@ -1,5 +1,49 @@
 # Integrationsarchitektur
 
+## App-eigene Jobsteuerung (26.11.2026)
+
+`crm-webhook-processing` verarbeitet wartende Hook-Ereignisse.
+`crm-subscription-maintenance` registriert und erneuert die Hooks.
+Der Vollimport verwendet eine eigene Jobgruppe, sodass er die
+Hook-Verarbeitung nicht durch seine Laufzeit blockiert. Die Definitionen
+stehen in `backend/Program.cs`. `AddApplicationJobs<SalesPlattformDbContext>`
+stellt den Scheduler und Worker im App-Backend bereit. Die gemeinsame
+Jobs-Oberfläche nutzt `/api/app-jobs`. Ein manueller Hook-Neuaufbau wird
+bei Sales angefordert. Technische Platzierungsübergaben laufen über das
+Installationsprotokoll. Historische Aussagen zum kombinierten Hook-Job
+beschreiben den Stand vor der Trennung.
+
+## Hook-Importprüfung 26.11.2026
+
+Abgleich mit Zoho V8: https://www.zoho.com/crm/developer/docs/api/v8/notifications/enable.html
+und https://www.zoho.com/crm/developer/docs/api/v8/get-users.html.
+Benutzer-Hooks registrieren `users.all`; eingehende `users`-Callbacks werden
+zur kanonischen Users-Subscription zugeordnet. Benutzer-Einzelimporte verwenden
+`/users/{id}` und die Antwortliste `users`;
+normale Module weiterhin ihre API-Namen und `data`. Fehlerbereinigung verwirft
+ungespeicherte CRM-Entitäten, behält aber die geladenen Hook-Ereignisse im
+ChangeTracker, damit spätere Ereignisse ihren Status zuverlässig speichern.
+Für Antonios Mandanten wird die kombinierte Hook-Wartung/Verarbeitung auf alle
+fünf Minuten (weiterhin maximal 100 Ereignisse pro Lauf, höchstens fünf Versuche).
+Bestehende gültige Channels bleiben erhalten; Erneuerung weiterhin 36 Stunden
+vor Ablauf. Der freigegebene Manifest-Default bleibt wegen des gebundenen
+Releasevertrags unverändert. Generierte Subform-/MxN-Hooks bleiben Signale;
+ihre Parent-Daten kommen über den regulären Crawl, kein erfundenes Parent-Mapping.
+Nach nicht bestätigtem DELETE darf ein Channel nur ersetzt werden, wenn ein
+erfolgreicher GET seine Abwesenheit bestätigt; fehlerhafte oder mehrdeutige
+Antworten bleiben blockierend. Bereits bei Zoho entfernte abgelaufene Channels
+verhindern so keine erneute Registrierung mehr.
+453 synthetische Checks bestanden, einschließlich echtem Adapter-HTTP-Pfad mit
+Fake-Transport und Persistenz nach einem vorangehenden Ereignisfehler.
+
+Der Aufgabenabgleich vergleicht die in jsonb gespeicherte ausgehende Projektion
+als typisierten Feldwertsatz, nicht mehr als JSON-Text. PostgreSQL verändert
+Formatierung und Schlüsselreihenfolge; der Textvergleich verursachte in jedem
+Hooklauf unnötige PUTs für unveränderte Aufgaben und konnte damit weitere Hooks
+erzeugen. 45 Task-Payload-/Projektionsprüfungen decken Gleichheit nach Umordnung,
+Änderungen in allen sechs Feldern und ungültige Altwerte ab.
+Quelle: https://www.postgresql.org/docs/17/datatype-json.html.
+
 ## Architekturentscheidung
 
 Das fachliche Domainmodell der SalesPlattform ist unabhängig vom jeweiligen
@@ -382,10 +426,11 @@ mit `ScheduleMode.Configurable`, Cron `0 3 * * *` und Zeitzone `Europe/Berlin`
 registriert: Standard einmal täglich um 03:00 Uhr. Tenant-Admins können
 Aktivierung, Zeitplan und Zeitzone in der zentralen Jobverwaltung ändern;
 manueller Start bleibt erlaubt. Er dispatcht an die registrierten
-Hook-Update-Services. Diese erneuern ihre Subscriptions,
-verarbeiten die wartenden Callback-Ereignisse und führen danach
-die fachliche Nachverarbeitung aus. Es gibt keine separaten Jobs pro Modul,
-keinen E-Mail-Job und keinen vollständigen Crawl als Reaktion auf einen Hook.
+Hook-Update-Services für Subscription-Erneuerung und kontrollierte Übergaben.
+Der Job `CRM-Hooks verarbeiten` (`crm-webhook-processing`) hat einen
+pro Mandant einstellbaren Zeitplan mit minütlicher Vorgabe und verarbeitet die gespeicherten Ereignisse per Einzelabruf
+und fachlicher Nachverarbeitung. Beide Hook-Jobs nutzen dieselbe
+Exklusivgruppe `crm-hook-processing`. Der Vollimport läuft unabhängig.
 
 Das Callback selbst schreibt nur ein verifiziertes Ereignis in
 `integration_webhook_events`; die Verarbeitung lädt ausschließlich die von
@@ -584,8 +629,8 @@ Die Initialimport-Implementierung besteht aus:
 6. dem Import der Related-Lists für E-Mails und Deal-Stage-Historie,
 7. dem Import von Calls, Tasks und Events/Terminen.
 
-Der Import läuft als zentraler Anwendungsjob der Identity Platform. Das
-Frontend erhält Status und Fehler über die gemeinsame Jobseite; Modul- und
+Der Import läuft als App-eigener Job im Sales-Backend. Die gemeinsame
+Jobs-Seite liest Status und Fehler über die Sales-API. Modul- und
 Datensatzdetails stammen aus der tenantisolierten Sales-Datenbank.
 
 Die Zoho-Anbindung ist damit die erste Implementierung eines allgemeinen

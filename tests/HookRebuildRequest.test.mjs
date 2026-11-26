@@ -26,33 +26,32 @@ function setup(options = {}) {
     tenantId: 'tenant-1', signal: controller.signal, installationId } }
 }
 
-test('installation hook rebuild stages locally before sending only an opaque scoped run ID to central scheduling', async () => {
+test('installation hook rebuild is sent directly to the Sales jobs API', async () => {
   const { calls, input } = setup()
-  assert.equal((await requestZohoHookRebuild(input)).status, 202)
-  assert.deepEqual(calls.map(call => call.target), ['local', 'central'])
-  assert.equal(calls[0].method, 'PUT'); assert.ok(calls[0].path.endsWith('/' + runId))
-  assert.deepEqual(calls[0].body, { parameters: null })
-  assert.deepEqual(calls[1].body, { runId })
-  assert.match(calls[1].path, new RegExp(`tenantId=tenant-1&installationId=${installationId}$`))
-  assert.equal(calls[1].signal, input.signal)
+  assert.equal((await requestZohoHookRebuild(input)).status, 200)
+  assert.deepEqual(calls.map(call => call.target), ['local'])
+  assert.equal(calls[0].method, 'POST')
+  assert.equal(calls[0].path, '/api/app-jobs/jobs/crm-subscription-maintenance/runs')
+  assert.deepEqual(calls[0].body, {})
+  assert.equal(calls[0].signal, input.signal)
 })
 
 test('failed preparation or cancellation never starts central work or retries via the legacy route', async () => {
   for (const status of [403, 409, 503]) {
     const { calls, input } = setup({ status })
-    assert.equal((await requestZohoHookRebuild(input)).status, status)
+    assert.equal((await requestZohoHookRebuild({ ...input, handoffOnly: true })).status, status)
     assert.deepEqual(calls.map(call => call.target), ['local'])
   }
   const aborted = setup({ abort: true })
-  await assert.rejects(requestZohoHookRebuild(aborted.input), { name: 'AbortError' })
+  await assert.rejects(requestZohoHookRebuild({ ...aborted.input, handoffOnly: true }), { name: 'AbortError' })
   assert.equal(aborted.calls.length, 1)
 })
 
-test('legacy hook rebuild still schedules once without local installation storage', async () => {
+test('the public Sales instance uses the same app jobs API', async () => {
   const { calls, input } = setup()
   input.installationId = undefined
-  assert.equal((await requestZohoHookRebuild(input)).status, 202)
-  assert.deepEqual(calls.map(call => call.target), ['central'])
+  assert.equal((await requestZohoHookRebuild(input)).status, 200)
+  assert.deepEqual(calls.map(call => call.target), ['local'])
   assert.deepEqual(calls[0].body, {})
   assert.ok(!calls[0].path.includes('installationId'))
 })
@@ -61,7 +60,7 @@ test('handoff continuation is staged only locally and cannot authorize an invent
   const { calls, input } = setup()
   assert.equal((await requestZohoHookRebuild({ ...input, handoffOnly: true })).status, 202)
   assert.deepEqual(calls[0].body, { parameters: { operation: 'resume-installation-handoff' } })
-  assert.deepEqual(calls[1].body, { runId })
+  assert.deepEqual(calls[1].body, { runId, placementRecovery: true })
   assert.ok(!JSON.stringify(calls[1].body).includes('transition'))
   const legacy = setup()
   await assert.rejects(requestZohoHookRebuild({ ...legacy.input, installationId: undefined, handoffOnly: true }), /requires an installation/)

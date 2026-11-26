@@ -34,8 +34,18 @@ public sealed class SalesTeam : SalesEntity
     public required string Key { get; set; }
     public required string Name { get; set; }
     public bool IsActive { get; set; } = true;
+    public Guid Revision { get; set; }
 
     public ICollection<SalesTeamMember> Members { get; set; } = [];
+    public ICollection<SalesTeamUserMember> UserMembers { get; set; } = [];
+}
+
+public sealed class SalesTeamUserMember : SalesEntity
+{
+    public Guid TeamId { get; set; }
+    public Guid MembershipId { get; set; }
+    public required string Email { get; set; }
+    public SalesTeam? Team { get; set; }
 }
 
 public sealed class SalesTeamMember : SalesEntity
@@ -120,6 +130,7 @@ public sealed class SalesLead : SalesEntity
     public Guid? OwnerId { get; set; }
     public required string Name { get; set; }
     public string? CompanyName { get; set; }
+    public string? Industry { get; set; }
     public string? Email { get; set; }
     public string? NormalizedEmail { get; set; }
     public string? Phone { get; set; }
