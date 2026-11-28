@@ -1,0 +1,142 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sales-ollama-gateway
+  namespace: app-sales-plattform
+data:
+  nginx.conf: |
+    worker_processes 1;
+    pid /tmp/nginx.pid;
+    error_log stderr warn;
+    events { worker_connections 128; }
+    http {
+      access_log off;
+      client_max_body_size 256k;
+      client_body_temp_path /tmp/client;
+      proxy_temp_path /tmp/proxy;
+      fastcgi_temp_path /tmp/fastcgi;
+      uwsgi_temp_path /tmp/uwsgi;
+      scgi_temp_path /tmp/scgi;
+      upstream local_ollama { server unix:/run/sales-ollama/ollama.sock; }
+      server {
+        listen 11434;
+        location = /v1/chat/completions {
+          include /etc/ollama-credential/bearer.conf;
+          limit_except POST { deny all; }
+          proxy_pass http://local_ollama;
+          proxy_http_version 1.1;
+          proxy_set_header Connection "";
+          proxy_set_header Host 127.0.0.1:11434;
+          proxy_set_header Authorization "";
+          proxy_read_timeout 125s;
+          proxy_buffering off;
+        }
+        location / { return 404; }
+      }
+    }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sales-ollama-backend-only
+  namespace: app-sales-plattform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: sales-ollama-gateway
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              identity-platform.io/app-key: sales-plattform
+              identity-platform.io/component-key: backend
+      ports:
+        - protocol: TCP
+          port: 11434
+  egress: []
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sales-ollama-gateway
+  namespace: app-sales-plattform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sales-ollama-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sales-ollama-gateway
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: docker.io/library/nginx@sha256:0616b208d25086f7a903e993626c56193787307fec4423bf7d3ce77194d2b1c5
+          command: [nginx, -c, /etc/ollama-gateway/nginx.conf, -g, "daemon off;"]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            runAsGroup: 101
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: 11434
+          readinessProbe:
+            tcpSocket:
+              port: http
+          resources:
+            requests:
+              cpu: 20m
+              memory: 16Mi
+            limits:
+              cpu: 250m
+              memory: 64Mi
+          volumeMounts:
+            - name: configuration
+              mountPath: /etc/ollama-gateway
+              readOnly: true
+            - name: ollama-socket
+              mountPath: /run/sales-ollama
+              readOnly: true
+            - name: credential
+              mountPath: /etc/ollama-credential
+              readOnly: true
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: configuration
+          configMap:
+            name: sales-ollama-gateway
+        - name: ollama-socket
+          hostPath:
+            path: /var/lib/rancher/k3s/sales-ollama
+            type: Directory
+        - name: credential
+          secret:
+            secretName: sales-ollama-gateway-credential
+        - name: temporary
+          emptyDir:
+            sizeLimit: 32Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sales-ollama
+  namespace: app-sales-plattform
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: sales-ollama-gateway
+  ports:
+    - name: http
+      port: 11434
+      targetPort: http

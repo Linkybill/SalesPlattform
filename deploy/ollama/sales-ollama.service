@@ -1,0 +1,12 @@
+[Unit]
+Description=Forward the Sales Ollama socket to the host loopback API
+Requires=ollama.service
+After=ollama.service
+
+[Service]
+DynamicUser=yes
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd --exit-idle-time=60s 127.0.0.1:11434
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict

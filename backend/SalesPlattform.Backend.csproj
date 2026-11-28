@@ -12,18 +12,24 @@
     <PackageReference Include="IdentityPlatform.Shared" Version="$(IdentityPlatformSharedVersion)" />
     <PackageReference Include="MailKit" Version="4.17.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.28.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.4.0" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <None Update="manifest.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <!-- This pinned SDK targets .NET Framework; the exercised SDK paths are covered
          by ZohoTaskPayload/ZohoWebhook checks. Scope the known fallback warning
          to this package so all other warnings still fail CI. -->
     <PackageReference Include="ZOHOCRMSDK-8.0" Version="4.0.0" NoWarn="NU1701" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SalesStrategy.Checks" />
   </ItemGroup>
 
 </Project>

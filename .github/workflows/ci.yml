@@ -71,6 +71,11 @@ jobs:
           dotnet restore tests/Reports/Reports.csproj --configfile backend/NuGet.Config
           dotnet build tests/Reports/Reports.csproj -c Release --no-restore --warnaserror
           dotnet run --project tests/Reports/Reports.csproj -c Release --no-build --no-restore
+      - name: Sales Strategy MCP and Agent Framework checks
+        run: |
+          dotnet restore tests/SalesStrategy/SalesStrategy.Checks.csproj --configfile backend/NuGet.Config
+          dotnet build tests/SalesStrategy/SalesStrategy.Checks.csproj -c Release --no-restore --warnaserror
+          dotnet run --project tests/SalesStrategy/SalesStrategy.Checks.csproj -c Release --no-build --no-restore
       - name: Frontend typecheck and production build
         working-directory: frontend
         run: npm ci --no-audit --no-fund && npm run lint && npm run build

@@ -1,5 +1,18 @@
 # Sales: Deployment- und Betriebsstand
 
+## Deploymentbedarf zur Übergabe (28.11.2026)
+
+„0 / Ausstehend“ in der Plattform-Runtime-Übersicht ist durch die bisherige
+Namespace-Begrenzung der Plattform-Inventur erklärbar. Die lokale Korrektur
+in IdentityPlattform braucht einen Plattform-API-Rollout; ein erneutes Sales-
+oder Board-Automation-Deployment ist dafür nicht erforderlich. Der aktuelle
+Live-Zustand wurde in dieser Übergabe nicht erneut geprüft.
+
+Die separaten lokalen Sales-Änderungen an Vertriebschat, MCP und Aufgabenplanung
+brauchen einen eigenen Rollout nach der Plattform, da die Namenssuche deren
+neuen Mandantenmitglieder-Endpunkt verwendet. Commit/Push sind keine
+Deploymentbestätigung. In dieser Übergabe wurde kein Deployment ausgeführt.
+
 ## App-eigene Jobs online bestätigt (26.11.2026)
 
 Plattform-Revision **128** und Sales **Generation 14** wurden ausgerollt.

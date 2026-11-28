@@ -1,5 +1,91 @@
 # Integrationsarchitektur
 
+## Vertriebsassistent und MCP
+
+Sales hostet einen zustandslosen MCP-Endpunkt unter `/api/strategy/mcp`.
+Externe Clients verbinden sich über die mandantenbezogene Sales-URL mit
+einem gültigen Sales-Bearer-Zugang. Die Prüfung verwendet den aktiven
+Mandanten und die Sales-Rollen. Die drei Analysewerkzeuge heißen
+`sales_call_priorities`, `sales_renewal_risks` und `sales_explain_priority`.
+Sie verwenden die sichtbare Arbeitsliste und eigene Zuweisungen. Die
+Vertragsdaten werden ausschließlich für bereits sichtbare Vorgänge ergänzt.
+Die Liste liefert die Auswertungszeit, Gründe und verfügbare CRM-Links.
+Verlängerungsrisiken sind regelbasierte Hinweise.
+
+Der Microsoft Agent Framework-Agent in Sales bindet dieselben Werkzeuge
+direkt im App-Prozess ein. Das Modell wird über `IChatClient` angebunden.
+Der Startadapter unterstützt die offizielle OpenAI-API sowie einen
+OpenAI-kompatiblen Chat-Completions-Endpunkt mit Tool-Aufrufen. Dessen
+vertrauenswürdige HTTPS-Adresse wird serverseitig als
+`SalesAi__CompatibleEndpoint` gesetzt. Ein Adapter für einen anderen
+nativen Anbieter kann später `ISalesChatModelFactory` implementieren.
+
+Für den Anbieter **Ollama (lokal)** verbindet sich ausschließlich das
+Sales-Backend mit dem internen Dienst `sales-ollama`. Auf `ax42-1` leitet
+das Gateway freigegebene Chat-Completions über den UNIX-Socket des Hosts
+an den Loopback-Dienst weiter. Der ClusterIP-Dienst verlangt einen
+Sales-spezifischen Bearer-Schlüssel. Der Schlüssel liegt als Betreiber-Secret
+im Plattform-Scope `platformApp` und im Gateway-Secret in Kubernetes.
+Eine NetworkPolicy ergänzt die Zugriffskontrolle. Die Ressourcen stehen
+unter `deploy/ollama/`. Der Betreiber kann `SalesAi__OllamaEndpoint`
+und `SalesAi__OllamaModel` setzen. Der Standard ist
+`qwen3.6:35b-a3b-q4_K_M`. Im Tenant-Portal wählt der Mandant außerdem
+zwischen `gemma4:26b` und `gpt-oss:20b`. Aufmaß hat auf `ax42-2`
+einen separaten Ollama-Dienst.
+
+Unter **Mandanteneinstellungen → Vertriebsassistent** werden Aktivierung,
+Anbieter und Modell-ID gesetzt. Betreiber hinterlegen die getrennten
+Anbieterschlüssel in der geschützten Backend-Konfiguration als
+`SalesAi__OpenAiKey` und `SalesAi__CompatibleKey`. Abrechnung und
+Schlüsselpflicht gelten für diese externen Anbieter. Die lokale Ollama-
+Variante sendet Modellanfragen an die konfigurierte interne Infrastruktur.
+Im Mandantenportal erscheint unter **SalesPlattform → AppSettings →
+Vertriebsassistent** das standardmäßig ausgeschaltete Häkchen
+**KI-Feature aktivieren**. Der Sales-Chat und der MCP-Endpunkt sind nur
+für aktivierte Mandanten verfügbar. OpenAI kann den Betreiberschlüssel
+`sales.ai.openaikey` aus dem Plattform-Vault lesen. Gesendete Fragen,
+der begrenzte Gesprächsverlauf und Tool-Ergebnisse erreichen den
+gewählten Anbieter.
+
+Einfache Fragen nach dem nächsten Anruf beantwortet der Chat direkt aus der
+sichtbaren Anrufpriorisierung. Bei modellgestützten Analysen erhält das Modell
+pro Tool-Aufruf standardmäßig drei und höchstens fünf Anruf- oder
+Verlängerungssignale.
+
+Der Browser verwendet SignalR unter `/api/strategy/hub`. Der App-Router
+unterstützt den Zugriff per Long Polling. Einzelne Polls laufen höchstens
+15 Sekunden, während der Hub eine Ollama-Antwort bis zu drei Minuten
+verarbeitet. Modellstatus, tatsächlich aufgerufene Sales-Werkzeuge und
+öffentliche Antwortfragmente gehen nur an den anfragenden Client.
+Der Chat blendet interne Reasoning-Inhalte aus. Bei Abbruch beendet
+der Browser die Verbindung und das Backend bricht die Modellanfrage ab.
+Der bisherige HTTP-Endpunkt bleibt für bestehende API-Aufrufer erhalten.
+
+Die MCP-Prompts `sales_tasks`, `sales_assignment` und `sales_daily_plan`
+beschreiben dieselben Fachabläufe wie die Chat-Skills. Der Chat kann eigene
+Aufgaben abfragen. Mandantenadministratoren können zusätzlich Teams und
+aktive Benutzer suchen, fremde und unzugewiesene Aufgaben abfragen,
+Aufgaben zuweisen und ein Tagesprofil für heute vorbereiten. Die
+Namenssuche `sales_find_users` verwendet die registrierten Vor- und
+Nachnamen im Identitätsverzeichnis. `sales_list_user_tasks` löst eine
+Person per Name oder Mitgliedschafts-ID auf und listet ihre Aufgaben.
+Bei mehreren Treffern liefert es die Personen zur Auswahl.
+`sales_list_tasks` mit `onlyUnassigned` liefert verteilbare Aufgaben ohne
+Zuweisung. IDs bleiben für die Kombination der Werkzeuge intern.
+Die Zuweisung ändert die Sales-Zuständigkeit. CRM bleibt für Bearbeitung
+und Erledigungsstatus führend. Das Tagesprofil gilt für alle bei der
+Erfassung berechtigten Sales-Benutzer und nutzt die vorhandene
+Zeitraumplanung samt Branchenfiltern und Stückzahlen.
+
+Der Sales-Chat liefert Änderungsvorschläge für eine ausdrückliche
+Bestätigung durch den Benutzer. Der Agent erhält das Bestätigungs-Token
+und das Ausführungswerkzeug nicht. Externe MCP-Clients verwenden dafür
+`sales_apply_change` nach Zustimmung zu genau diesem Vorschlag.
+Vorschläge sind zehn Minuten gültig und an Benutzer und Mandant gebunden.
+Bei der Bestätigung werden die Berechtigung und der fachliche Zustand
+erneut geprüft. Der lokale Test `tests/SalesStrategy/SalesStrategy.Checks.csproj`
+verwendet ein synthetisches Modell und einen echten MCP-Client.
+
 ## App-eigene Jobsteuerung (26.11.2026)
 
 `crm-webhook-processing` verarbeitet wartende Hook-Ereignisse.
@@ -43,6 +129,12 @@ Hooklauf unnötige PUTs für unveränderte Aufgaben und konnte damit weitere Hoo
 erzeugen. 45 Task-Payload-/Projektionsprüfungen decken Gleichheit nach Umordnung,
 Änderungen in allen sechs Feldern und ungültige Altwerte ab.
 Quelle: https://www.postgresql.org/docs/17/datatype-json.html.
+
+Die CRM-Fälligkeit wird nur beim Anlegen eines Tasks gesetzt. Spätere
+Fälligkeiten und Wiedervorlagen sind lokale Sales-Daten. Ein gespeichertes
+`DueDate` aus älteren Projektionen wird beim Abgleich ignoriert.
+Beim Zurückstellen behält der Sales-Vorgang seine ID und damit Zuweisung
+und vorhandenen CRM-Link. Die Verschiebung erzeugt kein neues CRM-Task.
 
 ## Architekturentscheidung
 
@@ -308,6 +400,11 @@ Lokale CRM-Stammdaten werden bei einem Quell-Delete historisch behalten, aber
 inaktiv markiert. Offene Arbeitsvorgänge, die auf einen gelöschten Lead,
 Kunden, Deal oder Termin zeigen, werden mit dem Grund
 `target-deleted-in-crm` geschlossen und nicht automatisch ohne Ziel ersetzt.
+Bei Leads schließt der Import alle dazugehörigen aktiven Sales-Aufgaben
+direkt beim Quellabgleich, auch ohne Regelcode und bei geplanter oder
+aufgeschobener Bearbeitung. Vorhandene Zuweisungsdaten bleiben als Historie
+gespeichert. Die CRM-Spiegelung überspringt zusätzlich Aufgaben zu inaktiven
+oder gelöschten Leads.
 Eine gelöschte CRM-Task ist ein anderer Fall: Der verknüpfte lokale
 Arbeitsvorgang wird geschlossen und als neue Instanz derselben
 `WorkItemChainId` angelegt. Die neue Instanz wird über den Zoho-Adapter wieder

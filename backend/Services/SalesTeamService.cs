@@ -27,6 +27,13 @@ public sealed class SalesTeamService(PlatformTenantDbContextFactory<SalesPlattfo
         return await directory.GetAsync(user, ct);
     }
 
+    internal async Task<SalesTeamUser[]> FindUsersByNameAsync(ClaimsPrincipal user, string? firstName, string? lastName,
+        CancellationToken ct)
+    {
+        if (!await access.IsCurrentTenantAdminAsync(user, ct)) throw new UnauthorizedAccessException();
+        return await directory.FindByNameAsync(user, firstName, lastName, ct);
+    }
+
     public async Task<SalesTeamDto> SaveAsync(Guid? id, SaveSalesTeamRequest request, ClaimsPrincipal user, CancellationToken ct)
     {
         var users = await UsersAsync(user, ct);

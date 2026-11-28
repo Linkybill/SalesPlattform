@@ -651,8 +651,7 @@ public sealed partial class ZohoCrmAdapter(
 
         var payload = new JsonObject
         {
-            // Status and priority are deliberately omitted on updates. A user
-            // may have completed or reprioritized the CRM task since creation.
+            // Status, priority and due date are only initialized at creation.
             ["data"] = new JsonArray(BuildTaskPayload(request, includeWorkflowDefaults: false))
         };
         using var content = new StringContent(
@@ -684,9 +683,9 @@ public sealed partial class ZohoCrmAdapter(
         {
             task["Status"] = "Not Started";
             task["Priority"] = "High";
+            if (request.DueAt.HasValue)
+                task["Due_Date"] = request.DueAt.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         }
-        if (request.DueAt.HasValue)
-            task["Due_Date"] = request.DueAt.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         if (!string.IsNullOrWhiteSpace(request.Description))
             task["Description"] = request.Description;
         if (!string.IsNullOrWhiteSpace(request.OwnerExternalId))

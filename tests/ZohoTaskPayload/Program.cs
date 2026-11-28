@@ -24,13 +24,16 @@ var cases = new (string Type, string Module)[]
 };
 var checkedCases = 0;
 var matches = typeof(SalesPlattform.Backend.Services.CrmTaskMirrorService).GetMethod("TaskProjectionMatches", BindingFlags.NonPublic | BindingFlags.Static)!;
-var projection = new SalesPlattform.Backend.Services.CrmTaskProjection("Synthetic", "2026-11-26", "Description", "123", "lead", "456");
+var projection = new SalesPlattform.Backend.Services.CrmTaskProjection("Synthetic", "Description", "123", "lead", "456");
 bool Matches(string stored, SalesPlattform.Backend.Services.CrmTaskProjection current)
     => (bool)matches.Invoke(null, [stored, current])!;
 const string jsonb = """{ "DueDate": "2026-11-26", "Subject": "Synthetic", "Description": "Description", "OwnerExternalId": "123", "TargetEntityType": "lead", "TargetExternalId": "456" }""";
 Check(Matches(jsonb, projection), "jsonb property ordering/spacing must not trigger an outbound CRM update.");
 checkedCases++;
-foreach (var changed in new[] { projection with { Subject = "Changed" }, projection with { DueDate = "2026-11-27" },
+Check(Matches(jsonb.Replace("2026-11-26", "2026-11-27", StringComparison.Ordinal), projection),
+    "Dates stored by older versions must not cause an update after deployment.");
+checkedCases++;
+foreach (var changed in new[] { projection with { Subject = "Changed" },
     projection with { Description = "Changed" }, projection with { OwnerExternalId = "789" },
     projection with { TargetEntityType = "customer" }, projection with { TargetExternalId = "789" } })
 {
@@ -58,15 +61,16 @@ foreach (var externalId in new[] { recordId, $" {module}:{recordId} " })
     Check(wire["Owner"]?["id"]?.GetValue<string>() == ownerId, "Owner ID must stay normalized.");
     Check(wire["Subject"]?.GetValue<string>() == request.Subject, "Subject changed.");
     Check(wire["Description"]?.GetValue<string>() == request.Description, "Description changed.");
-    Check(wire["Due_Date"]?.GetValue<string>() == "2026-09-20", "Due date changed.");
     if (create)
     {
+        Check(wire["Due_Date"]?.GetValue<string>() == "2026-09-20", "Creation should contain an initial due date.");
         Check(wire["Status"]?.GetValue<string>() == "Not Started", "Create status default changed.");
         Check(wire["Priority"]?.GetValue<string>() == "High", "Create priority default changed.");
     }
     else
     {
-        Check(!wire.ContainsKey("Status") && !wire.ContainsKey("Priority"), "Updates must preserve CRM status and priority.");
+        Check(!wire.ContainsKey("Due_Date") && !wire.ContainsKey("Status") && !wire.ContainsKey("Priority"),
+            "Updates must never overwrite CRM due date, status or priority.");
     }
     checkedCases++;
 }

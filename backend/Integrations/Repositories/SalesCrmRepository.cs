@@ -286,6 +286,7 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
             case CrmEntityTypes.Lead:
                 var lead = await db.SalesLeads.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
                 if (lead is not null) { lead.IsActive = false; lead.SourceDeletedAt = record.DeletedAt; }
+                await ResolveDeletedLeadTasksAsync(link.InternalEntityId, record.DeletedAt, cancellationToken);
                 break;
             case CrmEntityTypes.Product:
                 var product = await db.SalesProducts.SingleOrDefaultAsync(item => item.Id == link.InternalEntityId, cancellationToken);
@@ -334,6 +335,33 @@ internal sealed class SalesCrmRepository(SalesPlattformDbContext db) : ISalesCrm
         }
 
         return true;
+    }
+
+    private async Task ResolveDeletedLeadTasksAsync(Guid leadId, DateTimeOffset deletedAt, CancellationToken cancellationToken)
+    {
+        var tasks = await db.SalesWorkItems
+            .Where(item => item.Status == "open" || item.Status == "scheduled" || item.Status == "snoozed")
+            .Where(item => item.Relations.Any(relation => relation.TargetType == CrmEntityTypes.Lead && relation.TargetId == leadId))
+            .ToArrayAsync(cancellationToken);
+        foreach (var task in tasks)
+        {
+            task.Status = "resolved";
+            task.ClosureReason = "target-deleted-in-crm";
+            task.CompletedAt = null;
+            task.CompletedBy = null;
+            task.AvailableFrom = null;
+            task.SnoozedUntil = null;
+            task.UpdatedAt = deletedAt;
+            db.SalesWorkItemEvents.Add(new SalesWorkItemEvent
+            {
+                TenantId = task.TenantId,
+                WorkItemId = task.Id,
+                EventType = "resolved",
+                DetailsJson = """{"reason":"target-deleted-in-crm","targetDeleted":true}""",
+                ActorSubject = "system:crm-import",
+                OccurredAt = deletedAt
+            });
+        }
     }
 
     public async Task RebuildContactMarkersAsync(

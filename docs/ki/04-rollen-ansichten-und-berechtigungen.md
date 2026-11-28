@@ -1,5 +1,17 @@
 # Rollen, Ansichten und Berechtigungen
 
+## Vertriebschat (27.11.2026, lokal)
+
+Der aktivierte Vertriebsassistent ist auf den Sales-Seiten über den Tab
+„Vertriebschat“ unten rechts erreichbar. An seiner Stelle öffnet sich das
+angedockte Chatfenster. Es bleibt beim Scrollen verankert und passt sich
+kleinen Bildschirmen an. Minimieren und
+interne Seitenwechsel erhalten den Gesprächszustand im laufenden Appbaum;
+Mandanten-/Benutzerwechsel setzen ihn zurück. Die bisherige Assistentenroute
+zeigt weiterhin die Vertriebsauswertung und öffnet das Chatfenster.
+Frontend-Produktionsbuild bestanden; noch kein Rollout oder visueller Browsercheck.
+
+
 ## Jobverwaltung
 
 Die gemeinsame Jobs-Seite und die Sales-API `/api/app-jobs` verlangen

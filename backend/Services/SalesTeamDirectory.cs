@@ -3,14 +3,23 @@ using System.Net.Http.Headers;
 using System.Security.Claims;
 using IdentityPlatform.Shared.ApplicationSettings;
 using IdentityPlatform.Shared.Authentication;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 
 namespace SalesPlattform.Backend.Services;
 
-public sealed record SalesTeamUser(Guid Id, string Email);
+public sealed record SalesTeamUser(Guid Id, string Email)
+{
+    public string? FirstName { get; init; }
+    public string? LastName { get; init; }
+}
 public sealed record TeamDirectoryApplication(string AppKey, bool Enabled);
 public sealed record TeamDirectoryMember(Guid Id, string Email, string Role, string Status,
-    TeamDirectoryApplication[] Applications);
+    TeamDirectoryApplication[] Applications)
+{
+    public string? FirstName { get; init; }
+    public string? LastName { get; init; }
+}
 public sealed class TeamDirectoryUnavailableException : Exception;
 
 public sealed class SalesTeamDirectory(IHttpClientFactory clients, IHttpContextAccessor context,
@@ -47,9 +56,16 @@ public sealed class SalesTeamDirectory(IHttpClientFactory clients, IHttpContextA
         => members.Where(m => m.Id != Guid.Empty && m.Status == "Active"
                 && !string.IsNullOrWhiteSpace(m.Email) && m.Email.Length <= 320
                 && m.Applications.Any(a => a.AppKey == appKey && (a.Enabled || m.Role == "TenantAdmin")))
-            .Select(m => new SalesTeamUser(m.Id, m.Email)).OrderBy(m => m.Email).ToArray();
+            .Select(m => new SalesTeamUser(m.Id, m.Email) { FirstName = m.FirstName, LastName = m.LastName })
+            .OrderBy(m => m.Email).ToArray();
 
-    public async Task<SalesTeamUser[]> GetAsync(ClaimsPrincipal user, CancellationToken ct)
+    public Task<SalesTeamUser[]> GetAsync(ClaimsPrincipal user, CancellationToken ct) => ReadAsync(user, "", ct);
+
+    internal Task<SalesTeamUser[]> FindByNameAsync(ClaimsPrincipal user, string? firstName, string? lastName, CancellationToken ct)
+        => ReadAsync(user, QueryHelpers.AddQueryString("/by-name", new Dictionary<string, string?>
+        { ["firstName"] = firstName, ["lastName"] = lastName }), ct);
+
+    private async Task<SalesTeamUser[]> ReadAsync(ClaimsPrincipal user, string suffix, CancellationToken ct)
     {
         if (!Guid.TryParse(user.FindFirstValue("tenant_id"), out var tenantId) || tenantId == Guid.Empty)
             throw new UnauthorizedAccessException();
@@ -57,7 +73,7 @@ public sealed class SalesTeamDirectory(IHttpClientFactory clients, IHttpContextA
         if (string.IsNullOrWhiteSpace(authorization)) throw new UnauthorizedAccessException();
         if (string.IsNullOrWhiteSpace(options.Value.PlatformApiUrl)) throw new TeamDirectoryUnavailableException();
         using var request = new HttpRequestMessage(HttpMethod.Get,
-            $"{options.Value.PlatformApiUrl.TrimEnd('/')}/api/tenant-portal/tenants/{tenantId:D}/members");
+            $"{options.Value.PlatformApiUrl.TrimEnd('/')}/api/tenant-portal/tenants/{tenantId:D}/members{suffix}");
         request.Headers.Authorization = AuthenticationHeaderValue.Parse(authorization);
         try
         {

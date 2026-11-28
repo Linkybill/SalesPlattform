@@ -3,6 +3,7 @@ import { tenantApplicationPath } from './identityPlatformConfig'
 
 const applicationRouteBase = tenantApplicationPath.routerBasePath.replace(/\/+$/, '') || '/'
 export const usageRoute = `${applicationRouteBase === '/' ? '' : applicationRouteBase}/usage`
+export const strategyRoute = `${applicationRouteBase === '/' ? '' : applicationRouteBase}/strategy`
 
 export const salesRoutes: readonly UserAuthorisationRoute[] = [
   {
@@ -65,7 +66,7 @@ export const salesRoutes: readonly UserAuthorisationRoute[] = [
   },
 ]
 
-export type SalesRouteId = 'my-tasks' | 'dashboard' | 'worklist' | 'import' | 'usage' | 'dashboard-layout' | 'teams' | 'task-goal-profiles'
+export type SalesRouteId = 'my-tasks' | 'dashboard' | 'worklist' | 'import' | 'usage' | 'dashboard-layout' | 'teams' | 'task-goal-profiles' | 'strategy'
 
 // Keep the default a sibling path so the shell highlights only one entry.
 export function canonicalSalesEntryPath(pathname: string): string {
@@ -78,6 +79,8 @@ export function resolveSalesRoute(pathname: string): SalesRouteId {
   if (!importRoute) return 'my-tasks'
 
   const currentPath = normalizePathname(pathname)
+  const strategyPath = normalizePathname(strategyRoute)
+  if (currentPath === strategyPath) return 'strategy'
   const worklistPath = normalizePathname(salesRoutes.find(route => route.id === 'worklist')!.route)
   if (currentPath === worklistPath || currentPath.startsWith(`${worklistPath}/`)) return 'worklist'
   const profilesPath = normalizePathname(salesRoutes.find(route => route.id === 'task-goal-profiles')!.route)

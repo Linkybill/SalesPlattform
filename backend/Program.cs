@@ -16,6 +16,7 @@ using SalesPlattform.Backend.Authorization;
 using SalesPlattform.Backend.Integrations.Repositories;
 using SalesPlattform.Backend.Integrations.Jobs;
 using SalesPlattform.Backend.Services.Mail;
+using SalesPlattform.Backend.Strategy;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services
@@ -129,6 +130,7 @@ builder.Services.AddScoped<SalesTeamDirectory>();
 builder.Services.AddScoped<SalesTeamService>();
 builder.Services.AddScoped<TaskGoalProfileService>();
 builder.Services.AddScoped<SalesTaskPlanningService>();
+builder.Services.AddSalesStrategy();
 builder.Services.AddScoped<SalesReportService>();
 builder.Services.AddScoped<SalesSnapshotService>();
 builder.Services.AddOptions<ZohoOptions>()
@@ -183,6 +185,7 @@ app.MapAnnualTargetEndpoints();
 app.MapSalesTeamEndpoints();
 app.MapTaskGoalProfileEndpoints();
 app.MapSalesTaskPlanningEndpoints();
+app.MapSalesStrategy();
 
 app.MapGet("/api/reports/dashboard", async (
     ClaimsPrincipal user,

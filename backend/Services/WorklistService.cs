@@ -109,10 +109,14 @@ public sealed class WorklistService(
         }
     }
 
-    public async Task<WorklistResponse> GetAsync(
+    public Task<WorklistResponse> GetAsync(
         ClaimsPrincipal user,
         bool refresh,
         CancellationToken cancellationToken = default)
+        => GetAsync(user, refresh, [], cancellationToken);
+
+    internal async Task<WorklistResponse> GetAsync(
+        ClaimsPrincipal user, bool refresh, Guid[] personalAssignmentIds, CancellationToken cancellationToken)
     {
         await using var session = await dbFactory.OpenAsync(cancellationToken);
         activeContext = session.Context;
@@ -127,9 +131,7 @@ public sealed class WorklistService(
             var query = OpenItemsQuery();
             if (!teamView)
             {
-                query = query.Where(item => ownerId.HasValue
-                    ? item.OwnerId == ownerId || item.OwnerId == null
-                    : item.OwnerId == null);
+                query = query.Where(item => item.OwnerId == null || item.OwnerId == ownerId || personalAssignmentIds.Contains(item.Id));
             }
 
             var items = await query
@@ -184,58 +186,13 @@ public sealed class WorklistService(
                 .Include(candidate => candidate.Owner)
                 .Include(candidate => candidate.Relations)
                 .SingleOrDefaultAsync(candidate => candidate.Id == workItemId, cancellationToken);
-            if (item is null || !await CanAccessAsync(item, user, cancellationToken))
+            if (item is null || !IsActiveStatus(item.Status) || !await CanAccessAsync(item, user, cancellationToken))
                 return null;
 
             var actor = Actor(user);
             var before = SerializeState(item);
-            var successorId = Guid.NewGuid();
-            var nowChainId = item.WorkItemChainId == Guid.Empty ? item.Id : item.WorkItemChainId;
-            item.Status = WorkItemStatuses.Closed;
-            item.ClosureReason = "deferred";
-            item.CompletedAt = now;
-            item.CompletedBy = actor.Subject;
-            item.AvailableFrom = null;
-            item.SnoozedUntil = null;
-            item.UpdatedAt = now;
-
-            var successor = new SalesWorkItem
-            {
-                Id = successorId,
-                TenantId = item.TenantId,
-                WorkItemType = item.WorkItemType,
-                Status = WorkItemStatuses.Scheduled,
-                Title = item.Title,
-                Reason = item.Reason,
-                OwnerId = item.OwnerId,
-                DueAt = until,
-                AvailableFrom = until,
-                PriorityScore = item.PriorityScore,
-                PriorityCalculatedAt = item.PriorityCalculatedAt,
-                SourceRuleCode = item.SourceRuleCode,
-                SourceRuleRunId = item.SourceRuleRunId,
-                RequiresApproval = item.RequiresApproval,
-                WorkItemChainId = nowChainId,
-                PreviousWorkItemId = item.Id,
-                CreatedAt = now,
-                UpdatedAt = now
-            };
-            foreach (var relation in item.Relations)
-            {
-                successor.Relations.Add(new SalesWorkItemRelation
-                {
-                    Id = Guid.NewGuid(),
-                    TenantId = item.TenantId,
-                    WorkItemId = successorId,
-                    TargetType = relation.TargetType,
-                    TargetId = relation.TargetId,
-                    RelationRole = relation.RelationRole
-                });
-            }
-
-            db.SalesWorkItems.Add(successor);
-            AddEvent(item, "deferred", new { action = "defer", until, successorWorkItemId = successorId }, actor.Subject, now);
-            AddEvent(successor, "scheduled", new { action = "successor-created", predecessorWorkItemId = item.Id, availableFrom = until }, actor.Subject, now);
+            DeferLocally(item, until, now);
+            AddEvent(item, "deferred", new { action = "defer", until }, actor.Subject, now);
             AddAudit(actor, "work-item.deferred", item, before, SerializeState(item), now);
             await db.SaveChangesAsync(cancellationToken);
             return ToDto(item);
@@ -244,6 +201,15 @@ public sealed class WorklistService(
         {
             activeContext = null;
         }
+    }
+
+    internal static void DeferLocally(SalesWorkItem item, DateTimeOffset until, DateTimeOffset now)
+    {
+        item.Status = WorkItemStatuses.Scheduled;
+        item.DueAt = until;
+        item.AvailableFrom = until;
+        item.SnoozedUntil = null;
+        item.UpdatedAt = now;
     }
 
     private IQueryable<SalesWorkItem> OpenItemsQuery()
@@ -574,17 +540,14 @@ public sealed class WorklistService(
                 item.Title = candidate.Title;
                 item.Reason = candidate.Reason;
                 item.OwnerId = candidate.OwnerId;
-                if (item.PreviousWorkItemId is null)
+                if (item.PreviousWorkItemId is null && item.AvailableFrom is null)
                     item.DueAt = candidate.DueAt;
                 item.PriorityScore = CalculatePriority(candidate);
                 item.PriorityCalculatedAt = now;
                 item.SourceRuleRunId = ruleRun.Id;
                 item.RequiresApproval = candidate.RequiresApproval;
 
-                // UpdatedAt drives the CRM task mirror. A rule run also
-                // recalculates priority and records its run id, but those
-                // internal changes must not cause a remote CRM PUT for every
-                // active work item on every incremental/full evaluation.
+                // Internal priority and rule-run bookkeeping do not change the work item's content.
                 if (previousStatus != item.Status
                     || !string.Equals(previousWorkItemType, item.WorkItemType, StringComparison.Ordinal)
                     || !string.Equals(previousTitle, item.Title, StringComparison.Ordinal)

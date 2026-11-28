@@ -1,5 +1,34 @@
 # Offene Punkte, Entscheidungen und Status
 
+## Fälligkeit von Sales-Aufgaben
+
+Zoho erhält die Fälligkeit beim Anlegen der Aufgabe. Danach verwaltet
+Sales das Datum und Wiedervorlagen lokal. Zurückstellen verschiebt den
+bestehenden Arbeitsvorgang. Zuweisung und CRM-Verknüpfung bleiben an derselben
+Vorgangs-ID.
+
+## Aus dem CRM-Bestand entfernte Leads
+
+Das Ausscheiden eines Leads beendet alle aktiven Sales-Aufgaben zu
+diesem Lead, einschließlich aufgeschobener Aufgaben und Zuweisungen.
+Die Vorgangshistorie bleibt erhalten. Weitere Aufgaben entstehen bei
+Bedarf durch die Regeln als neue Vorgänge.
+
+## KI-Funktionen je Sales-Mandant
+
+Der Chat löst Vor- und Nachnamen über das mandantengeprüfte
+Benutzerverzeichnis auf und nutzt die Mitgliedschafts-ID intern für die
+Aufgabenabfrage. Bei eindeutigen Treffern führt er die lesenden Schritte
+selbst aus. Bei gleichnamigen Personen zeigt er eine Auswahl.
+
+Modellanbieter, Modell und Aktivierung werden über die vorhandenen AppSettings im
+Mandantenportal gesetzt. Der Chat verwendet dieselben Fachfunktionen wie Sales-MCP.
+Aufgaben anderer Personen und Änderungen bleiben an die Sales-Mandantenverwaltung
+gebunden. Der Chat zeigt konkrete Änderungsvorschläge zur Bestätigung. Eine
+manuelle Zuweisung verwaltet die Sales-Zuständigkeit, CRM bleibt für die
+Aufgabenbearbeitung führend. Ein Tagesprofil ist ein Zeitraumziel für einen
+Kalendertag in Europe/Berlin.
+
 ## Verteilung nach Branche und Zeitraum
 
 Lead-Branche kommt aus dem CRM. Profile und persönliche Ziele speichern optionale

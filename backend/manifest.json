@@ -47,6 +47,70 @@
   },
   "settings": [
     {
+      "key": "sales.ai.ollamagatewaykey",
+      "name": "Ollama-Gateway-Schlüssel",
+      "description": "Betreiber-Secret für die interne Sales-Verbindung zu Ollama.",
+      "category": "Vertriebsassistent",
+      "type": "string",
+      "secret": true,
+      "scopes": ["platformApp"]
+    },
+    {
+      "key": "sales.ai.openaikey",
+      "name": "OpenAI-API-Schlüssel",
+      "description": "Betreiber-Secret für Sales-Mandanten mit OpenAI als Modellanbieter.",
+      "category": "Vertriebsassistent",
+      "type": "string",
+      "secret": true,
+      "scopes": ["platformApp"]
+    },
+    {
+      "key": "sales.ai.enabled",
+      "name": "KI-Feature aktivieren",
+      "description": "Erlaubt angemeldeten Sales-Benutzern, ausgewählte Vertriebsdaten für eine Antwort an den gewählten Modellanbieter zu senden.",
+      "category": "Vertriebsassistent",
+      "type": "boolean",
+      "defaultValue": false,
+      "scopes": ["tenantApp"]
+    },
+    {
+      "key": "sales.ai.provider",
+      "name": "Modellanbieter",
+      "category": "Vertriebsassistent",
+      "type": "enum",
+      "defaultValue": "ollama",
+      "scopes": ["tenantApp"],
+      "options": [
+        { "value": "ollama", "label": "Ollama (lokal)" },
+        { "value": "openai", "label": "OpenAI" },
+        { "value": "openai-compatible", "label": "OpenAI-kompatibler Server" }
+      ]
+    },
+    {
+      "key": "sales.ai.ollamamodel",
+      "name": "Ollama-Modell",
+      "description": "Wählt das lokal gehostete Modell für den Vertriebsassistenten.",
+      "category": "Vertriebsassistent",
+      "type": "enum",
+      "defaultValue": "qwen3.6:35b-a3b-q4_K_M",
+      "scopes": ["tenantApp"],
+      "dependsOn": { "scope": "tenantApp", "settingKey": "sales.ai.provider", "value": "ollama" },
+      "options": [
+        { "value": "qwen3.6:35b-a3b-q4_K_M", "label": "Qwen 3.6 35B" },
+        { "value": "gemma4:26b", "label": "Gemma 4 26B" },
+        { "value": "gpt-oss:20b", "label": "GPT-OSS 20B" }
+      ]
+    },
+    {
+      "key": "sales.ai.model",
+      "name": "Modell-ID für externe Anbieter",
+      "description": "Die Modell-ID für OpenAI oder einen kompatiblen externen Anbieter. Das Modell muss Funktionsaufrufe unterstützen.",
+      "category": "Vertriebsassistent",
+      "type": "string",
+      "scopes": ["tenantApp"],
+      "validation": { "minLength": 1, "maxLength": 160 }
+    },
+    {
       "key": "crm.integration",
       "name": "CRM-Integration",
       "description": "Wähle, welches CRM dieser Mandant für die SalesPlattform verwenden möchte. Weitere Anbieter können später ergänzt werden.",

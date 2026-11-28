@@ -1,5 +1,50 @@
 # Projektkontext
 
+## Übergabe und Deploymentbedarf (28.11.2026)
+
+Die Plattform-Runtime-Übersicht zeigt Sales und Board Automation wegen einer
+zu eng auf `identity-platform` begrenzten Pod-Abfrage als „0 / Ausstehend“.
+Der Fix liegt in IdentityPlattform im `KubernetesRuntimeInventoryProvider`;
+der Plattform-API-Rollout steht noch aus. Für diesen Anzeigefehler ist kein
+Sales-Rollout nötig. Plattform separat aus `C:\git\IdentityPlattform` mit
+`./deploy-all.ps1 -Target ax42-1 -Environment dev -PlatformOnly` aktualisieren.
+
+Die vorhandenen Sales-Änderungen am Vertriebschat, MCP und der Aufgabenplanung
+sind davon unabhängig und benötigen einen eigenen Sales-Rollout. Die
+Namenssuche im Chat setzt den neuen Plattform-Endpunkt für Mandantenmitglieder
+voraus: zuerst Plattform, danach Sales ausrollen. Commit und Push belegen
+keinen Online-Stand; in dieser Übergabe wurde kein Deployment ausgeführt.
+Generation 14 bleibt der zuletzt hier dokumentierte bestätigte Sales-Rollout.
+
+## Vertriebschat (27.11.2026, lokal)
+
+Der aktivierte Vertriebsassistent ist auf den Sales-Seiten über den Tab
+„Vertriebschat“ unten rechts erreichbar. An seiner Stelle öffnet sich das
+angedockte Chatfenster. Es bleibt beim Scrollen verankert und passt sich
+kleinen Bildschirmen an. Minimieren und
+interne Seitenwechsel erhalten den Gesprächszustand im laufenden Appbaum;
+Mandanten-/Benutzerwechsel setzen ihn zurück. Die bisherige Assistentenroute
+zeigt weiterhin die Vertriebsauswertung und öffnet das Chatfenster.
+Frontend-Produktionsbuild bestanden; noch kein Rollout oder visueller Browsercheck.
+
+
+## Vertriebsassistent mit MCP und Microsoft Agent Framework
+
+Die Portal-AppSettings für Sales steuern Anbieter, Modell und Aktivierung
+pro Mandant. Das Häkchen **KI-Feature aktivieren** blendet den Sales-Chat
+ein. Der Chat und MCP bieten Skills für Aufgabenabfragen, Zuweisungen
+und Tagesprofile. Änderungen erfordern eine konkrete Bestätigung
+und die bestehenden Mandantenadministratorrechte.
+
+Der lokal implementierte Einstieg **Vertriebsassistent** zeigt
+Anrufprioritäten und dringende Vertragsverlängerungen aus der bestehenden
+Arbeitsliste. Eigene offene Aufgaben stehen bei der Anrufreihenfolge zuerst.
+Die optional aktivierbare KI erklärt Empfehlungen anhand derselben Quellen.
+Modell und Anbieter werden in den Mandanteneinstellungen gepflegt.
+Die API-Schlüssel stellt der Betreiber zentral für das Sales-Backend bereit.
+Technischer Vertrag und MCP-Zugang stehen in
+[Integrationsarchitektur](06-integrationsarchitektur.md).
+
 ## Aktueller Online-Stand (26.11.2026)
 
 Sales Generation 14 läuft auf `ax42-1`. Shared NuGet `0.1.103`

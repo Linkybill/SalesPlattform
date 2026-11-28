@@ -9,8 +9,10 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SalesPlattform.Backend.Data;
 using SalesPlattform.Backend.Integrations;
+using SalesPlattform.Backend.Integrations.Abstractions;
 using SalesPlattform.Backend.Integrations.Repositories;
 using SalesPlattform.Backend.Integrations.Zoho;
+using SalesPlattform.Backend.Services;
 
 internal static class ImportRegressionChecks
 {
@@ -44,6 +46,8 @@ internal static class ImportRegressionChecks
         check((await db.IntegrationWebhookEvents.SingleAsync(x => x.Id == first.Id)).AttemptCount == 1,
             "Failed event retry count must persist.");
         check(!await db.SalesOwners.AnyAsync(), "Failed canonical changes must not leak into the next event.");
+        await CheckDeletedLeadTasksAsync(db, repository, tenant, check);
+        CheckLocalDeferral(check);
 
         var http = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
         http.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([
@@ -97,6 +101,59 @@ internal static class ImportRegressionChecks
             Id = Guid.NewGuid(), ProviderKey = "zoho", ConnectionKey = "default", EventType = "Tasks.edit",
             PayloadJson = "{}", Status = "queued", ReceivedAt = DateTimeOffset.UtcNow
         };
+    }
+
+    private static void CheckLocalDeferral(Action<bool, string> check)
+    {
+        var id = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var item = new SalesWorkItem
+        {
+            Id = id, WorkItemChainId = id, Title = "Synthetic", WorkItemType = "follow-up", Status = "open"
+        };
+        WorklistService.DeferLocally(item, now.AddDays(1), now);
+        WorklistService.DeferLocally(item, now.AddDays(2), now);
+        check(item.Id == id && item.WorkItemChainId == id && item.PreviousWorkItemId is null
+            && item.Status == "scheduled" && item.AvailableFrom == now.AddDays(2) && item.DueAt == now.AddDays(2),
+            "Deferrals move the same Sales occurrence so its CRM link and assignment stay attached.");
+    }
+
+    private static async Task CheckDeletedLeadTasksAsync(SalesPlattformDbContext db, ISalesCrmRepository repository,
+        Guid tenant, Action<bool, string> check)
+    {
+        var leadId = Guid.NewGuid();
+        var otherLead = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        db.SalesLeads.Add(new SalesLead { TenantId = tenant, Id = leadId, Name = "Synthetic", Status = "open" });
+        db.IntegrationEntityLinks.Add(new IntegrationEntityLink
+        {
+            TenantId = tenant, ProviderKey = "zoho", ConnectionKey = "default", EntityType = "lead",
+            ExternalId = "Leads:123", InternalEntityType = "lead", InternalEntityId = leadId
+        });
+        SalesWorkItem Task(string status, Guid id, string type = "lead") => new()
+        {
+            TenantId = tenant, WorkItemType = "follow-up", Status = status, Title = "Synthetic",
+            AvailableFrom = now.AddDays(1), SnoozedUntil = now.AddDays(1),
+            Relations = [new SalesWorkItemRelation { TenantId = tenant, TargetType = type, TargetId = id, RelationRole = "primary" }]
+        };
+        var active = new[] { Task("open", leadId), Task("scheduled", leadId), Task("snoozed", leadId) };
+        var historical = Task("completed", leadId);
+        var unrelated = Task("open", otherLead);
+        var differentEntity = Task("open", leadId, "customer");
+        db.SalesWorkItems.AddRange([.. active, historical, unrelated, differentEntity]);
+        await db.SaveChangesAsync();
+
+        var deletion = new CrmDeletedRecord("zoho", "Leads", "lead", "Leads:123", now);
+        var run = Guid.NewGuid();
+        check(await repository.MarkDeletedAsync(deletion, run, default), "The existing CRM lead is retired.");
+        await db.SaveChangesAsync();
+        check(active.All(task => task.Status == "resolved" && task.ClosureReason == "target-deleted-in-crm"
+            && task.AvailableFrom is null && task.SnoozedUntil is null), "All live lead tasks close, including tasks without a rule.");
+        check(historical.Status == "completed" && unrelated.Status == "open" && differentEntity.Status == "open",
+            "Completed history and other targets are kept.");
+        check(!await repository.MarkDeletedAsync(deletion, run, default)
+            && await db.SalesWorkItemEvents.CountAsync(e => e.EventType == "resolved") == active.Length,
+            "A repeated delete does not generate duplicate closure events.");
     }
 
     private sealed class Factory(HttpMessageHandler handler) : IHttpClientFactory

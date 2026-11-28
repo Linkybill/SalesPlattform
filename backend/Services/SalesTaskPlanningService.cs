@@ -20,9 +20,13 @@ public sealed class SalesTaskPlanConflictException : Exception
     public SalesTaskPlanConflictException(string message) : base(message) { }
 }
 public sealed record AssignedSalesTask(Guid Id, string TaskType, string Title, string? Industry, DateOnly AssignedOn,
-    string? CrmUrl, string? CrmTaskUrl, string? CrmStatus, DateTimeOffset? CrmCompletedAt);
+    string? CrmUrl, string? CrmTaskUrl, string? CrmStatus, DateTimeOffset? CrmCompletedAt)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Guid WorkItemId { get; init; }
+}
 
-public sealed class SalesTaskPlanningService(PlatformTenantDbContextFactory<SalesPlattformDbContext> factory,
+public sealed partial class SalesTaskPlanningService(PlatformTenantDbContextFactory<SalesPlattformDbContext> factory,
     SalesTeamDirectory directory, TenantAdminAccessService authorization)
 {
     private static readonly TimeZoneInfo PlanningTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin");
@@ -33,7 +37,7 @@ public sealed class SalesTaskPlanningService(PlatformTenantDbContextFactory<Sale
         "nicht erreichbar", "nicht kontaktieren"
     };
 
-    private static DateOnly LocalDay(DateTimeOffset now) =>
+    internal static DateOnly LocalDay(DateTimeOffset now) =>
         DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, PlanningTimeZone).DateTime);
 
     private async Task<SalesTeamUser[]> RequireAdminAsync(ClaimsPrincipal user, CancellationToken ct)
@@ -191,7 +195,7 @@ public sealed class SalesTaskPlanningService(PlatformTenantDbContextFactory<Sale
             urls.GetValueOrDefault((a.TargetType, a.TargetId)),
             crmTasks.TryGetValue(a.WorkItemId, out var crmTask) && Uri.TryCreate(crmTask.ExternalUrl, UriKind.Absolute, out var uri)
                 && uri.Scheme == Uri.UriSchemeHttps ? crmTask.ExternalUrl : null,
-            crmTask?.Result, a.CrmCompletedAt)).ToArray();
+            crmTask?.Result, a.CrmCompletedAt) { WorkItemId = a.WorkItemId }).ToArray();
     }
 
     public async Task<int> DistributeAsync(DateTimeOffset now, CancellationToken ct)

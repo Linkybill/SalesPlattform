@@ -1,6 +1,5 @@
 using IdentityPlatform.Shared.Database;
 using Microsoft.EntityFrameworkCore;
-using System.Globalization;
 using System.Text.Json;
 using SalesPlattform.Backend.Data;
 using SalesPlattform.Backend.Integrations.Abstractions;
@@ -33,7 +32,6 @@ public sealed record CrmTaskMirrorResult(
 
 public sealed record CrmTaskProjection(
     string Subject,
-    string? DueDate,
     string? Description,
     string? OwnerExternalId,
     string? TargetEntityType,
@@ -65,6 +63,9 @@ public sealed class CrmTaskMirrorService(
         var items = await db.SalesWorkItems
             .Include(item => item.Relations)
             .Where(item => item.TenantId == tenantId && ActiveStatuses.Contains(item.Status))
+            .Where(item => !item.Relations.Any(relation => relation.TargetType == CrmEntityTypes.Lead &&
+                db.SalesLeads.Any(lead => lead.TenantId == tenantId && lead.Id == relation.TargetId &&
+                    (!lead.IsActive || lead.SourceDeletedAt != null))))
             .OrderBy(item => item.CreatedAt)
             .ToArrayAsync(cancellationToken);
         if (items.Length == 0)
@@ -143,7 +144,7 @@ public sealed class CrmTaskMirrorService(
 
             var request = new CrmTaskWriteRequest(
                 item.Title,
-                ResolveCrmDueAt(item, now, timeZone),
+                null,
                 item.Reason,
                 ownerExternalId,
                 relation?.TargetType,
@@ -234,6 +235,7 @@ public sealed class CrmTaskMirrorService(
                 continue;
             }
 
+            request = request with { DueAt = ResolveInitialCrmDueAt(item, now, timeZone) };
             CrmTaskWriteResult created;
             try
             {
@@ -360,6 +362,7 @@ public sealed class CrmTaskMirrorService(
     {
         // jsonb normalizes whitespace and property order. Text equality would
         // resend every task on every hook batch, generating more incoming hooks.
+        // Older projections may contain DueDate, which is ignored on reads.
         try { return JsonSerializer.Deserialize<CrmTaskProjection>(storedJson) == expected; }
         catch (JsonException) { return false; }
     }
@@ -367,7 +370,6 @@ public sealed class CrmTaskMirrorService(
     private static CrmTaskProjection BuildProjection(CrmTaskWriteRequest request)
         => new(
             request.Subject,
-            request.DueAt?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             string.IsNullOrWhiteSpace(request.Description) ? null : request.Description,
             NormalizeExternalId(request.OwnerExternalId),
             NormalizeTargetType(request.TargetEntityType),
@@ -388,7 +390,7 @@ public sealed class CrmTaskMirrorService(
             : trimmed;
     }
 
-    private static DateTimeOffset ResolveCrmDueAt(
+    private static DateTimeOffset ResolveInitialCrmDueAt(
         SalesWorkItem item,
         DateTimeOffset now,
         TimeZoneInfo timeZone)

@@ -366,6 +366,7 @@ public sealed class SalesPlattformDbContext(DbContextOptions<SalesPlattformDbCon
         plan.HasIndex(p => new { p.TenantId, p.MembershipId }).IsUnique();
         plan.HasIndex(p => new { p.TenantId, p.StartsOn, p.EndsOn });
         var assignment = Table<SalesTaskAssignment>(modelBuilder, "sales_task_assignments");
+        assignment.Property(p => p.CrmCompletedAt).IsConcurrencyToken();
         assignment.HasIndex(p => new { p.TenantId, p.WorkItemId }).IsUnique();
         assignment.HasIndex(p => new { p.TenantId, p.AssignedOn, p.TargetType, p.TargetId }).IsUnique();
         assignment.HasIndex(p => new { p.TenantId, p.MembershipId, p.AssignedOn });
